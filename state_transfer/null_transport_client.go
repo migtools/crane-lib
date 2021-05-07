@@ -25,7 +25,7 @@ func createNullClientContainers(s *NullTransport, t Transfer) {
 					",fork,reuseaddr",
 				"TCP4:" +
 					t.GetEndpoint().GetHostname() + ":" +
-					strconv.Itoa(int(socatPort)),
+					strconv.Itoa(int(t.GetEndpoint().GetPort())),
 			},
 			Ports: []v1.ContainerPort{
 				{
