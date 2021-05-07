@@ -16,21 +16,21 @@ import (
 
 type Transport interface {
 	SetCA(*bytes.Buffer)
-	GetCA() *bytes.Buffer
+	CA() *bytes.Buffer
 	SetCrt(*bytes.Buffer)
-	GetCrt() *bytes.Buffer
+	Crt() *bytes.Buffer
 	SetKey(*bytes.Buffer)
-	GetKey() *bytes.Buffer
-	SetTransportPort(int32)
-	GetTransportPort() int32
+	Key() *bytes.Buffer
+	SetPort(int32)
+	Port() int32
 	SetClientContainers([]v1.Container)
-	GetClientContainers() []v1.Container
+	ClientContainers() []v1.Container
 	SetClientVolumes([]v1.Volume)
-	GetClientVolumes() []v1.Volume
+	ClientVolumes() []v1.Volume
 	SetServerContainers([]v1.Container)
-	GetServerContainers() []v1.Container
+	ServerContainers() []v1.Container
 	SetServerVolumes([]v1.Volume)
-	GetServerVolumes() []v1.Volume
+	ServerVolumes() []v1.Volume
 	createTransportServerResources(client.Client, Transfer) error
 	createTransportClientResources(client.Client, Transfer) error
 }

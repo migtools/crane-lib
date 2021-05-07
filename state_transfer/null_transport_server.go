@@ -8,7 +8,7 @@ import (
 )
 
 func (s *NullTransport) createTransportServerResources(c client.Client, t Transfer) error {
-	s.SetTransportPort(socatPort)
+	s.SetPort(socatPort)
 
 	createNullServerContainers(s, t)
 
@@ -26,7 +26,7 @@ func createNullServerContainers(s *NullTransport, t Transfer) {
 					strconv.Itoa(int(socatPort)) +
 					",fork,reuseaddr",
 				"TCP4:localhost:" +
-					strconv.Itoa(int(t.GetTransferPort())),
+					strconv.Itoa(int(t.Port())),
 			},
 			Ports: []v1.ContainerPort{
 				{

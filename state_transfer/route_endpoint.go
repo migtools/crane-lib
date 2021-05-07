@@ -12,8 +12,8 @@ import (
 )
 
 type RouteEndpoint struct {
-	Hostname string
-	Port     int32
+	hostname string
+	port     int32
 }
 
 func (r *RouteEndpoint) createEndpointResources(c client.Client, t Transfer) error {
@@ -32,21 +32,21 @@ func (r *RouteEndpoint) createEndpointResources(c client.Client, t Transfer) err
 
 func createRouteService(c client.Client, r *RouteEndpoint, t Transfer) error {
 	serviceSelector := labels
-	serviceSelector["pvc"] = t.GetPVC().Name
+	serviceSelector["pvc"] = t.PVC().Name
 
 	service := v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      t.GetPVC().Name,
-			Namespace: t.GetPVC().Namespace,
+			Name:      t.PVC().Name,
+			Namespace: t.PVC().Namespace,
 			Labels:    labels,
 		},
 		Spec: v1.ServiceSpec{
 			Ports: []v1.ServicePort{
 				{
-					Name:       t.GetPVC().Name,
+					Name:       t.PVC().Name,
 					Protocol:   v1.ProtocolTCP,
-					Port:       t.GetTransport().GetTransportPort(),
-					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: t.GetTransport().GetTransportPort()},
+					Port:       t.Transport().Port(),
+					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: t.Transport().Port()},
 				},
 			},
 			Selector: serviceSelector,
@@ -60,17 +60,17 @@ func createRouteService(c client.Client, r *RouteEndpoint, t Transfer) error {
 func createRoute(c client.Client, r *RouteEndpoint, t Transfer) error {
 	route := routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      t.GetPVC().Name,
-			Namespace: t.GetPVC().Namespace,
+			Name:      t.PVC().Name,
+			Namespace: t.PVC().Namespace,
 			Labels:    labels,
 		},
 		Spec: routev1.RouteSpec{
 			To: routev1.RouteTargetReference{
 				Kind: "Service",
-				Name: t.GetPVC().Name,
+				Name: t.PVC().Name,
 			},
 			Port: &routev1.RoutePort{
-				TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: t.GetTransport().GetTransportPort()},
+				TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: t.Transport().Port()},
 			},
 			TLS: &routev1.TLSConfig{
 				Termination: routev1.TLSTerminationPassthrough,
@@ -83,7 +83,7 @@ func createRoute(c client.Client, r *RouteEndpoint, t Transfer) error {
 		return err
 	}
 
-	err = c.Get(context.TODO(), types.NamespacedName{Name: t.GetPVC().Name, Namespace: t.GetPVC().Namespace}, &route)
+	err = c.Get(context.TODO(), types.NamespacedName{Name: t.PVC().Name, Namespace: t.PVC().Namespace}, &route)
 	if err != nil {
 		return err
 	}
@@ -95,17 +95,17 @@ func createRoute(c client.Client, r *RouteEndpoint, t Transfer) error {
 }
 
 func (r *RouteEndpoint) SetHostname(hostname string) {
-	r.Hostname = hostname
+	r.hostname = hostname
 }
 
-func (r *RouteEndpoint) GetHostname() string {
-	return r.Hostname
+func (r *RouteEndpoint) Hostname() string {
+	return r.hostname
 }
 
 func (r *RouteEndpoint) SetPort(port int32) {
-	r.Port = port
+	r.port = port
 }
 
-func (r *RouteEndpoint) GetPort() int32 {
-	return r.Port
+func (r *RouteEndpoint) Port() int32 {
+	return r.port
 }

@@ -12,76 +12,76 @@ const (
 )
 
 type NullTransport struct {
-	Crt              *bytes.Buffer
-	Key              *bytes.Buffer
-	CA               *bytes.Buffer
-	TransportPort    int32
-	ServerContainers []v1.Container
-	ServerVolumes    []v1.Volume
-	ClientContainers []v1.Container
-	ClientVolumes    []v1.Volume
+	crt              *bytes.Buffer
+	key              *bytes.Buffer
+	ca               *bytes.Buffer
+	port             int32
+	serverContainers []v1.Container
+	serverVolumes    []v1.Volume
+	clientContainers []v1.Container
+	clientVolumes    []v1.Volume
 }
 
 func (s *NullTransport) SetCA(b *bytes.Buffer) {
-	s.CA = b
+	s.ca = b
 }
 
-func (s *NullTransport) GetCA() *bytes.Buffer {
-	return s.CA
+func (s *NullTransport) CA() *bytes.Buffer {
+	return s.ca
 }
 
 func (s *NullTransport) SetCrt(b *bytes.Buffer) {
-	s.Crt = b
+	s.crt = b
 }
 
-func (s *NullTransport) GetCrt() *bytes.Buffer {
-	return s.Crt
+func (s *NullTransport) Crt() *bytes.Buffer {
+	return s.crt
 }
 
 func (s *NullTransport) SetKey(b *bytes.Buffer) {
-	s.Key = b
+	s.key = b
 }
 
-func (s *NullTransport) GetKey() *bytes.Buffer {
-	return s.Key
+func (s *NullTransport) Key() *bytes.Buffer {
+	return s.key
 }
 
-func (s *NullTransport) SetTransportPort(transportPort int32) {
-	s.TransportPort = transportPort
+func (s *NullTransport) SetPort(transportPort int32) {
+	s.port = transportPort
 }
 
-func (s *NullTransport) GetTransportPort() int32 {
-	return s.TransportPort
+func (s *NullTransport) Port() int32 {
+	return s.port
 }
 
 func (s *NullTransport) SetClientContainers(containers []v1.Container) {
-	s.ClientContainers = containers
+	s.clientContainers = containers
 }
 
-func (s *NullTransport) GetClientContainers() []v1.Container {
-	return s.ClientContainers
+func (s *NullTransport) ClientContainers() []v1.Container {
+	return s.clientContainers
 }
 
 func (s *NullTransport) SetServerContainers(containers []v1.Container) {
-	s.ServerContainers = containers
+	s.serverContainers = containers
 }
 
-func (s *NullTransport) GetServerContainers() []v1.Container {
-	return s.ServerContainers
+func (s *NullTransport) ServerContainers() []v1.Container {
+	return s.serverContainers
 }
 
 func (s *NullTransport) SetClientVolumes(volumes []v1.Volume) {
-	s.ClientVolumes = volumes
+	s.clientVolumes = volumes
 }
 
-func (s *NullTransport) GetClientVolumes() []v1.Volume {
-	return s.ClientVolumes
+func (s *NullTransport) ClientVolumes() []v1.Volume {
+	return s.clientVolumes
 }
 
 func (s *NullTransport) SetServerVolumes(volumes []v1.Volume) {
-	s.ServerVolumes = volumes
+	s.serverVolumes = volumes
 }
 
-func (s *NullTransport) GetServerVolumes() []v1.Volume {
-	return s.ServerVolumes
+func (s *NullTransport) ServerVolumes() []v1.Volume {
+	return s.serverVolumes
 }

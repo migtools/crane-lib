@@ -28,8 +28,8 @@ TIMEOUTclose = 0
 )
 
 func (s *StunnelTransport) createTransportServerResources(c client.Client, t Transfer) error {
-	s.SetTransportPort(stunnelPort)
-	pvc := t.GetPVC()
+	s.SetPort(stunnelPort)
+	pvc := t.PVC()
 
 	err := createStunnelServerConfig(c, s, t)
 	if err != nil {
@@ -51,7 +51,7 @@ func (s *StunnelTransport) createTransportServerResources(c client.Client, t Tra
 func createStunnelServerConfig(c client.Client, s *StunnelTransport, t Transfer) error {
 	ports := map[string]string{
 		"stunnelPort":  strconv.Itoa(int(stunnelPort)),
-		"transferPort": strconv.Itoa(int(t.GetTransferPort())),
+		"transferPort": strconv.Itoa(int(t.Port())),
 	}
 
 	var stunnelConf bytes.Buffer
@@ -67,8 +67,8 @@ func createStunnelServerConfig(c client.Client, s *StunnelTransport, t Transfer)
 
 	stunnelConfigMap := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: t.GetPVC().Namespace,
-			Name:      "crane2-stunnel-conf-" + t.GetPVC().Name,
+			Namespace: t.PVC().Namespace,
+			Name:      "crane2-stunnel-conf-" + t.PVC().Name,
 			Labels:    labels,
 		},
 		Data: map[string]string{
@@ -95,8 +95,8 @@ func createStunnelServerSecret(c client.Client, s *StunnelTransport, pvc v1.Pers
 			Labels:    labels,
 		},
 		Data: map[string][]byte{
-			"tls.crt": s.GetCrt().Bytes(),
-			"tls.key": s.GetKey().Bytes(),
+			"tls.crt": s.Crt().Bytes(),
+			"tls.key": s.Key().Bytes(),
 		},
 	}
 
@@ -121,12 +121,12 @@ func createStunnelServerContainers(s *StunnelTransport, t Transfer) {
 			},
 			VolumeMounts: []v1.VolumeMount{
 				{
-					Name:      "crane2-stunnel-conf-" + t.GetPVC().Name,
+					Name:      "crane2-stunnel-conf-" + t.PVC().Name,
 					MountPath: "/etc/stunnel/stunnel.conf",
 					SubPath:   "stunnel.conf",
 				},
 				{
-					Name:      "crane2-stunnel-secret-" + t.GetPVC().Name,
+					Name:      "crane2-stunnel-secret-" + t.PVC().Name,
 					MountPath: "/etc/stunnel/certs",
 				},
 			},
@@ -137,20 +137,20 @@ func createStunnelServerContainers(s *StunnelTransport, t Transfer) {
 func createStunnelServerVolumes(s *StunnelTransport, t Transfer) {
 	s.SetServerVolumes([]v1.Volume{
 		{
-			Name: "crane2-stunnel-conf-" + t.GetPVC().Name,
+			Name: "crane2-stunnel-conf-" + t.PVC().Name,
 			VolumeSource: v1.VolumeSource{
 				ConfigMap: &v1.ConfigMapVolumeSource{
 					LocalObjectReference: v1.LocalObjectReference{
-						Name: "crane2-stunnel-conf-" + t.GetPVC().Name,
+						Name: "crane2-stunnel-conf-" + t.PVC().Name,
 					},
 				},
 			},
 		},
 		{
-			Name: "crane2-stunnel-secret-" + t.GetPVC().Name,
+			Name: "crane2-stunnel-secret-" + t.PVC().Name,
 			VolumeSource: v1.VolumeSource{
 				Secret: &v1.SecretVolumeSource{
-					SecretName: "crane2-stunnel-secret-" + t.GetPVC().Name,
+					SecretName: "crane2-stunnel-secret-" + t.PVC().Name,
 					Items: []v1.KeyToPath{
 						{
 							Key:  "tls.crt",

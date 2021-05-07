@@ -5,9 +5,9 @@ import "sigs.k8s.io/controller-runtime/pkg/client"
 type Endpoint interface {
 	createEndpointResources(client.Client, Transfer) error
 	SetHostname(string)
-	GetHostname() string
+	Hostname() string
 	SetPort(int32)
-	GetPort() int32
+	Port() int32
 }
 
 func CreateEndpoint(e Endpoint, c client.Client, t Transfer) (Endpoint, error) {

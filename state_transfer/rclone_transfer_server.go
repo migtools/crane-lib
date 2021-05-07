@@ -27,7 +27,7 @@ func (r *RcloneTransfer) createTransferServerResources(c client.Client) error {
 	}
 
 	r.SetPassword(string(password))
-	r.SetTransferPort(rclonePort)
+	r.SetPort(rclonePort)
 	r.SetUsername(rcloneUser)
 
 	err := createRcloneServerConfig(c, r)
@@ -41,8 +41,8 @@ func (r *RcloneTransfer) createTransferServerResources(c client.Client) error {
 func createRcloneServerConfig(c client.Client, r *RcloneTransfer) error {
 	rcloneConfigMap := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: r.PVC.Namespace,
-			Name:      "crane2-rclone-conf-" + r.PVC.Name,
+			Namespace: r.PVC().Namespace,
+			Name:      "crane2-rclone-conf-" + r.PVC().Name,
 			Labels:    labels,
 		},
 		Data: map[string]string{
@@ -55,7 +55,7 @@ func createRcloneServerConfig(c client.Client, r *RcloneTransfer) error {
 
 func (r *RcloneTransfer) createTransferServer(c client.Client) error {
 	deploymentLabels := labels
-	deploymentLabels["pvc"] = r.GetPVC().Name
+	deploymentLabels["pvc"] = r.PVC().Name
 	containers := []v1.Container{
 		{
 			Name:  "rclone",
@@ -68,7 +68,7 @@ func (r *RcloneTransfer) createTransferServer(c client.Client) error {
 				"--user",
 				rcloneUser,
 				"--pass",
-				r.GetPassword(),
+				r.Password(),
 				"--config",
 				"/etc/rclone.conf",
 			},
@@ -85,7 +85,7 @@ func (r *RcloneTransfer) createTransferServer(c client.Client) error {
 					MountPath: "/mnt",
 				},
 				{
-					Name:      "crane2-rclone-conf-" + r.PVC.Name,
+					Name:      "crane2-rclone-conf-" + r.PVC().Name,
 					MountPath: "/etc/rclone.conf",
 					SubPath:   "rclone.conf",
 				},
@@ -93,7 +93,7 @@ func (r *RcloneTransfer) createTransferServer(c client.Client) error {
 		},
 	}
 
-	for _, container := range r.GetTransport().GetServerContainers() {
+	for _, container := range r.Transport().ServerContainers() {
 		containers = append(containers, container)
 	}
 
@@ -102,30 +102,30 @@ func (r *RcloneTransfer) createTransferServer(c client.Client) error {
 			Name: "mnt",
 			VolumeSource: v1.VolumeSource{
 				PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
-					ClaimName: r.PVC.Name,
+					ClaimName: r.PVC().Name,
 				},
 			},
 		},
 		{
-			Name: "crane2-rclone-conf-" + r.PVC.Name,
+			Name: "crane2-rclone-conf-" + r.PVC().Name,
 			VolumeSource: v1.VolumeSource{
 				ConfigMap: &v1.ConfigMapVolumeSource{
 					LocalObjectReference: v1.LocalObjectReference{
-						Name: "crane2-rclone-conf-" + r.PVC.Name,
+						Name: "crane2-rclone-conf-" + r.PVC().Name,
 					},
 				},
 			},
 		},
 	}
 
-	for _, volume := range r.GetTransport().GetServerVolumes() {
+	for _, volume := range r.Transport().ServerVolumes() {
 		volumes = append(volumes, volume)
 	}
 
 	server := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      r.PVC.Name,
-			Namespace: r.PVC.Namespace,
+			Name:      r.PVC().Name,
+			Namespace: r.PVC().Namespace,
 			Labels:    deploymentLabels,
 		},
 		Spec: appsv1.DeploymentSpec{

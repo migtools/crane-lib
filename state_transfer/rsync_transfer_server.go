@@ -37,7 +37,7 @@ hosts allow = ::1, 127.0.0.1, localhost
 )
 
 func (r *RsyncTransfer) createTransferServerResources(c client.Client) error {
-	r.SetTransferPort(rsyncPort)
+	r.SetPort(rsyncPort)
 	r.SetUsername(rsyncUser)
 
 	err := createRsyncServerConfig(c, r)
@@ -67,8 +67,8 @@ func createRsyncServerConfig(c client.Client, r *RsyncTransfer) error {
 
 	rsyncConfigMap := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: r.PVC.Namespace,
-			Name:      "crane2-rsync-conf-" + r.PVC.Name,
+			Namespace: r.PVC().Namespace,
+			Name:      "crane2-rsync-conf-" + r.PVC().Name,
 			Labels:    labels,
 		},
 		Data: map[string]string{
@@ -89,8 +89,8 @@ func createRsyncServerSecret(c client.Client, r *RsyncTransfer) error {
 
 	rsyncSecret := &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: r.PVC.Namespace,
-			Name:      "crane2-rsync-secret-" + r.PVC.Name,
+			Namespace: r.PVC().Namespace,
+			Name:      "crane2-rsync-secret-" + r.PVC().Name,
 			Labels:    labels,
 		},
 		Data: map[string][]byte{
@@ -103,7 +103,7 @@ func createRsyncServerSecret(c client.Client, r *RsyncTransfer) error {
 
 func (r *RsyncTransfer) createTransferServer(c client.Client) error {
 	deploymentLabels := labels
-	deploymentLabels["pvc"] = r.GetPVC().Name
+	deploymentLabels["pvc"] = r.PVC().Name
 	containers := []v1.Container{
 		{
 			Name:  "rsync",
@@ -128,19 +128,19 @@ func (r *RsyncTransfer) createTransferServer(c client.Client) error {
 					MountPath: "/mnt",
 				},
 				{
-					Name:      "crane2-rsync-conf-" + r.PVC.Name,
+					Name:      "crane2-rsync-conf-" + r.PVC().Name,
 					MountPath: "/etc/rsyncd.conf",
 					SubPath:   "rsyncd.conf",
 				},
 				{
-					Name:      "crane2-rsync-secret-" + r.PVC.Name,
+					Name:      "crane2-rsync-secret-" + r.PVC().Name,
 					MountPath: "/etc/rsync-secret",
 				},
 			},
 		},
 	}
 
-	for _, container := range r.GetTransport().GetServerContainers() {
+	for _, container := range r.Transport().ServerContainers() {
 		containers = append(containers, container)
 	}
 
@@ -151,25 +151,25 @@ func (r *RsyncTransfer) createTransferServer(c client.Client) error {
 			Name: "mnt",
 			VolumeSource: v1.VolumeSource{
 				PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
-					ClaimName: r.PVC.Name,
+					ClaimName: r.PVC().Name,
 				},
 			},
 		},
 		{
-			Name: "crane2-rsync-conf-" + r.PVC.Name,
+			Name: "crane2-rsync-conf-" + r.PVC().Name,
 			VolumeSource: v1.VolumeSource{
 				ConfigMap: &v1.ConfigMapVolumeSource{
 					LocalObjectReference: v1.LocalObjectReference{
-						Name: "crane2-rsync-conf-" + r.PVC.Name,
+						Name: "crane2-rsync-conf-" + r.PVC().Name,
 					},
 				},
 			},
 		},
 		{
-			Name: "crane2-rsync-secret-" + r.PVC.Name,
+			Name: "crane2-rsync-secret-" + r.PVC().Name,
 			VolumeSource: v1.VolumeSource{
 				Secret: &v1.SecretVolumeSource{
-					SecretName:  "crane2-rsync-secret-" + r.PVC.Name,
+					SecretName:  "crane2-rsync-secret-" + r.PVC().Name,
 					DefaultMode: &mode,
 					Items: []v1.KeyToPath{
 						{
@@ -182,14 +182,14 @@ func (r *RsyncTransfer) createTransferServer(c client.Client) error {
 		},
 	}
 
-	for _, volume := range r.GetTransport().GetServerVolumes() {
+	for _, volume := range r.Transport().ServerVolumes() {
 		volumes = append(volumes, volume)
 	}
 
 	server := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      r.PVC.Name,
-			Namespace: r.PVC.Namespace,
+			Name:      r.PVC().Name,
+			Namespace: r.PVC().Namespace,
 			Labels:    deploymentLabels,
 		},
 		Spec: appsv1.DeploymentSpec{

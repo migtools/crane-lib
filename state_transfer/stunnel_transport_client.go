@@ -26,8 +26,8 @@ const (
 )
 
 func (s *StunnelTransport) createTransportClientResources(c client.Client, t Transfer) error {
-	s.SetTransportPort(stunnelPort)
-	pvc := t.GetPVC()
+	s.SetPort(stunnelPort)
+	pvc := t.PVC()
 
 	err := createStunnelClientConfig(c, s, t)
 	if err != nil {
@@ -49,8 +49,8 @@ func (s *StunnelTransport) createTransportClientResources(c client.Client, t Tra
 func createStunnelClientConfig(c client.Client, s *StunnelTransport, t Transfer) error {
 	connections := map[string]string{
 		"stunnelPort": strconv.Itoa(int(stunnelPort)),
-		"hostname":    t.GetEndpoint().GetHostname(),
-		"port":        strconv.Itoa(int(t.GetEndpoint().GetPort())),
+		"hostname":    t.Endpoint().Hostname(),
+		"port":        strconv.Itoa(int(t.Endpoint().Port())),
 	}
 
 	var stunnelConf bytes.Buffer
@@ -66,8 +66,8 @@ func createStunnelClientConfig(c client.Client, s *StunnelTransport, t Transfer)
 
 	stunnelConfigMap := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: t.GetPVC().Namespace,
-			Name:      "crane2-stunnel-conf-" + t.GetPVC().Name,
+			Namespace: t.PVC().Namespace,
+			Name:      "crane2-stunnel-conf-" + t.PVC().Name,
 			Labels:    labels,
 		},
 		Data: map[string]string{
@@ -87,8 +87,8 @@ func createStunnelClientSecret(c client.Client, s *StunnelTransport, pvc v1.Pers
 			Labels:    labels,
 		},
 		Data: map[string][]byte{
-			"tls.crt": s.GetCrt().Bytes(),
-			"tls.key": s.GetKey().Bytes(),
+			"tls.crt": s.Crt().Bytes(),
+			"tls.key": s.Key().Bytes(),
 		},
 	}
 
@@ -113,12 +113,12 @@ func createStunnelClientContainers(s *StunnelTransport, t Transfer) {
 			},
 			VolumeMounts: []v1.VolumeMount{
 				{
-					Name:      "crane2-stunnel-conf-" + t.GetPVC().Name,
+					Name:      "crane2-stunnel-conf-" + t.PVC().Name,
 					MountPath: "/etc/stunnel/stunnel.conf",
 					SubPath:   "stunnel.conf",
 				},
 				{
-					Name:      "crane2-stunnel-secret-" + t.GetPVC().Name,
+					Name:      "crane2-stunnel-secret-" + t.PVC().Name,
 					MountPath: "/etc/stunnel/certs",
 				},
 			},
@@ -129,20 +129,20 @@ func createStunnelClientContainers(s *StunnelTransport, t Transfer) {
 func createStunnelClientVolumes(s *StunnelTransport, t Transfer) {
 	s.SetClientVolumes([]v1.Volume{
 		{
-			Name: "crane2-stunnel-conf-" + t.GetPVC().Name,
+			Name: "crane2-stunnel-conf-" + t.PVC().Name,
 			VolumeSource: v1.VolumeSource{
 				ConfigMap: &v1.ConfigMapVolumeSource{
 					LocalObjectReference: v1.LocalObjectReference{
-						Name: "crane2-stunnel-conf-" + t.GetPVC().Name,
+						Name: "crane2-stunnel-conf-" + t.PVC().Name,
 					},
 				},
 			},
 		},
 		{
-			Name: "crane2-stunnel-secret-" + t.GetPVC().Name,
+			Name: "crane2-stunnel-secret-" + t.PVC().Name,
 			VolumeSource: v1.VolumeSource{
 				Secret: &v1.SecretVolumeSource{
-					SecretName: "crane2-stunnel-secret-" + t.GetPVC().Name,
+					SecretName: "crane2-stunnel-secret-" + t.PVC().Name,
 					Items: []v1.KeyToPath{
 						{
 							Key:  "tls.crt",

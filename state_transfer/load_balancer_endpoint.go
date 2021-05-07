@@ -12,8 +12,8 @@ import (
 )
 
 type LoadBalancerEndpoint struct {
-	Hostname string
-	Port     int32
+	hostname string
+	port     int32
 }
 
 func (r *LoadBalancerEndpoint) createEndpointResources(c client.Client, t Transfer) error {
@@ -27,21 +27,21 @@ func (r *LoadBalancerEndpoint) createEndpointResources(c client.Client, t Transf
 
 func createLoadBalancerService(c client.Client, r *LoadBalancerEndpoint, t Transfer) error {
 	serviceSelector := labels
-	serviceSelector["pvc"] = t.GetPVC().Name
+	serviceSelector["pvc"] = t.PVC().Name
 
 	service := v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      t.GetPVC().Name,
-			Namespace: t.GetPVC().Namespace,
+			Name:      t.PVC().Name,
+			Namespace: t.PVC().Namespace,
 			Labels:    labels,
 		},
 		Spec: v1.ServiceSpec{
 			Ports: []v1.ServicePort{
 				{
-					Name:       t.GetPVC().Name,
+					Name:       t.PVC().Name,
 					Protocol:   v1.ProtocolTCP,
-					Port:       t.GetTransport().GetTransportPort(),
-					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: t.GetTransport().GetTransportPort()},
+					Port:       t.Transport().Port(),
+					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: t.Transport().Port()},
 				},
 			},
 			Selector: serviceSelector,
@@ -56,29 +56,29 @@ func createLoadBalancerService(c client.Client, r *LoadBalancerEndpoint, t Trans
 
 	//FIXME. Seems to take a moment, probably something better to do than wait 5 seconds
 	time.Sleep(5 * time.Second)
-	err = c.Get(context.TODO(), types.NamespacedName{Name: t.GetPVC().Name, Namespace: t.GetPVC().Namespace}, &service)
+	err = c.Get(context.TODO(), types.NamespacedName{Name: t.PVC().Name, Namespace: t.PVC().Namespace}, &service)
 	if err != nil {
 		return err
 	}
 
 	r.SetHostname(service.Status.LoadBalancer.Ingress[0].Hostname)
-	r.SetPort(t.GetTransport().GetTransportPort())
+	r.SetPort(t.Transport().Port())
 	return nil
 
 }
 
 func (r *LoadBalancerEndpoint) SetHostname(hostname string) {
-	r.Hostname = hostname
+	r.hostname = hostname
 }
 
-func (r *LoadBalancerEndpoint) GetHostname() string {
-	return r.Hostname
+func (r *LoadBalancerEndpoint) Hostname() string {
+	return r.hostname
 }
 
 func (r *LoadBalancerEndpoint) SetPort(port int32) {
-	r.Port = port
+	r.port = port
 }
 
-func (r *LoadBalancerEndpoint) GetPort() int32 {
-	return r.Port
+func (r *LoadBalancerEndpoint) Port() int32 {
+	return r.port
 }

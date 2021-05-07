@@ -35,10 +35,10 @@ func createRcloneClientConfig(c client.Client, r *RcloneTransfer) error {
 	}
 
 	coordinates := map[string]string{
-		"username": r.GetUsername(),
-		"password": r.GetPassword(),
-		"hostname": r.GetEndpoint().GetHostname(),
-		"port":     strconv.Itoa(int(r.GetTransport().GetTransportPort())),
+		"username": r.Username(),
+		"password": r.Password(),
+		"hostname": r.Endpoint().Hostname(),
+		"port":     strconv.Itoa(int(r.Transport().Port())),
 	}
 
 	err = rcloneConfTemplate.Execute(&rcloneConf, coordinates)
@@ -48,8 +48,8 @@ func createRcloneClientConfig(c client.Client, r *RcloneTransfer) error {
 
 	rcloneConfigMap := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: r.PVC.Namespace,
-			Name:      "crane2-rclone-conf-" + r.PVC.Name,
+			Namespace: r.PVC().Namespace,
+			Name:      "crane2-rclone-conf-" + r.PVC().Name,
 			Labels:    labels,
 		},
 		Data: map[string]string{
@@ -62,7 +62,7 @@ func createRcloneClientConfig(c client.Client, r *RcloneTransfer) error {
 
 func (r *RcloneTransfer) createTransferClient(c client.Client) error {
 	podLabels := labels
-	podLabels["pvc"] = r.GetPVC().Name
+	podLabels["pvc"] = r.PVC().Name
 	containers := []v1.Container{
 		{
 			Name:  "rclone",
@@ -81,7 +81,7 @@ func (r *RcloneTransfer) createTransferClient(c client.Client) error {
 					MountPath: "/mnt",
 				},
 				{
-					Name:      "crane2-rclone-conf-" + r.PVC.Name,
+					Name:      "crane2-rclone-conf-" + r.PVC().Name,
 					MountPath: "/etc/rclone.conf",
 					SubPath:   "rclone.conf",
 				},
@@ -89,7 +89,7 @@ func (r *RcloneTransfer) createTransferClient(c client.Client) error {
 		},
 	}
 
-	for _, container := range r.GetTransport().GetClientContainers() {
+	for _, container := range r.Transport().ClientContainers() {
 		containers = append(containers, container)
 	}
 
@@ -98,30 +98,30 @@ func (r *RcloneTransfer) createTransferClient(c client.Client) error {
 			Name: "mnt",
 			VolumeSource: v1.VolumeSource{
 				PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
-					ClaimName: r.PVC.Name,
+					ClaimName: r.PVC().Name,
 				},
 			},
 		},
 		{
-			Name: "crane2-rclone-conf-" + r.PVC.Name,
+			Name: "crane2-rclone-conf-" + r.PVC().Name,
 			VolumeSource: v1.VolumeSource{
 				ConfigMap: &v1.ConfigMapVolumeSource{
 					LocalObjectReference: v1.LocalObjectReference{
-						Name: "crane2-rclone-conf-" + r.PVC.Name,
+						Name: "crane2-rclone-conf-" + r.PVC().Name,
 					},
 				},
 			},
 		},
 	}
 
-	for _, volume := range r.GetTransport().GetClientVolumes() {
+	for _, volume := range r.Transport().ClientVolumes() {
 		volumes = append(volumes, volume)
 	}
 
 	pod := v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      r.GetPVC().Name,
-			Namespace: r.GetPVC().Namespace,
+			Name:      r.PVC().Name,
+			Namespace: r.PVC().Namespace,
 			Labels:    podLabels,
 		},
 		Spec: v1.PodSpec{

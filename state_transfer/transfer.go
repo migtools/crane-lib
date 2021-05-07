@@ -13,21 +13,21 @@ var labels = map[string]string{"app": "crane2"}
 
 type Transfer interface {
 	SetSource(*rest.Config)
-	GetSource() *rest.Config
+	Source() *rest.Config
 	SetDestination(*rest.Config)
-	GetDestination() *rest.Config
+	Destination() *rest.Config
 	SetPVC(v1.PersistentVolumeClaim)
-	GetPVC() v1.PersistentVolumeClaim
+	PVC() v1.PersistentVolumeClaim
 	SetEndpoint(Endpoint)
-	GetEndpoint() Endpoint
+	Endpoint() Endpoint
 	SetTransport(Transport)
-	GetTransport() Transport
+	Transport() Transport
 	SetUsername(string)
-	GetUsername() string
+	Username() string
 	SetPassword(string)
-	GetPassword() string
-	SetTransferPort(int32)
-	GetTransferPort() int32
+	Password() string
+	SetPort(int32)
+	Port() int32
 	createTransferServer(client.Client) error
 	createTransferServerResources(client.Client) error
 	createTransferClient(client.Client) error
@@ -45,7 +45,7 @@ func CreateServer(t Transfer) error {
 	if err := v1.AddToScheme(scheme); err != nil {
 		return err
 	}
-	c, err := client.New(t.GetSource(), client.Options{Scheme: scheme})
+	c, err := client.New(t.Source(), client.Options{Scheme: scheme})
 	if err != nil {
 		return err
 	}
@@ -55,7 +55,7 @@ func CreateServer(t Transfer) error {
 		return err
 	}
 
-	transport, err := CreateTransportServer(t.GetTransport(), c, t)
+	transport, err := CreateTransportServer(t.Transport(), c, t)
 	if err != nil {
 		return err
 	}
@@ -66,7 +66,7 @@ func CreateServer(t Transfer) error {
 		return err
 	}
 
-	endpoint, err := CreateEndpoint(t.GetEndpoint(), c, t)
+	endpoint, err := CreateEndpoint(t.Endpoint(), c, t)
 	if err != nil {
 		return err
 	}
@@ -80,7 +80,7 @@ func DeleteServer(t Transfer) error {
 }
 
 func CreateClient(t Transfer) error {
-	c, err := client.New(t.GetDestination(), client.Options{})
+	c, err := client.New(t.Destination(), client.Options{})
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func CreateClient(t Transfer) error {
 		return err
 	}
 
-	transport, err := CreateTransportClient(t.GetTransport(), c, t)
+	transport, err := CreateTransportClient(t.Transport(), c, t)
 	if err != nil {
 		return err
 	}

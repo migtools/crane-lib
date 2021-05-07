@@ -18,7 +18,7 @@ func (r *RsyncTransfer) createTransferClientResources(c client.Client) error {
 
 func (r *RsyncTransfer) createTransferClient(c client.Client) error {
 	podLabels := labels
-	podLabels["pvc"] = r.GetPVC().Name
+	podLabels["pvc"] = r.PVC().Name
 	containers := []v1.Container{
 		{
 			Name:  "rsync",
@@ -29,13 +29,13 @@ func (r *RsyncTransfer) createTransferClient(c client.Client) error {
 				"--delete",
 				"--recursive",
 				"--compress",
-				"rsync://" + r.GetUsername() + "@localhost:" + strconv.Itoa(int(r.GetTransport().GetTransportPort())) + "/mnt",
+				"rsync://" + r.Username() + "@localhost:" + strconv.Itoa(int(r.Transport().Port())) + "/mnt",
 				"/mnt/",
 			},
 			Env: []v1.EnvVar{
 				{
 					Name:  "RSYNC_PASSWORD",
-					Value: r.GetPassword(),
+					Value: r.Password(),
 				},
 			},
 
@@ -48,7 +48,7 @@ func (r *RsyncTransfer) createTransferClient(c client.Client) error {
 		},
 	}
 
-	for _, container := range r.GetTransport().GetClientContainers() {
+	for _, container := range r.Transport().ClientContainers() {
 		containers = append(containers, container)
 	}
 
@@ -57,20 +57,20 @@ func (r *RsyncTransfer) createTransferClient(c client.Client) error {
 			Name: "mnt",
 			VolumeSource: v1.VolumeSource{
 				PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
-					ClaimName: r.PVC.Name,
+					ClaimName: r.PVC().Name,
 				},
 			},
 		},
 	}
 
-	for _, volume := range r.GetTransport().GetClientVolumes() {
+	for _, volume := range r.Transport().ClientVolumes() {
 		volumes = append(volumes, volume)
 	}
 
 	pod := v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      r.GetPVC().Name,
-			Namespace: r.GetPVC().Namespace,
+			Name:      r.PVC().Name,
+			Namespace: r.PVC().Namespace,
 			Labels:    podLabels,
 		},
 		Spec: v1.PodSpec{
