@@ -68,7 +68,7 @@ func createRsyncServerConfig(c client.Client, r *RsyncTransfer) error {
 	rsyncConfigMap := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.PVC().Namespace,
-			Name:      "crane2-rsync-conf-" + r.PVC().Name,
+			Name:      rsyncConfigPrefix + r.PVC().Name,
 			Labels:    labels,
 		},
 		Data: map[string]string{
@@ -86,18 +86,18 @@ func createRsyncServerSecret(c client.Client, r *RsyncTransfer) error {
 	for i := range password {
 		password[i] = letters[random.Intn(len(letters))]
 	}
+	r.SetPassword(string(password))
 
 	rsyncSecret := &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.PVC().Namespace,
-			Name:      "crane2-rsync-secret-" + r.PVC().Name,
+			Name:      rsyncSecretPrefix + r.PVC().Name,
 			Labels:    labels,
 		},
 		Data: map[string][]byte{
-			"credentials": []byte("crane2:" + string(password)),
+			"credentials": []byte(r.Username() + ":" + r.Password()),
 		},
 	}
-	r.SetPassword(string(password))
 	return c.Create(context.TODO(), rsyncSecret, &client.CreateOptions{})
 }
 
@@ -128,12 +128,12 @@ func (r *RsyncTransfer) createTransferServer(c client.Client) error {
 					MountPath: "/mnt",
 				},
 				{
-					Name:      "crane2-rsync-conf-" + r.PVC().Name,
+					Name:      rsyncConfigPrefix + r.PVC().Name,
 					MountPath: "/etc/rsyncd.conf",
 					SubPath:   "rsyncd.conf",
 				},
 				{
-					Name:      "crane2-rsync-secret-" + r.PVC().Name,
+					Name:      rsyncSecretPrefix + r.PVC().Name,
 					MountPath: "/etc/rsync-secret",
 				},
 			},
@@ -156,20 +156,20 @@ func (r *RsyncTransfer) createTransferServer(c client.Client) error {
 			},
 		},
 		{
-			Name: "crane2-rsync-conf-" + r.PVC().Name,
+			Name: rsyncConfigPrefix + r.PVC().Name,
 			VolumeSource: v1.VolumeSource{
 				ConfigMap: &v1.ConfigMapVolumeSource{
 					LocalObjectReference: v1.LocalObjectReference{
-						Name: "crane2-rsync-conf-" + r.PVC().Name,
+						Name: rsyncConfigPrefix + r.PVC().Name,
 					},
 				},
 			},
 		},
 		{
-			Name: "crane2-rsync-secret-" + r.PVC().Name,
+			Name: rsyncSecretPrefix + r.PVC().Name,
 			VolumeSource: v1.VolumeSource{
 				Secret: &v1.SecretVolumeSource{
-					SecretName:  "crane2-rsync-secret-" + r.PVC().Name,
+					SecretName:  rsyncSecretPrefix + r.PVC().Name,
 					DefaultMode: &mode,
 					Items: []v1.KeyToPath{
 						{

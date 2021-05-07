@@ -6,9 +6,10 @@ import (
 )
 
 const (
-	rcloneUser  = "crane2"
-	rcloneImage = "quay.io/jmontleon/rclone-transfer:latest"
-	rclonePort  = int32(8080)
+	rcloneUser         = "crane2"
+	rcloneImage        = "quay.io/jmontleon/rclone-transfer:latest"
+	rclonePort         = int32(8080)
+	rcloneConfigPrefix = "crane2-rclone-config-"
 )
 
 type RcloneTransfer struct {

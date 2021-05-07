@@ -6,9 +6,11 @@ import (
 )
 
 const (
-	rsyncUser  = "crane2"
-	rsyncImage = "quay.io/konveyor/rsync-transfer:latest"
-	rsyncPort  = int32(1873)
+	rsyncUser         = "crane2"
+	rsyncImage        = "quay.io/konveyor/rsync-transfer:latest"
+	rsyncPort         = int32(1873)
+	rsyncConfigPrefix = "crane2-rsync-config-"
+	rsyncSecretPrefix = "crane2-rsync-secret-"
 )
 
 type RsyncTransfer struct {

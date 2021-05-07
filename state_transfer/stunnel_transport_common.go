@@ -7,8 +7,10 @@ import (
 )
 
 const (
-	stunnelPort  = int32(1443)
-	stunnelImage = "quay.io/konveyor/rsync-transfer:latest"
+	stunnelPort         = int32(1443)
+	stunnelImage        = "quay.io/konveyor/rsync-transfer:latest"
+	stunnelConfigPrefix = "crane2-stunnel-config-"
+	stunnelSecretPrefix = "crane2-stunnel-secret-"
 )
 
 type StunnelTransport struct {

@@ -67,7 +67,7 @@ func createStunnelClientConfig(c client.Client, s *StunnelTransport, t Transfer)
 	stunnelConfigMap := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: t.PVC().Namespace,
-			Name:      "crane2-stunnel-conf-" + t.PVC().Name,
+			Name:      stunnelConfigPrefix + t.PVC().Name,
 			Labels:    labels,
 		},
 		Data: map[string]string{
@@ -83,7 +83,7 @@ func createStunnelClientSecret(c client.Client, s *StunnelTransport, pvc v1.Pers
 	stunnelSecret := &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: pvc.Namespace,
-			Name:      "crane2-stunnel-secret-" + pvc.Name,
+			Name:      stunnelSecretPrefix + pvc.Name,
 			Labels:    labels,
 		},
 		Data: map[string][]byte{
@@ -113,12 +113,12 @@ func createStunnelClientContainers(s *StunnelTransport, t Transfer) {
 			},
 			VolumeMounts: []v1.VolumeMount{
 				{
-					Name:      "crane2-stunnel-conf-" + t.PVC().Name,
+					Name:      stunnelConfigPrefix + t.PVC().Name,
 					MountPath: "/etc/stunnel/stunnel.conf",
 					SubPath:   "stunnel.conf",
 				},
 				{
-					Name:      "crane2-stunnel-secret-" + t.PVC().Name,
+					Name:      stunnelSecretPrefix + t.PVC().Name,
 					MountPath: "/etc/stunnel/certs",
 				},
 			},
@@ -129,20 +129,20 @@ func createStunnelClientContainers(s *StunnelTransport, t Transfer) {
 func createStunnelClientVolumes(s *StunnelTransport, t Transfer) {
 	s.SetClientVolumes([]v1.Volume{
 		{
-			Name: "crane2-stunnel-conf-" + t.PVC().Name,
+			Name: stunnelConfigPrefix + t.PVC().Name,
 			VolumeSource: v1.VolumeSource{
 				ConfigMap: &v1.ConfigMapVolumeSource{
 					LocalObjectReference: v1.LocalObjectReference{
-						Name: "crane2-stunnel-conf-" + t.PVC().Name,
+						Name: stunnelConfigPrefix + t.PVC().Name,
 					},
 				},
 			},
 		},
 		{
-			Name: "crane2-stunnel-secret-" + t.PVC().Name,
+			Name: stunnelSecretPrefix + t.PVC().Name,
 			VolumeSource: v1.VolumeSource{
 				Secret: &v1.SecretVolumeSource{
-					SecretName: "crane2-stunnel-secret-" + t.PVC().Name,
+					SecretName: stunnelSecretPrefix + t.PVC().Name,
 					Items: []v1.KeyToPath{
 						{
 							Key:  "tls.crt",

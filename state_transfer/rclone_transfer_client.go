@@ -49,7 +49,7 @@ func createRcloneClientConfig(c client.Client, r *RcloneTransfer) error {
 	rcloneConfigMap := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.PVC().Namespace,
-			Name:      "crane2-rclone-conf-" + r.PVC().Name,
+			Name:      rcloneConfigPrefix + r.PVC().Name,
 			Labels:    labels,
 		},
 		Data: map[string]string{
@@ -81,7 +81,7 @@ func (r *RcloneTransfer) createTransferClient(c client.Client) error {
 					MountPath: "/mnt",
 				},
 				{
-					Name:      "crane2-rclone-conf-" + r.PVC().Name,
+					Name:      rcloneConfigPrefix + r.PVC().Name,
 					MountPath: "/etc/rclone.conf",
 					SubPath:   "rclone.conf",
 				},
@@ -103,11 +103,11 @@ func (r *RcloneTransfer) createTransferClient(c client.Client) error {
 			},
 		},
 		{
-			Name: "crane2-rclone-conf-" + r.PVC().Name,
+			Name: rcloneConfigPrefix + r.PVC().Name,
 			VolumeSource: v1.VolumeSource{
 				ConfigMap: &v1.ConfigMapVolumeSource{
 					LocalObjectReference: v1.LocalObjectReference{
-						Name: "crane2-rclone-conf-" + r.PVC().Name,
+						Name: rcloneConfigPrefix + r.PVC().Name,
 					},
 				},
 			},
