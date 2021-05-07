@@ -71,6 +71,8 @@ func (r *RcloneTransfer) createTransferServer(c client.Client) error {
 				r.Password(),
 				"--config",
 				"/etc/rclone.conf",
+				"--addr",
+				":8080",
 			},
 			Ports: []v1.ContainerPort{
 				{

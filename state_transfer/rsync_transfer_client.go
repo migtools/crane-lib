@@ -29,7 +29,7 @@ func (r *RsyncTransfer) createTransferClient(c client.Client) error {
 				"--delete",
 				"--recursive",
 				"--compress",
-				"rsync://" + r.Username() + "@localhost:" + strconv.Itoa(int(r.Transport().Port())) + "/mnt",
+				"rsync://" + r.Username() + "@" + connectionHostname(r) + ":" + strconv.Itoa(int(connectionPort(r))) + "/mnt",
 				"/mnt/",
 			},
 			Env: []v1.EnvVar{

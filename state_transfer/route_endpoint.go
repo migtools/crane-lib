@@ -2,6 +2,7 @@ package state_transfer
 
 import (
 	"context"
+	"reflect"
 
 	routev1 "github.com/openshift/api/route/v1"
 	v1 "k8s.io/api/core/v1"
@@ -16,7 +17,21 @@ type RouteEndpoint struct {
 	port     int32
 }
 
-func (r *RouteEndpoint) createEndpointResources(c client.Client, t Transfer) error {
+func (r *RouteEndpoint) Create(c client.Client, t Transfer) error {
+	err := createRouteService(c, r, t)
+	if err != nil {
+		return err
+	}
+
+	err = createRoute(c, r, t)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func createRouteResources(c client.Client, r *RouteEndpoint, t Transfer) error {
 	err := createRouteService(c, r, t)
 	if err != nil {
 		return err
@@ -58,6 +73,21 @@ func createRouteService(c client.Client, r *RouteEndpoint, t Transfer) error {
 }
 
 func createRoute(c client.Client, r *RouteEndpoint, t Transfer) error {
+	termination := &routev1.TLSConfig{}
+	switch reflect.TypeOf(t.Transport()) {
+	case reflect.TypeOf(&NullTransport{}):
+		termination = &routev1.TLSConfig{
+			Termination:                   routev1.TLSTerminationEdge,
+			InsecureEdgeTerminationPolicy: "Allow",
+		}
+		r.SetPort(int32(80))
+	default:
+		termination = &routev1.TLSConfig{
+			Termination: routev1.TLSTerminationPassthrough,
+		}
+		r.SetPort(int32(443))
+	}
+
 	route := routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      t.PVC().Name,
@@ -72,9 +102,7 @@ func createRoute(c client.Client, r *RouteEndpoint, t Transfer) error {
 			Port: &routev1.RoutePort{
 				TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: t.Transport().Port()},
 			},
-			TLS: &routev1.TLSConfig{
-				Termination: routev1.TLSTerminationPassthrough,
-			},
+			TLS: termination,
 		},
 	}
 
@@ -89,7 +117,6 @@ func createRoute(c client.Client, r *RouteEndpoint, t Transfer) error {
 	}
 
 	r.SetHostname(route.Spec.Host)
-	r.SetPort(int32(443))
 
 	return nil
 }

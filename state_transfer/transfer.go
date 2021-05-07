@@ -108,3 +108,17 @@ func CreateClient(t Transfer) error {
 func DeleteClient(t Transfer) error {
 	return nil
 }
+
+func connectionHostname(t Transfer) string {
+	if t.Transport().Direct() {
+		return t.Endpoint().Hostname()
+	}
+	return "localhost"
+}
+
+func connectionPort(t Transfer) int32 {
+	if t.Transport().Direct() {
+		return t.Endpoint().Port()
+	}
+	return t.Transport().Port()
+}

@@ -6,11 +6,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
-const (
-	socatImage = "quay.io/jmontleon/socat:latest"
-	socatPort  = int32(1025)
-)
-
 type NullTransport struct {
 	crt              *bytes.Buffer
 	key              *bytes.Buffer
@@ -20,6 +15,7 @@ type NullTransport struct {
 	serverVolumes    []v1.Volume
 	clientContainers []v1.Container
 	clientVolumes    []v1.Volume
+	direct           bool
 }
 
 func (s *NullTransport) SetCA(b *bytes.Buffer) {
@@ -84,4 +80,8 @@ func (s *NullTransport) SetServerVolumes(volumes []v1.Volume) {
 
 func (s *NullTransport) ServerVolumes() []v1.Volume {
 	return s.serverVolumes
+}
+
+func (s *NullTransport) Direct() bool {
+	return s.direct
 }

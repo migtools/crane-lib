@@ -31,6 +31,7 @@ type Transport interface {
 	ServerContainers() []v1.Container
 	SetServerVolumes([]v1.Volume)
 	ServerVolumes() []v1.Volume
+	Direct() bool
 	createTransportServerResources(client.Client, Transfer) error
 	createTransportClientResources(client.Client, Transfer) error
 }

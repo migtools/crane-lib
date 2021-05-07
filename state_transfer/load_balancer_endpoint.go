@@ -16,7 +16,7 @@ type LoadBalancerEndpoint struct {
 	port     int32
 }
 
-func (r *LoadBalancerEndpoint) createEndpointResources(c client.Client, t Transfer) error {
+func (r *LoadBalancerEndpoint) Create(c client.Client, t Transfer) error {
 	err := createLoadBalancerService(c, r, t)
 	if err != nil {
 		return err

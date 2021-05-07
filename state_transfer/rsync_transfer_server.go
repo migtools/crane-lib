@@ -22,14 +22,12 @@ read only = no
 list = yes
 log file = /dev/stdout
 max verbosity = 4
-hosts allow = ::1, 127.0.0.1, localhost
 [mnt]
     comment = mnt
     path = /mnt
     use chroot = no
     munge symlinks = no
     list = yes
-    hosts allow = ::1, 127.0.0.1, localhost
     read only = false
     auth users = {{ . }} 
     secrets file = /etc/rsync-secret/rsyncd.secrets

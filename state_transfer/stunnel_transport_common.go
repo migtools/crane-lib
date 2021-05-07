@@ -22,6 +22,7 @@ type StunnelTransport struct {
 	serverVolumes    []v1.Volume
 	clientContainers []v1.Container
 	clientVolumes    []v1.Volume
+	direct           bool
 }
 
 func (s *StunnelTransport) SetCA(b *bytes.Buffer) {
@@ -86,4 +87,8 @@ func (s *StunnelTransport) SetServerVolumes(volumes []v1.Volume) {
 
 func (s *StunnelTransport) ServerVolumes() []v1.Volume {
 	return s.serverVolumes
+}
+
+func (s *StunnelTransport) Direct() bool {
+	return s.direct
 }

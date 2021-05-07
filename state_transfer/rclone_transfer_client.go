@@ -14,7 +14,7 @@ import (
 const (
 	rcloneClientConfTemplate = `[remote]
 type = http
-url = http://{{ .username }}:{{ .password }}@localhost:{{ .port }}
+url = http://{{ .username }}:{{ .password }}@{{ .hostname }}:{{ .port }}
 `
 )
 
@@ -37,8 +37,8 @@ func createRcloneClientConfig(c client.Client, r *RcloneTransfer) error {
 	coordinates := map[string]string{
 		"username": r.Username(),
 		"password": r.Password(),
-		"hostname": r.Endpoint().Hostname(),
-		"port":     strconv.Itoa(int(r.Transport().Port())),
+		"hostname": connectionHostname(r),
+		"port":     strconv.Itoa(int(connectionPort(r))),
 	}
 
 	err = rcloneConfTemplate.Execute(&rcloneConf, coordinates)
@@ -74,6 +74,8 @@ func (r *RcloneTransfer) createTransferClient(c client.Client) error {
 				"/mnt",
 				"--config",
 				"/etc/rclone.conf",
+				"--http-headers",
+				"Host," + r.Endpoint().Hostname(),
 			},
 			VolumeMounts: []v1.VolumeMount{
 				{
