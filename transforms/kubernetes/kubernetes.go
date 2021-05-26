@@ -45,6 +45,8 @@ func GetWhiteOuts(groupKind schema.GroupKind) bool {
 		return true
 	}
 
+	// For right now we assume PVC's are handled by a different part
+	// of the tool chain.
 	if groupKind == pvcGK {
 		return true
 	}
