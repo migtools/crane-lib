@@ -7,7 +7,7 @@ import (
 
 type Plugin interface {
 	// Determine for a given resources what the plugin is deciding to do with this
-	Run(unstructured.Unstructured) (PluginResponse, error)
+	Run(*unstructured.Unstructured) (PluginResponse, error)
 }
 
 type PluginResponse struct {

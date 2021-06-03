@@ -35,14 +35,14 @@ func (r *Runner) Run(object unstructured.Unstructured, plugins []Plugin) ([]byte
 		}
 		if len(resp.Patches) > 0 {
 			havePatches = true
-			patches = append(patches, resp.Patches)
+			patches = append(patches, resp.Patches...)
 		}
 	}
 	// TODO: in the future we should consider a way to speed this up with go routines.
 	if len(errs) > 0 {
 		// TODO: handle error in a reasonable way. Probably needs an enhancement
 		// Should Consider option to ignore errors
-		return nil, false, err[0]
+		return nil, false, errs[0]
 	}
 	if haveWhiteOut {
 		// TODO: handle if we should skip whiteOut if there is a transform
@@ -52,6 +52,7 @@ func (r *Runner) Run(object unstructured.Unstructured, plugins []Plugin) ([]byte
 		// TODO: Handle dedup
 		// TODO: Handle conflicts with paths
 		b, err := json.Marshal(patches)
-		return b
+		return b, false, err
 	}
+	return nil, false, nil
 }
