@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/konveyor/crane-lib/transforms/types"
+	"github.com/konveyor/crane-lib/transform/types"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"

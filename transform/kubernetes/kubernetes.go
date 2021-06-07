@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch"
-	transform "github.com/konveyor/crane-lib/transforms"
-	"github.com/konveyor/crane-lib/transforms/types"
+	transform "github.com/konveyor/crane-lib/transform"
+	"github.com/konveyor/crane-lib/transform/types"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )

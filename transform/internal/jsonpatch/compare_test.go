@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	jpatch "github.com/evanphx/json-patch"
-	internaljsonpatch "github.com/konveyor/crane-lib/transforms/internal/jsonpatch"
+	internaljsonpatch "github.com/konveyor/crane-lib/transform/internal/jsonpatch"
 )
 
 func TestCompare(t *testing.T) {

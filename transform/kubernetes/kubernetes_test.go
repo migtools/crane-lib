@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	jsonpatch "github.com/evanphx/json-patch"
-	transform "github.com/konveyor/crane-lib/transforms"
-	internaljsonpatch "github.com/konveyor/crane-lib/transforms/internal/jsonpatch"
-	"github.com/konveyor/crane-lib/transforms/kubernetes"
+	transform "github.com/konveyor/crane-lib/transform"
+	internaljsonpatch "github.com/konveyor/crane-lib/transform/internal/jsonpatch"
+	"github.com/konveyor/crane-lib/transform/kubernetes"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
