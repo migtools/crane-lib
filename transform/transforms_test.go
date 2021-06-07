@@ -1,7 +1,8 @@
-package transform
+package transform_test
 
 import (
 	"testing"
+	transforms "github.com/konveyor/crane-lib/transform"
 )
 
 func TestGetWhiteOutFilePath(t *testing.T) {
@@ -22,7 +23,7 @@ func TestGetWhiteOutFilePath(t *testing.T) {
 	}
 
 	for _, test := range cases {
-		opts := TransformOpts{
+		opts := transforms.TransformOpts{
 			Dir:         test.Dir,
 			ResourceDir: test.ResourceDir,
 		}
@@ -49,7 +50,7 @@ func TestGetTransformPath(t *testing.T) {
 		},
 	}
 	for _, test := range cases {
-		opts := TransformOpts{
+		opts := transforms.TransformOpts{
 			Dir:         test.Dir,
 			ResourceDir: test.ResourceDir,
 		}
