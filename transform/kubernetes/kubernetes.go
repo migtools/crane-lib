@@ -11,6 +11,32 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
+const (
+	containerImageUpdate     = "/spec/template/spec/containers/%v/image"
+	initContainerImageUpdate = "/spec/template/spec/initContainers/%v/image"
+	annotationInitial        = `%v
+{"op": "add", "path": "/metadata/annotations/%v", "value": "%v"}`
+	annotationNext = `%v,
+{"op": "add", "path": "/metadata/annotations/%v", "value": "%v"}`
+	updateImageString = `[
+{"op": "replace", "path": "%v", "value": "%v"}
+]`
+	podSelectedNode = `[
+{"op": "remove", "path": "/spec/nodeName"}
+]`
+
+	updateNamespaceString = `[
+{"op": "replace", "path": "/namespace", "value": "%v"}
+]`
+
+	updateRoleBindingSVCACCTNamspacestring = `%v
+{"op": "replace", "path": "/subjects/%v/namespace", "value": "%v"}`
+
+	updateClusterIP = `[
+{"op": "remove", "path": "/spec/clusterIP"}
+]`
+)
+
 var endpointGK = schema.GroupKind{
 	Group: "",
 	Kind:  "Endpoints",
@@ -102,7 +128,7 @@ func (k KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Unst
 			for i, container := range template.Spec.Containers {
 				updatedImage, update := updateImageRegistry(k.RegistryReplacement, container.Image)
 				if update {
-					jp, err := updateImage(fmt.Sprintf("/spec/template/spec/containers/%v/image", i), updatedImage)
+					jp, err := updateImage(fmt.Sprintf(containerImageUpdate, i), updatedImage)
 					if err != nil {
 						return nil, err
 					}
@@ -112,7 +138,7 @@ func (k KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Unst
 			for i, container := range template.Spec.InitContainers {
 				updatedImage, update := updateImageRegistry(k.RegistryReplacement, container.Image)
 				if update {
-					jp, err := updateImage(fmt.Sprintf("/spec/template/spec/initContainers/%v/image", i), updatedImage)
+					jp, err := updateImage(fmt.Sprintf(initContainerImageUpdate, i), updatedImage)
 					if err != nil {
 						return nil, err
 					}
@@ -151,11 +177,9 @@ func addAnnotations(addedAnnotations map[string]string) (jsonpatch.Patch, error)
 	i := 0
 	for key, value := range addedAnnotations {
 		if i == 0 {
-			patchJSON = fmt.Sprintf(`%v
-{"op": "add", "path": "/metadata/annotations/%v", "value": "%v"}`, patchJSON, key, value)
+			patchJSON = fmt.Sprintf(annotationInitial, patchJSON, key, value)
 		} else {
-			patchJSON = fmt.Sprintf(`%v,
-{"op": "add", "path": "/metadata/annotations/%v", "value": "%v"}`, patchJSON, key, value)
+			patchJSON = fmt.Sprintf(annotationNext, patchJSON, key, value)
 		}
 		i++
 	}
@@ -170,9 +194,7 @@ func addAnnotations(addedAnnotations map[string]string) (jsonpatch.Patch, error)
 }
 
 func updateImage(containerImagePath, updatedImagePath string) (jsonpatch.Patch, error) {
-	patchJSON := fmt.Sprintf(`[
-{"op": "replace", "path": "%v", "value": "%v"}
-]`, containerImagePath, updatedImagePath)
+	patchJSON := fmt.Sprintf(updateImageString, containerImagePath, updatedImagePath)
 
 	patch, err := jsonpatch.DecodePatch([]byte(patchJSON))
 	if err != nil {
@@ -182,10 +204,7 @@ func updateImage(containerImagePath, updatedImagePath string) (jsonpatch.Patch, 
 }
 
 func removePodSelectedNode() (jsonpatch.Patch, error) {
-	patchJSON := `[
-{"op": "remove", "path": "/spec/nodeName"}
-]`
-	patch, err := jsonpatch.DecodePatch([]byte(patchJSON))
+	patch, err := jsonpatch.DecodePatch([]byte(podSelectedNode))
 	if err != nil {
 		return nil, err
 	}
@@ -193,9 +212,7 @@ func removePodSelectedNode() (jsonpatch.Patch, error) {
 }
 
 func updateNamespace(newNamespace string) (jsonpatch.Patch, error) {
-	patchJSON := fmt.Sprintf(`[
-{"op": "replace", "path": "/namespace", "value": "%v"}
-]`, newNamespace)
+	patchJSON := fmt.Sprintf(updateNamespaceString, newNamespace)
 
 	patch, err := jsonpatch.DecodePatch([]byte(patchJSON))
 	if err != nil {
@@ -210,8 +227,7 @@ func updateRoleBindingSVCACCTNamespace(newNamespace string, numberOfSubjects int
 		if i != 0 {
 			patchJSON = fmt.Sprintf("%v,", patchJSON)
 		}
-		patchJSON = fmt.Sprintf(`%v
-{"op": "replace", "path": "/subjects/%v/namespace", "value": "%v"}`, patchJSON, i, newNamespace)
+		patchJSON = fmt.Sprintf(updateRoleBindingSVCACCTNamspacestring, patchJSON, i, newNamespace)
 	}
 
 	patch, err := jsonpatch.DecodePatch([]byte(patchJSON))
@@ -222,10 +238,7 @@ func updateRoleBindingSVCACCTNamespace(newNamespace string, numberOfSubjects int
 }
 
 func removeServiceClusterIPs() (jsonpatch.Patch, error) {
-	patchJSON := `[
-{"op": "remove", "path": "/spec/clusterIP"}
-]`
-	patch, err := jsonpatch.DecodePatch([]byte(patchJSON))
+	patch, err := jsonpatch.DecodePatch([]byte(updateClusterIP))
 	if err != nil {
 		return nil, err
 	}
