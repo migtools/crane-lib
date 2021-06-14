@@ -7,8 +7,8 @@ import (
 )
 
 type TransformOpts struct {
-	Dir         string
-	ResourceDir string
+	TransformDir string
+	ResourceDir  string
 }
 
 func (opts *TransformOpts) GetWhiteOutFilePath(filePath string) string {
@@ -22,7 +22,7 @@ func (opts *TransformOpts) GetTransformPath(filePath string) string {
 
 func (opts *TransformOpts) updatePath(prefix, filePath string) string {
 	dir, fname := filepath.Split(filePath)
-	dir = strings.Replace(dir, opts.ResourceDir, opts.Dir, 1)
+	dir = strings.Replace(dir, opts.ResourceDir, opts.TransformDir, 1)
 	fname = fmt.Sprintf("%v%v", prefix, fname)
 	return filepath.Join(dir, fname)
 }
