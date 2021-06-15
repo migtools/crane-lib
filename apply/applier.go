@@ -11,7 +11,7 @@ const (
 	newAnnotationsPatch = `[{"op": "add", "path": "/metadata/annotations", "value": {}}]`
 )
 
-// We will need to eventualy have some set of options. These are not cureently defined.
+// We will need to eventualy have some set of options. These are not currently defined.
 type Applier struct {
 }
 
