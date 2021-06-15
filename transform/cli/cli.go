@@ -42,29 +42,29 @@ func ObjectReaderOrDie() io.Reader {
 	return os.Stdin
 }
 
-func StdOut() io.Writer {
+func stdOut() io.Writer {
 	return os.Stdout
 }
 
-func StdErr() io.Writer {
+func stdErr() io.Writer {
 	return os.Stderr
 }
 
 func WriterErrorAndExit(err error) {
-	fmt.Fprintf(StdErr(), err.Error())
+	fmt.Fprintf(stdErr(), err.Error())
 	os.Exit(1)
 }
 
 func RunAndExit(plugin transform.Plugin, u *unstructured.Unstructured) {
 	resp, err := plugin.Run(u)
 	if err != nil {
-		fmt.Fprintf(StdErr(), fmt.Errorf("error when running plugin: %#v", err).Error())
+		fmt.Fprintf(stdErr(), fmt.Errorf("error when running plugin: %#v", err).Error())
 		os.Exit(1)
 	}
 
-	err = json.NewEncoder(StdOut()).Encode(resp)
+	err = json.NewEncoder(stdOut()).Encode(resp)
 	if err != nil {
-		fmt.Fprintf(StdErr(), fmt.Errorf("error writing plugin response to StdOut: %#v", err).Error())
+		fmt.Fprintf(stdErr(), fmt.Errorf("error writing plugin response to stdOut: %#v", err).Error())
 		os.Exit(1)
 	}
 }
