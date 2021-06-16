@@ -14,13 +14,14 @@ jobs:
       uses: actions/checkout@v2
       with:
         path: main
+        ref: ${{ github.event.pull_request.head.sha }}
 
     - name: Build
       env:
         GOPROXY: "https://proxy.golang.org"
-      run: go build ./...
+      run: cd main && go build ./...
 
     - name: Test
       env:
         GOPROXY: "https://proxy.golang.org"
-      run: go test -v ./...
+      run: cd main && go test -v ./...
