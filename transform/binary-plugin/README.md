@@ -54,6 +54,38 @@ object on stdin manually. For example, if the above code is compiled and
          "openshift.io/host.generated": "true"
       },
       "creationTimestamp": "2021-06-10T04:11:21Z",
+      "managedFields": [
+         {
+            "apiVersion": "route.openshift.io/v1",
+            "fieldsType": "FieldsV1",
+            "fieldsV1": {
+               "f:spec": {
+                  "f:path": {},
+                  "f:to": {
+                     "f:kind": {},
+                     "f:name": {},
+                     "f:weight": {}
+                  },
+                  "f:wildcardPolicy": {}
+               }
+            },
+            "manager": "oc",
+            "operation": "Update",
+            "time": "2021-06-10T04:11:21Z"
+         },
+         {
+            "apiVersion": "route.openshift.io/v1",
+            "fieldsType": "FieldsV1",
+            "fieldsV1": {
+               "f:status": {
+                  "f:ingress": {}
+               }
+            },
+            "manager": "openshift-router",
+            "operation": "Update",
+            "time": "2021-06-10T04:11:21Z"
+         }
+      ],
       "name": "mssql-app-route",
       "namespace": "mssql-persistent",
       "resourceVersion": "155816271",
@@ -77,7 +109,8 @@ object on stdin manually. For example, if the above code is compiled and
                {
                   "lastTransitionTime": "2021-06-10T04:11:21Z",
                   "status": "True",
-                  "t }
+                  "type": "Admitted"
+               }
             ],
             "host": "mssql-app-route-mssql-persistent.apps.cluster-alpatel-aux-tools-444.alpatel-aux-tools-444.mg.dog8code.com",
             "routerCanonicalHostname": "apps.cluster-alpatel-aux-tools-444.alpatel-aux-tools-444.mg.dog8code.com",
