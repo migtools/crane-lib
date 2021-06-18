@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,7 +36,14 @@ func Unstructured(reader io.Reader) (*unstructured.Unstructured, error) {
 	decoder := json.NewDecoder(reader)
 	u := &unstructured.Unstructured{}
 	err := decoder.Decode(u)
-	return u, err
+	if err != nil {
+		return nil, &transform.PluginError{
+			Type:    transform.PluginInvalidIOError,
+			Message: "unable to decode valid json from the reader",
+			Err:     err,
+		}
+	}
+	return u, nil
 }
 
 func ObjectReaderOrDie() io.Reader {
@@ -51,20 +59,36 @@ func stdErr() io.Writer {
 }
 
 func WriterErrorAndExit(err error) {
-	fmt.Fprintf(stdErr(), err.Error())
+	fmt.Fprintf(stdOut(), err.Error())
+	// TODO: provide different exit codes using the Is* methods on the errors
 	os.Exit(1)
 }
 
 func RunAndExit(plugin transform.Plugin, u *unstructured.Unstructured) {
 	resp, err := plugin.Run(u)
 	if err != nil {
-		fmt.Fprintf(stdErr(), fmt.Errorf("error when running plugin: %#v", err).Error())
-		os.Exit(1)
+		WriterErrorAndExit(&transform.PluginError{
+			Type:    transform.PluginRunError,
+			Message: "error when running plugin",
+			Err:     err,
+		})
 	}
 
-	err = json.NewEncoder(stdOut()).Encode(resp)
+	respBytes, err := json.Marshal(&resp)
 	if err != nil {
-		fmt.Fprintf(stdErr(), fmt.Errorf("error writing plugin response to stdOut: %#v", err).Error())
-		os.Exit(1)
+		WriterErrorAndExit(&transform.PluginError{
+			Type:    transform.PluginRunError,
+			Message: "invalid json plugin output, unable to marshal in",
+			Err:     err,
+		})
+	}
+
+	_, err = io.Copy(stdOut(), bytes.NewReader(respBytes))
+	if err != nil {
+		WriterErrorAndExit(&transform.PluginError{
+			Type:    transform.PluginInvalidIOError,
+			Message: "error writing plugin response to stdOut",
+			Err:     err,
+		})
 	}
 }
