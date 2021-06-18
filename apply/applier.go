@@ -3,12 +3,8 @@ package apply
 import (
 	"fmt"
 
-	jsonpatch "github.com/evanphx/json-patch"
+	jsonpatch "github.com/evanphx/json-patch/v5"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-)
-
-const (
-	newAnnotationsPatch = `[{"op": "add", "path": "/metadata/annotations", "value": {}}]`
 )
 
 // We will need to eventualy have some set of options. These are not currently defined.
@@ -44,23 +40,8 @@ func (a Applier) Apply(u unstructured.Unstructured, patchFileData []byte) ([]byt
 		return nil, fmt.Errorf("invalid resource file - %v", err)
 	}
 
-	// Handle new Annotations
-	// If there no annotations, we should create an empty annotations struct in the patches.
-	// because they are omitempty.
-	if len(u.GetAnnotations()) == 0 {
-		annotationPatch, err := jsonpatch.DecodePatch([]byte(newAnnotationsPatch))
-		if err != nil {
-			// If we have a bad patch definition then this is a huge bug.
-			return nil, err
-		}
-		doc, err = annotationPatch.Apply(doc)
-		if err != nil {
-			return nil, fmt.Errorf("unable to add empty annotations - %v", err)
-		}
-	}
-
 	// Apply the rest of the patches
-	doc, err = patch.Apply(doc)
+	doc, err = patch.ApplyWithOptions(doc, &jsonpatch.ApplyOptions{EnsurePathExistsOnAdd: true, AllowMissingPathOnRemove: true})
 	if err != nil {
 		return nil, fmt.Errorf("unable to apply patches - %v", err)
 	}

@@ -63,13 +63,13 @@ func (r *Runner) Run(object unstructured.Unstructured, plugins []Plugin) (Runner
 	}
 
 	if havePatches {
-		// TODO: Handle dedup
-		// TODO: Handle conflicts with paths
-		//Dedup the patches
 		patches, ignoredPatches, err := r.removeDuplicates(patches)
 		if err != nil {
 			return response, err
 		}
+
+		// for each patch, we should make sure the patch can be applied
+		// We may need to break the transform file into two parts to handle this correctly
 		if len(patches) != 0 {
 			response.TransformFile, err = json.Marshal(patches)
 			if err != nil {
