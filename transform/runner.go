@@ -63,7 +63,7 @@ func (r *Runner) Run(object unstructured.Unstructured, plugins []Plugin) (Runner
 	}
 
 	if havePatches {
-		patches, ignoredPatches, err := r.removeDuplicates(patches)
+		patches, ignoredPatches, err := r.sanitizePatches(patches)
 		if err != nil {
 			return response, err
 		}
@@ -93,7 +93,10 @@ type operatationKey struct {
 	Path string
 }
 
-func (r *Runner) removeDuplicates(patch jsonpatch.Patch) (jsonpatch.Patch, jsonpatch.Patch, error) {
+// sanitizePatches removes duplicate patch operatations as well as find
+// conflicting operations where path and operation are the same, but different values.
+// TODO: Handle where paths are the same, but operations are different.
+func (r *Runner) sanitizePatches(patch jsonpatch.Patch) (jsonpatch.Patch, jsonpatch.Patch, error) {
 	patchMap := map[operatationKey]jsonpatch.Operation{}
 	ignoredPatches := jsonpatch.Patch{}
 	for _, o := range patch {
