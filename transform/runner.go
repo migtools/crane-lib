@@ -48,7 +48,11 @@ func (r *Runner) Run(object unstructured.Unstructured, plugins []Plugin) (Runner
 			patches = append(patches, resp.Patches...)
 		}
 	}
-	response := RunnerResponse{}
+	response := RunnerResponse{
+		TransformFile:  []byte(`[]`),
+		HaveWhiteOut:   haveWhiteOut,
+		IgnoredPatches: []byte(`[]`),
+	}
 
 	// TODO: in the future we should consider a way to speed this up with go routines.
 	if len(errs) > 0 {
@@ -70,17 +74,13 @@ func (r *Runner) Run(object unstructured.Unstructured, plugins []Plugin) (Runner
 
 		// for each patch, we should make sure the patch can be applied
 		// We may need to break the transform file into two parts to handle this correctly
-		if len(patches) != 0 {
-			response.TransformFile, err = json.Marshal(patches)
-			if err != nil {
-				return response, err
-			}
+		response.TransformFile, err = json.Marshal(patches)
+		if err != nil {
+			return response, err
 		}
-		if len(ignoredPatches) != 0 {
-			response.IgnoredPatches, err = json.Marshal(ignoredPatches)
-			if err != nil {
-				return response, err
-			}
+		response.IgnoredPatches, err = json.Marshal(ignoredPatches)
+		if err != nil {
+			return response, err
 		}
 
 		return response, err
@@ -119,7 +119,8 @@ func (r *Runner) sanitizePatches(patch jsonpatch.Patch) (jsonpatch.Patch, jsonpa
 				return nil, nil, err
 			}
 			r.Log.Debugf("Same operation: %v on path: %v with different values selected value: %v value that will be ignored: %v", key.Kind, key.Path, selectedVal, val)
-			ignoredPatches = append(ignoredPatches, operation)
+			ignoredPatches = append(ignoredPatches, o)
+			continue
 		}
 		patchMap[key] = o
 	}

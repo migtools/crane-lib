@@ -43,6 +43,7 @@ func TestRunnerRun(t *testing.T) {
 					}, nil
 				}),
 			},
+			PatchesString: `[]`,
 		},
 		{
 			Name:   "RunWithOneWhiteoutPlugin",
@@ -186,8 +187,8 @@ func TestRunnerRun(t *testing.T) {
 					}, nil
 				}),
 			},
-			PatchesString:        `[{"op": "add", "path": "/spec/testing", "value": "test1"}]`,
-			IgnoredPatchesString: `[{"op": "add", "path": "/spec/testing", "value": "test"}]`,
+			PatchesString:        `[{"op": "add", "path": "/spec/testing", "value": "test"}]`,
+			IgnoredPatchesString: `[{"op": "add", "path": "/spec/testing", "value": "test1"}]`,
 		},
 	}
 
@@ -204,13 +205,15 @@ func TestRunnerRun(t *testing.T) {
 				t.Errorf("incorrect white out determination, actual: %v expected: %v", response.HaveWhiteOut, c.IsWhiteOut)
 			}
 
-			if len(c.PatchesString) != 0 || len(response.TransformFile) != 0 {
+			// Two Bytes tells us that it is an empty list
+			if len(c.PatchesString) != 0 || len(response.TransformFile) > 2 {
 				p, err := jsonpatch.DecodePatch([]byte(c.PatchesString))
 				if err != nil {
 					t.Error(err)
 				}
 				p2, err := jsonpatch.DecodePatch(response.TransformFile)
 				if err != nil {
+					fmt.Printf("\n\n%v", string(response.TransformFile))
 					t.Error(err)
 				}
 
@@ -218,11 +221,10 @@ func TestRunnerRun(t *testing.T) {
 					t.Errorf("incorrect jsonpathc, actual: %v expected: %v\nerror: %v", string(response.TransformFile), c.PatchesString, err)
 				}
 			}
-			if len(c.IgnoredPatchesString) != 0 || len(response.IgnoredPatches) != 0 {
+			// Two Bytes tells us that it is an empty list
+			if len(c.IgnoredPatchesString) != 0 || len(response.IgnoredPatches) > 2 {
 				p, err := jsonpatch.DecodePatch([]byte(c.IgnoredPatchesString))
 				if err != nil {
-					fmt.Printf("%d --- %d", len(c.IgnoredPatchesString), len(response.IgnoredPatches))
-					fmt.Printf("%v", string(response.IgnoredPatches))
 					t.Error(err)
 				}
 				p2, err := jsonpatch.DecodePatch(response.IgnoredPatches)
