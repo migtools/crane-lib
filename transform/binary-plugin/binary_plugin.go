@@ -17,7 +17,7 @@ type BinaryPlugin struct {
 }
 
 func NewBinaryPlugin(path string) transform.Plugin {
-	return &BinaryPlugin{commandRunner: &binaryRunner{path: path}, log: logrus.New().WithField("path", path)}
+	return &BinaryPlugin{commandRunner: &binaryRunner{pluginPath: path}, log: logrus.New().WithField("pluginPath", path)}
 }
 
 func (b *BinaryPlugin) Run(u *unstructured.Unstructured) (transform.PluginResponse, error) {
@@ -48,7 +48,7 @@ type commandRunner interface {
 }
 
 type binaryRunner struct {
-	path string
+	pluginPath string
 }
 
 func (b *binaryRunner) Run(u *unstructured.Unstructured, log logrus.FieldLogger) ([]byte, []byte, error) {
@@ -58,7 +58,7 @@ func (b *binaryRunner) Run(u *unstructured.Unstructured, log logrus.FieldLogger)
 		return nil, nil, fmt.Errorf("unable to marshal unstructured Object: %s, err: %v", u, err)
 	}
 
-	command := exec.Command(b.path)
+	command := exec.Command(b.pluginPath)
 
 	// set var to get the output
 	var out bytes.Buffer
