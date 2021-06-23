@@ -1,4 +1,4 @@
-package transform
+package errors
 
 import "encoding/json"
 
@@ -9,9 +9,9 @@ const (
 )
 
 type PluginError struct {
-	Type    string `json:"type"`
-	Message string `json:"message"`
-	Err     error  `json:"error"`
+	Type         string `json:"type"`
+	Message      string `json:"message"`
+	ErrorMessage string `json:"error"`
 }
 
 func (p *PluginError) Error() string {

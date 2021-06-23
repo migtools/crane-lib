@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/konveyor/crane-lib/transform"
-
+	"github.com/konveyor/crane-lib/transform/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -37,10 +37,10 @@ func Unstructured(reader io.Reader) (*unstructured.Unstructured, error) {
 	u := &unstructured.Unstructured{}
 	err := decoder.Decode(u)
 	if err != nil {
-		return nil, &transform.PluginError{
-			Type:    transform.PluginInvalidIOError,
-			Message: "unable to decode valid json from the reader",
-			Err:     err,
+		return nil, &errors.PluginError{
+			Type:         errors.PluginInvalidIOError,
+			Message:      "unable to decode valid json from the reader",
+			ErrorMessage: err.Error(),
 		}
 	}
 	return u, nil
@@ -67,28 +67,28 @@ func WriterErrorAndExit(err error) {
 func RunAndExit(plugin transform.Plugin, u *unstructured.Unstructured) {
 	resp, err := plugin.Run(u)
 	if err != nil {
-		WriterErrorAndExit(&transform.PluginError{
-			Type:    transform.PluginRunError,
-			Message: "error when running plugin",
-			Err:     err,
+		WriterErrorAndExit(&errors.PluginError{
+			Type:         errors.PluginRunError,
+			Message:      "error when running plugin",
+			ErrorMessage: err.Error(),
 		})
 	}
 
 	respBytes, err := json.Marshal(&resp)
 	if err != nil {
-		WriterErrorAndExit(&transform.PluginError{
-			Type:    transform.PluginRunError,
-			Message: "invalid json plugin output, unable to marshal in",
-			Err:     err,
+		WriterErrorAndExit(&errors.PluginError{
+			Type:         errors.PluginRunError,
+			Message:      "invalid json plugin output, unable to marshal in",
+			ErrorMessage: err.Error(),
 		})
 	}
 
 	_, err = io.Copy(stdOut(), bytes.NewReader(respBytes))
 	if err != nil {
-		WriterErrorAndExit(&transform.PluginError{
-			Type:    transform.PluginInvalidIOError,
-			Message: "error writing plugin response to stdOut",
-			Err:     err,
+		WriterErrorAndExit(&errors.PluginError{
+			Type:         errors.PluginInvalidIOError,
+			Message:      "error writing plugin response to stdOut",
+			ErrorMessage: err.Error(),
 		})
 	}
 }
