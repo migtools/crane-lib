@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strings"
 
 	"github.com/konveyor/crane-lib/transform"
 	"github.com/sirupsen/logrus"
@@ -22,6 +23,7 @@ func NewBinaryPlugin(path string) transform.Plugin {
 
 func (b *BinaryPlugin) Run(u *unstructured.Unstructured) (transform.PluginResponse, error) {
 	p := transform.PluginResponse{}
+	logs := []string{}
 
 	out, errBytes, err := b.commandRunner.Run(u, b.log)
 	if err != nil {
@@ -30,8 +32,10 @@ func (b *BinaryPlugin) Run(u *unstructured.Unstructured) (transform.PluginRespon
 	}
 
 	if len(errBytes) != 0 {
-		b.log.Errorf("error from plugin binary")
-		return p, fmt.Errorf("error from plugin binary: %s", string(errBytes))
+		logs = strings.Split(string(errBytes), "\n")
+		for _, line := range logs {
+			b.log.Info("Plugin Log line: ", line)
+		}
 	}
 
 	err = json.Unmarshal(out, &p)

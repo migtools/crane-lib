@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"io"
 	"os"
 
@@ -62,6 +63,10 @@ func WriterErrorAndExit(err error) {
 	fmt.Fprintf(stdOut(), err.Error())
 	// TODO: provide different exit codes using the Is* methods on the errors
 	os.Exit(1)
+}
+
+func Logger() logrus.FieldLogger {
+	return &logrus.Logger{}
 }
 
 func RunAndExit(plugin transform.Plugin, u *unstructured.Unstructured) {
