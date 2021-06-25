@@ -25,7 +25,12 @@ const (
 `
 )
 
-func (s *StunnelTransport) createTransportClientResources(c client.Client, t Transfer) error {
+func (s *StunnelTransport) CreateClient(c client.Client, t Transfer) error {
+	err := createStunnelClientResources(c, s, t)
+	return err
+}
+
+func createStunnelClientResources(c client.Client, s *StunnelTransport, t Transfer) error {
 	s.SetPort(stunnelPort)
 	pvc := t.PVC()
 

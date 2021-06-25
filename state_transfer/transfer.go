@@ -28,10 +28,8 @@ type Transfer interface {
 	Password() string
 	SetPort(int32)
 	Port() int32
-	createTransferServer(client.Client) error
-	createTransferServerResources(client.Client) error
-	createTransferClient(client.Client) error
-	createTransferClientResources(client.Client) error
+	CreateServer(client.Client) error
+	CreateClient(client.Client) error
 }
 
 func CreateServer(t Transfer) error {
@@ -50,27 +48,10 @@ func CreateServer(t Transfer) error {
 		return err
 	}
 
-	err = t.createTransferServerResources(c)
+	err = t.CreateServer(c)
 	if err != nil {
 		return err
 	}
-
-	transport, err := CreateTransportServer(t.Transport(), c, t)
-	if err != nil {
-		return err
-	}
-	t.SetTransport(transport)
-
-	err = t.createTransferServer(c)
-	if err != nil {
-		return err
-	}
-
-	endpoint, err := CreateEndpoint(t.Endpoint(), c, t)
-	if err != nil {
-		return err
-	}
-	t.SetEndpoint(endpoint)
 
 	return nil
 }
@@ -85,19 +66,7 @@ func CreateClient(t Transfer) error {
 		return err
 	}
 
-	err = t.createTransferClientResources(c)
-	if err != nil {
-		return err
-	}
-
-	transport, err := CreateTransportClient(t.Transport(), c, t)
-	if err != nil {
-		return err
-	}
-
-	t.SetTransport(transport)
-
-	err = t.createTransferClient(c)
+	err = t.CreateClient(c)
 	if err != nil {
 		return err
 	}

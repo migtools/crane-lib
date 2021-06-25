@@ -11,12 +11,32 @@ import (
 
 const ()
 
-func (r *RsyncTransfer) createTransferClientResources(c client.Client) error {
+func (r *RsyncTransfer) CreateClient(c client.Client) error {
+	err := createRsyncClientResources(c, r)
+	if err != nil {
+		return err
+	}
+
+	transport, err := CreateTransportClient(r.Transport(), c, r)
+	if err != nil {
+		return err
+	}
+	r.SetTransport(transport)
+
+	err = createRsyncClient(c, r)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func createRsyncClientResources(c client.Client, r *RsyncTransfer) error {
 	// no resource are created for rsync client side
 	return nil
 }
 
-func (r *RsyncTransfer) createTransferClient(c client.Client) error {
+func createRsyncClient(c client.Client, r *RsyncTransfer) error {
 	podLabels := labels
 	podLabels["pvc"] = r.PVC().Name
 	containers := []v1.Container{

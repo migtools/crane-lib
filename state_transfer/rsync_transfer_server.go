@@ -34,7 +34,33 @@ max verbosity = 4
 `
 )
 
-func (r *RsyncTransfer) createTransferServerResources(c client.Client) error {
+func (r *RsyncTransfer) CreateServer(c client.Client) error {
+	err := createRsyncServerResources(c, r)
+	if err != nil {
+		return err
+	}
+
+	transport, err := CreateTransportServer(r.Transport(), c, r)
+	if err != nil {
+		return err
+	}
+	r.SetTransport(transport)
+
+	err = createRsyncServer(c, r)
+	if err != nil {
+		return err
+	}
+
+	endpoint, err := CreateEndpoint(r.Endpoint(), c, r)
+	if err != nil {
+		return err
+	}
+	r.SetEndpoint(endpoint)
+
+	return nil
+}
+
+func createRsyncServerResources(c client.Client, r *RsyncTransfer) error {
 	r.SetPort(rsyncPort)
 	r.SetUsername(rsyncUser)
 
@@ -99,7 +125,7 @@ func createRsyncServerSecret(c client.Client, r *RsyncTransfer) error {
 	return c.Create(context.TODO(), rsyncSecret, &client.CreateOptions{})
 }
 
-func (r *RsyncTransfer) createTransferServer(c client.Client) error {
+func createRsyncServer(c client.Client, r *RsyncTransfer) error {
 	deploymentLabels := labels
 	deploymentLabels["pvc"] = r.PVC().Name
 	containers := []v1.Container{

@@ -18,7 +18,27 @@ url = http://{{ .username }}:{{ .password }}@{{ .hostname }}:{{ .port }}
 `
 )
 
-func (r *RcloneTransfer) createTransferClientResources(c client.Client) error {
+func (r *RcloneTransfer) CreateClient(c client.Client) error {
+	err := createRcloneClientResources(c, r)
+	if err != nil {
+		return err
+	}
+
+	transport, err := CreateTransportClient(r.Transport(), c, r)
+	if err != nil {
+		return err
+	}
+	r.SetTransport(transport)
+
+	err = createRcloneClient(c, r)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func createRcloneClientResources(c client.Client, r *RcloneTransfer) error {
 	err := createRcloneClientConfig(c, r)
 	if err != nil {
 		return err
@@ -60,7 +80,7 @@ func createRcloneClientConfig(c client.Client, r *RcloneTransfer) error {
 	return c.Create(context.TODO(), rcloneConfigMap, &client.CreateOptions{})
 }
 
-func (r *RcloneTransfer) createTransferClient(c client.Client) error {
+func createRcloneClient(c client.Client, r *RcloneTransfer) error {
 	podLabels := labels
 	podLabels["pvc"] = r.PVC().Name
 	containers := []v1.Container{

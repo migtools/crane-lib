@@ -27,7 +27,12 @@ TIMEOUTclose = 0
 `
 )
 
-func (s *StunnelTransport) createTransportServerResources(c client.Client, t Transfer) error {
+func (s *StunnelTransport) CreateServer(c client.Client, t Transfer) error {
+	err := createStunnelServerResources(c, s, t)
+	return err
+}
+
+func createStunnelServerResources(c client.Client, s *StunnelTransport, t Transfer) error {
 	s.SetPort(stunnelPort)
 	pvc := t.PVC()
 

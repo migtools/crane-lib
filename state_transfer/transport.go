@@ -32,12 +32,12 @@ type Transport interface {
 	SetServerVolumes([]v1.Volume)
 	ServerVolumes() []v1.Volume
 	Direct() bool
-	createTransportServerResources(client.Client, Transfer) error
-	createTransportClientResources(client.Client, Transfer) error
+	CreateServer(client.Client, Transfer) error
+	CreateClient(client.Client, Transfer) error
 }
 
 func CreateTransportServer(t Transport, c client.Client, transfer Transfer) (Transport, error) {
-	err := t.createTransportServerResources(c, transfer)
+	err := t.CreateServer(c, transfer)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func CreateTransportServer(t Transport, c client.Client, transfer Transfer) (Tra
 }
 
 func CreateTransportClient(t Transport, c client.Client, transfer Transfer) (Transport, error) {
-	err := t.createTransportClientResources(c, transfer)
+	err := t.CreateClient(c, transfer)
 	if err != nil {
 		return nil, err
 	}

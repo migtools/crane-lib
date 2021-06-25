@@ -18,7 +18,33 @@ type = local
 `
 )
 
-func (r *RcloneTransfer) createTransferServerResources(c client.Client) error {
+func (r *RcloneTransfer) CreateServer(c client.Client) error {
+	err := createRcloneServerResources(c, r)
+	if err != nil {
+		return err
+	}
+
+	transport, err := CreateTransportServer(r.Transport(), c, r)
+	if err != nil {
+		return err
+	}
+	r.SetTransport(transport)
+
+	err = createRcloneServer(c, r)
+	if err != nil {
+		return err
+	}
+
+	endpoint, err := CreateEndpoint(r.Endpoint(), c, r)
+	if err != nil {
+		return err
+	}
+	r.SetEndpoint(endpoint)
+
+	return nil
+}
+
+func createRcloneServerResources(c client.Client, r *RcloneTransfer) error {
 	var letters = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 	random.Seed(time.Now().UnixNano())
 	password := make([]byte, 24)
@@ -53,7 +79,7 @@ func createRcloneServerConfig(c client.Client, r *RcloneTransfer) error {
 	return c.Create(context.TODO(), rcloneConfigMap, &client.CreateOptions{})
 }
 
-func (r *RcloneTransfer) createTransferServer(c client.Client) error {
+func createRcloneServer(c client.Client, r *RcloneTransfer) error {
 	deploymentLabels := labels
 	deploymentLabels["pvc"] = r.PVC().Name
 	containers := []v1.Container{
