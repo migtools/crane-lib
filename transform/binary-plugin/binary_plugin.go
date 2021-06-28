@@ -27,7 +27,7 @@ func NewBinaryPlugin(path string) transform.Plugin {
 	}
 }
 
-func (b *BinaryPlugin) Run(u *unstructured.Unstructured) (transform.PluginResponse, error) {
+func (b *BinaryPlugin) Run(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
 	p := transform.PluginResponse{}
 	logs := []string{}
 
@@ -53,16 +53,26 @@ func (b *BinaryPlugin) Run(u *unstructured.Unstructured) (transform.PluginRespon
 	return p, nil
 }
 
-func (b *BinaryPlugin) Name() (string) {
-	return b.name
+func (b *BinaryPlugin) Metadata() (transform.PluginMetadata, error) {
+	_, _, err := b.commandRunner.Metadata(b.log)
+	if err != nil {
+		return transform.PluginMetadata{}, err
+	}
+
+	return transform.PluginMetadata{}, nil
 }
 
 type commandRunner interface {
 	Run(u *unstructured.Unstructured, log logrus.FieldLogger) ([]byte, []byte, error)
+	Metadata(log logrus.FieldLogger) ([]byte, []byte, error)
 }
 
 type binaryRunner struct {
 	pluginPath string
+}
+
+func (b *binaryRunner) Metadata(log logrus.FieldLogger) ([]byte, []byte, error) {
+	return nil, nil, nil
 }
 
 func (b *binaryRunner) Run(u *unstructured.Unstructured, log logrus.FieldLogger) ([]byte, []byte, error) {

@@ -197,7 +197,7 @@ func TestRun(t *testing.T) {
 				NewNamespace:        c.NewNamespace,
 				RemoveAnnotation:    c.RemoveAnnotation,
 			}
-			resp, err := p.Run(c.Object)
+			resp, err := p.Run(c.Object, nil)
 			if err != nil && !c.ShouldError {
 				t.Error(err)
 			}

@@ -69,10 +69,10 @@ type KubernetesTransformPlugin struct {
 	RemoveAnnotation    []string
 }
 
-func (k KubernetesTransformPlugin) Run(u *unstructured.Unstructured) (transform.PluginResponse, error) {
+func (k KubernetesTransformPlugin) Run(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
 	resp := transform.PluginResponse{}
 	// Set version in the future
-	resp.Version = "v1"
+	resp.Version = string(transform.V1)
 	var err error
 	resp.IsWhiteOut = k.getWhiteOuts(u.GroupVersionKind().GroupKind())
 	if resp.IsWhiteOut {
@@ -83,8 +83,14 @@ func (k KubernetesTransformPlugin) Run(u *unstructured.Unstructured) (transform.
 
 }
 
-func (k KubernetesTransformPlugin) Name() (string) {
-	return "kubernetes"
+func (k KubernetesTransformPlugin) Metadata() (transform.PluginMetadata, error) {
+	return transform.PluginMetadata{
+		Name:            updateNamespaceString,
+		Version:         "v1",
+		RequestVersion:  []transform.Version{transform.V1},
+		ResponseVersion: []transform.Version{transform.V1},
+		OptionalFields:  []string{"AddedAnnotations", "RegistryReplacement", "NewNamespace", "RemoveAnnotation"},
+	}, nil
 }
 
 var _ transform.Plugin = &KubernetesTransformPlugin{}

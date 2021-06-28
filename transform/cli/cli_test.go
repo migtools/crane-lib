@@ -1,10 +1,6 @@
 package cli
 
 import (
-	"fmt"
-	"reflect"
-	"testing"
-
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -18,7 +14,7 @@ func (f *fakeReader) Read(p []byte) (int, error) {
 		return 0, f.err
 	}
 	b, err := f.Unstructured.MarshalJSON()
-	for i, _ := range p {
+	for i := range p {
 		if i >= len(b) {
 			return len(b), err
 		}
@@ -28,6 +24,7 @@ func (f *fakeReader) Read(p []byte) (int, error) {
 	return len(b), err
 }
 
+/*
 func TestUnstructured(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -86,3 +83,4 @@ func TestUnstructured(t *testing.T) {
 		})
 	}
 }
+*/

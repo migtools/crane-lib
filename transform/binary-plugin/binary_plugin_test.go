@@ -19,6 +19,11 @@ func (f *fakeCommandRunner) Run(_ *unstructured.Unstructured, _ logrus.FieldLogg
 	return f.stdout, f.stderr, f.errorRunningCommand
 }
 
+func (f *fakeCommandRunner) Metadata(_ logrus.FieldLogger) ([]byte, []byte, error) {
+	return nil, nil, nil
+
+}
+
 func TestBinaryPlugin_Run(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -74,7 +79,7 @@ func TestBinaryPlugin_Run(t *testing.T) {
 				},
 				log: logrus.New().WithField("test", tt.name),
 			}
-			got, err := b.Run(&unstructured.Unstructured{})
+			got, err := b.Run(&unstructured.Unstructured{}, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Run() error = %v, wantErr %v", err, tt.wantErr)
 				return

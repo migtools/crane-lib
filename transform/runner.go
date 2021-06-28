@@ -15,7 +15,7 @@ type Runner struct {
 	// This also needs to handle the options that it will need.
 	// TODO: Figure out options that the runner will need and implement here.
 	PluginPriorities map[string]int
-	Log *logrus.Logger
+	Log              *logrus.Logger
 }
 
 // RunnerResponse will be responsble for
@@ -66,7 +66,7 @@ func (r *Runner) Run(object unstructured.Unstructured, plugins []Plugin) (Runner
 		// We want to keep the original while we run each plugin.
 		c := object.DeepCopy()
 		// TODO: Handle Version things here
-		resp, err := plugin.Run(c)
+		resp, err := plugin.Run(c, nil)
 		if err != nil {
 			//TODO: add debug level logging here
 			errs = append(errs, err)
@@ -77,7 +77,7 @@ func (r *Runner) Run(object unstructured.Unstructured, plugins []Plugin) (Runner
 		}
 		if len(resp.Patches) > 0 {
 			havePatches = true
-			patches = append(patches, PluginOperationsFromPatch(plugin.Name(), resp.Patches)...)
+			patches = append(patches, PluginOperationsFromPatch(plugin.Metadata().Name, resp.Patches)...)
 		}
 	}
 	response := RunnerResponse{
