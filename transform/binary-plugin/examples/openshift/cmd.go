@@ -14,14 +14,14 @@ func main() {
 	// TODO: add plumbing for passing flags in the cli-library
 	u, err := cli.Unstructured(cli.ObjectReaderOrDie())
 	if err != nil {
-		cli.WriterErrorAndExit(fmt.Errorf("error getting unstructured object: %#v", err))
+		cli.WriterErrorAndExit(fmt.Errorf("error getting unstructured object: %s", err))
 	}
 
 	cli.RunAndExit(cli.NewCustomPlugin("OpenshiftCustomPlugin", Run), u)
 }
 
 func Run(u *unstructured.Unstructured) (transform.PluginResponse, error) {
-	// plugin writers need to write custome code here.
+	// plugin writers need to write custom code here.
 	var patch jsonpatch.Patch
 	var err error
 	switch u.GetKind() {

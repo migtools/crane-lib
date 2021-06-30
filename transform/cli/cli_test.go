@@ -80,7 +80,7 @@ func TestUnstructured(t *testing.T) {
 				t.Errorf("Unstructured() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !reflect.DeepEqual(*got, tt.want) {
+			if !tt.wantErr && !reflect.DeepEqual(*got, tt.want) {
 				t.Errorf("Unstructured() got = %v, want %v", got, tt.want)
 			}
 		})
