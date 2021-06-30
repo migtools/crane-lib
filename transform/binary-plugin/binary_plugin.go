@@ -44,6 +44,7 @@ func NewBinaryPlugin(path string) (transform.Plugin, error) {
 		return nil, fmt.Errorf("unable to decode json sent by the plugin: %s, err: %v", string(out), err)
 	}
 
+	// TODO: Validate Versions contain the versions that this wrapper can use.
 	return &BinaryPlugin{commandRunner: commandRunner, pluginMetadata: metadata, log: log}, nil
 >>>>>>> 8c4d27e (Addressing feedback and more implementation for running the METADATA call when creating a plugin)
 }
@@ -86,6 +87,11 @@ type commandRunner interface {
 type binaryRunner struct {
 	pluginPath string
 }
+
+// Type to use for
+type execContext = func(name string, arg ...string) *exec.Cmd
+
+var cliContext execContext
 
 func (b *binaryRunner) Metadata(log logrus.FieldLogger) ([]byte, []byte, error) {
 	command := exec.Command(b.pluginPath)
