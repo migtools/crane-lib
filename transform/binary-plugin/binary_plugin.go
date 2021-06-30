@@ -89,12 +89,19 @@ type binaryRunner struct {
 }
 
 // Type to use for
-type execContext = func(name string, arg ...string) *exec.Cmd
+type execContext func(name string, arg ...string) *exec.Cmd
+
+func (e execContext) getCommand(name string, arg ...string) *exec.Cmd {
+	if e != nil {
+		return e(name, arg...)
+	}
+	return exec.Command(name, arg...)
+}
 
 var cliContext execContext
 
 func (b *binaryRunner) Metadata(log logrus.FieldLogger) ([]byte, []byte, error) {
-	command := exec.Command(b.pluginPath)
+	command := cliContext.getCommand(b.pluginPath)
 
 	// set var to get the output
 	var out bytes.Buffer
@@ -121,7 +128,7 @@ func (b *binaryRunner) Run(u *unstructured.Unstructured, log logrus.FieldLogger)
 		return nil, nil, fmt.Errorf("unable to marshal unstructured Object: %s, err: %v", u, err)
 	}
 
-	command := exec.Command(b.pluginPath)
+	command := cliContext.getCommand(b.pluginPath)
 
 	// set var to get the output
 	var out bytes.Buffer
