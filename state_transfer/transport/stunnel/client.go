@@ -23,8 +23,23 @@ const (
  [rsync]
  accept = {{ .stunnelPort }}
  cert = /etc/stunnel/certs/tls.crt
- connect = {{ .hostname }}:{{ .port }}
  key = /etc/stunnel/certs/tls.key
+{{ if not (eq .ProxyHost "") }}
+ protocol = connect
+ connect = {{ .ProxyHost }}
+ protocolHost = {{ .RsyncRoute }}:443
+{{ if not (eq .ProxyUsername "") }}
+ protocolUsername = {{ .ProxyUsername }}
+{{ end }}
+{{ if not (eq .ProxyPassword "") }}
+ protocolPassword = {{ .ProxyPassword }}
+{{ end }}
+{{ else }}
+ connect = {{ .hostname }}:{{ .port }}
+{{ end }}
+{{ if .VerifyCA }}
+ verify = {{ .VerifyCALevel }}
+{{ end }}
 `
 )
 
