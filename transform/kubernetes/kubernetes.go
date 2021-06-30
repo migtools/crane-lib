@@ -83,14 +83,14 @@ func (k KubernetesTransformPlugin) Run(u *unstructured.Unstructured, extras map[
 
 }
 
-func (k KubernetesTransformPlugin) Metadata() (transform.PluginMetadata, error) {
+func (k KubernetesTransformPlugin) Metadata() transform.PluginMetadata {
 	return transform.PluginMetadata{
 		Name:            updateNamespaceString,
 		Version:         "v1",
 		RequestVersion:  []transform.Version{transform.V1},
 		ResponseVersion: []transform.Version{transform.V1},
 		OptionalFields:  []string{"AddedAnnotations", "RegistryReplacement", "NewNamespace", "RemoveAnnotation"},
-	}, nil
+	}
 }
 
 var _ transform.Plugin = &KubernetesTransformPlugin{}

@@ -21,8 +21,8 @@ func (fp fakePlugin) Run(u *unstructured.Unstructured, test map[string]string) (
 	return fp.Func(u)
 }
 
-func (fp fakePlugin) Metadata() (PluginMetadata, error) {
-	return PluginMetadata{Name: fp.name}, nil
+func (fp fakePlugin) Metadata() PluginMetadata {
+	return PluginMetadata{Name: fp.name}
 }
 
 func TestRunnerRun(t *testing.T) {

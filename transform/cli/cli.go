@@ -27,8 +27,8 @@ func (c *CustomPlugin) Run(u *unstructured.Unstructured, extras map[string]strin
 	return c.runFunc(u)
 }
 
-func (c *CustomPlugin) Metadata() (transform.PluginMetadata, error) {
-	return c.metadata, nil
+func (c *CustomPlugin) Metadata() transform.PluginMetadata {
+	return c.metadata
 }
 
 func NewCustomPlugin(name, version string, optionalFields []string, runFunc func(*unstructured.Unstructured) (transform.PluginResponse, error)) transform.Plugin {
@@ -58,8 +58,7 @@ func stdErr() io.Writer {
 
 // Will write the error the standard error and will exit with 1
 func WriterErrorAndExit(err error) {
-	fmt.Fprintf(stdOut(), err.Error())
-	// TODO: provide different exit codes using the Is* methods on the errors
+	fmt.Fprint(stdErr(), err.Error())
 	os.Exit(1)
 }
 
@@ -76,13 +75,10 @@ func RunAndExit(plugin transform.Plugin) {
 		WriterErrorAndExit(fmt.Errorf("error getting unstructured object: %#v", err))
 	}
 	// Determine if Metadata Call
-	if s == transform.MetadataStdIn {
-		r, err := plugin.Metadata()
-		err = json.NewEncoder(stdOut()).Encode(r)
+	if s == transform.MetadataString {
+		err = json.NewEncoder(stdOut()).Encode(plugin.Metadata())
 		if err != nil {
-			fmt.Fprintf(stdErr(), fmt.Errorf("error writing plugin response to stdOut: %#v", err).Error())
-			os.Exit(1)
-
+			WriterErrorAndExit(fmt.Errorf("error writing plugin response to stdOut: %#v", err))
 		}
 		return
 	}
@@ -96,6 +92,7 @@ func RunAndExit(plugin transform.Plugin) {
 
 	resp, err := plugin.Run(&u, nil)
 	if err != nil {
+<<<<<<< HEAD
 		WriterErrorAndExit(&errors.PluginError{
 			Type:         errors.PluginRunError,
 			Message:      "error when running plugin",
@@ -110,14 +107,23 @@ func RunAndExit(plugin transform.Plugin) {
 			Message:      "invalid json plugin output, unable to marshal in",
 			ErrorMessage: err.Error(),
 		})
+=======
+		fmt.Fprint(stdErr(), fmt.Errorf("error when running plugin: %#v", err).Error())
+		os.Exit(1)
+>>>>>>> eaa23c9 (Addressing feedback and more implementation for running the METADATA call when creating a plugin)
 	}
 
 	_, err = io.Copy(stdOut(), bytes.NewReader(respBytes))
 	if err != nil {
+<<<<<<< HEAD
 		WriterErrorAndExit(&errors.PluginError{
 			Type:         errors.PluginInvalidIOError,
 			Message:      "error writing plugin response to stdOut",
 			ErrorMessage: err.Error(),
 		})
+=======
+		fmt.Fprint(stdErr(), fmt.Errorf("error writing plugin response to stdOut: %#v", err).Error())
+		os.Exit(1)
+>>>>>>> eaa23c9 (Addressing feedback and more implementation for running the METADATA call when creating a plugin)
 	}
 }

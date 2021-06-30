@@ -15,16 +15,37 @@ import (
 
 type BinaryPlugin struct {
 	commandRunner
-	name string
-	log  logrus.FieldLogger
+	pluginMetadata transform.PluginMetadata
+	log            logrus.FieldLogger
 }
 
-func NewBinaryPlugin(path string) transform.Plugin {
-	return &BinaryPlugin{
-		commandRunner: &binaryRunner{pluginPath: path},
-		name:          filepath.Base(path),
-		log:           logrus.New().WithField("pluginPath", path),
+// NewBinaryPlugin -
+func NewBinaryPlugin(path string) (transform.Plugin, error) {
+
+	commandRunner := &binaryRunner{pluginPath: path}
+	log := logrus.New().WithField("pluginPath", path)
+
+	out, errBytes, err := commandRunner.Metadata(log)
+	// TODO: Create specific error for command not being run.
+	if err != nil {
+		log.Errorf("error running the plugin metadata command")
+		return nil, fmt.Errorf("error running the plugin metadata command: %v", err)
 	}
+
+	if len(errBytes) != 0 {
+		log.Errorf("error from plugin binary")
+		return nil, fmt.Errorf("error from plugin binary: %s", string(errBytes))
+	}
+
+	metadata := transform.PluginMetadata{}
+	err = json.Unmarshal(out, &metadata)
+	if err != nil {
+		log.Errorf("unable to decode json sent by the plugin")
+		return nil, fmt.Errorf("unable to decode json sent by the plugin: %s, err: %v", string(out), err)
+	}
+
+	return &BinaryPlugin{commandRunner: commandRunner, pluginMetadata: metadata, log: log}, nil
+>>>>>>> 8c4d27e (Addressing feedback and more implementation for running the METADATA call when creating a plugin)
 }
 
 func (b *BinaryPlugin) Run(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
@@ -53,13 +74,8 @@ func (b *BinaryPlugin) Run(u *unstructured.Unstructured, extras map[string]strin
 	return p, nil
 }
 
-func (b *BinaryPlugin) Metadata() (transform.PluginMetadata, error) {
-	_, _, err := b.commandRunner.Metadata(b.log)
-	if err != nil {
-		return transform.PluginMetadata{}, err
-	}
-
-	return transform.PluginMetadata{}, nil
+func (b *BinaryPlugin) Metadata() transform.PluginMetadata {
+	return b.pluginMetadata
 }
 
 type commandRunner interface {
@@ -72,7 +88,24 @@ type binaryRunner struct {
 }
 
 func (b *binaryRunner) Metadata(log logrus.FieldLogger) ([]byte, []byte, error) {
-	return nil, nil, nil
+	command := exec.Command(b.pluginPath)
+
+	// set var to get the output
+	var out bytes.Buffer
+	var errorBytes bytes.Buffer
+
+	// set the output to our variable
+	command.Stdout = &out
+	command.Stdin = bytes.NewBufferString(transform.MetadataString)
+	command.Stderr = &errorBytes
+	err := command.Run()
+	if err != nil {
+		log.Errorf("unable to run the plugin binary")
+		return nil, nil, fmt.Errorf("unable to run the plugin binary, err: %v", err)
+	}
+
+	return out.Bytes(), errorBytes.Bytes(), nil
+
 }
 
 func (b *binaryRunner) Run(u *unstructured.Unstructured, log logrus.FieldLogger) ([]byte, []byte, error) {

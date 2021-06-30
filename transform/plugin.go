@@ -11,7 +11,7 @@ type PluginRun interface {
 }
 
 type Metadata interface {
-	Metadata() (PluginMetadata, error)
+	Metadata() PluginMetadata
 }
 
 type Plugin interface {
@@ -26,11 +26,11 @@ type PluginResponse struct {
 }
 
 type PluginMetadata struct {
-	Name            string
-	Version         string
-	RequestVersion  []Version
-	ResponseVersion []Version
-	OptionalFields  []string
+	Name            string    `json:"name"`
+	Version         string    `json:"version"`
+	RequestVersion  []Version `json:"requestVersion"`
+	ResponseVersion []Version `json:"responseVersion"`
+	OptionalFields  []string  `json:"optionalFields,omitempty"`
 }
 
 type Version string
@@ -40,5 +40,7 @@ const (
 )
 
 const (
-	MetadataStdIn string = "METADATA"
+	// Metadata string is the constant string that will be used by the binary-pluigin helper and the cli helpers
+	// To notice that
+	MetadataString string = "METADATA"
 )
