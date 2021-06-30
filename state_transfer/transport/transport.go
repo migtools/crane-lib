@@ -1,4 +1,4 @@
-package state_transfer
+package transport
 
 import (
 	"bytes"
@@ -9,6 +9,8 @@ import (
 	"encoding/pem"
 	"math/big"
 	"time"
+
+	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,12 +34,12 @@ type Transport interface {
 	SetServerVolumes([]v1.Volume)
 	ServerVolumes() []v1.Volume
 	Direct() bool
-	CreateServer(client.Client, Transfer) error
-	CreateClient(client.Client, Transfer) error
+	CreateServer(client.Client, endpoint.Endpoint) error
+	CreateClient(client.Client, endpoint.Endpoint) error
 }
 
-func CreateTransportServer(t Transport, c client.Client, transfer Transfer) (Transport, error) {
-	err := t.CreateServer(c, transfer)
+func CreateTransportServer(t Transport, c client.Client, e endpoint.Endpoint) (Transport, error) {
+	err := t.CreateServer(c, e)
 	if err != nil {
 		return nil, err
 	}
@@ -45,8 +47,8 @@ func CreateTransportServer(t Transport, c client.Client, transfer Transfer) (Tra
 	return t, nil
 }
 
-func CreateTransportClient(t Transport, c client.Client, transfer Transfer) (Transport, error) {
-	err := t.CreateClient(c, transfer)
+func CreateTransportClient(t Transport, c client.Client, e endpoint.Endpoint) (Transport, error) {
+	err := t.CreateClient(c, e)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +64,7 @@ func DestroyTransportClient(t Transport) error {
 	return nil
 }
 
-func generateSSLCert() (*bytes.Buffer, *bytes.Buffer, *bytes.Buffer, error) {
+func GenerateSSLCert() (*bytes.Buffer, *bytes.Buffer, *bytes.Buffer, error) {
 	caPrivKey, err := rsa.GenerateKey(rand.Reader, 4096)
 	if err != nil {
 		return nil, nil, nil, err

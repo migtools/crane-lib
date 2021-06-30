@@ -1,6 +1,8 @@
-package state_transfer
+package transfer
 
 import (
+	"github.com/konveyor/crane-lib/state_transfer/endpoint"
+	"github.com/konveyor/crane-lib/state_transfer/transport"
 	routev1 "github.com/openshift/api/route/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -9,8 +11,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var labels = map[string]string{"app": "crane2"}
-
 type Transfer interface {
 	SetSource(*rest.Config)
 	Source() *rest.Config
@@ -18,10 +18,10 @@ type Transfer interface {
 	Destination() *rest.Config
 	SetPVC(v1.PersistentVolumeClaim)
 	PVC() v1.PersistentVolumeClaim
-	SetEndpoint(Endpoint)
-	Endpoint() Endpoint
-	SetTransport(Transport)
-	Transport() Transport
+	SetEndpoint(endpoint.Endpoint)
+	Endpoint() endpoint.Endpoint
+	SetTransport(transport.Transport)
+	Transport() transport.Transport
 	SetUsername(string)
 	Username() string
 	SetPassword(string)
@@ -78,14 +78,14 @@ func DeleteClient(t Transfer) error {
 	return nil
 }
 
-func connectionHostname(t Transfer) string {
+func ConnectionHostname(t Transfer) string {
 	if t.Transport().Direct() {
 		return t.Endpoint().Hostname()
 	}
 	return "localhost"
 }
 
-func connectionPort(t Transfer) int32 {
+func ConnectionPort(t Transfer) int32 {
 	if t.Transport().Direct() {
 		return t.Endpoint().Port()
 	}
