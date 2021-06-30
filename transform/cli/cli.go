@@ -92,7 +92,6 @@ func RunAndExit(plugin transform.Plugin) {
 
 	resp, err := plugin.Run(&u, nil)
 	if err != nil {
-<<<<<<< HEAD
 		WriterErrorAndExit(&errors.PluginError{
 			Type:         errors.PluginRunError,
 			Message:      "error when running plugin",
@@ -107,23 +106,14 @@ func RunAndExit(plugin transform.Plugin) {
 			Message:      "invalid json plugin output, unable to marshal in",
 			ErrorMessage: err.Error(),
 		})
-=======
-		fmt.Fprint(stdErr(), fmt.Errorf("error when running plugin: %#v", err).Error())
-		os.Exit(1)
->>>>>>> eaa23c9 (Addressing feedback and more implementation for running the METADATA call when creating a plugin)
 	}
 
 	_, err = io.Copy(stdOut(), bytes.NewReader(respBytes))
 	if err != nil {
-<<<<<<< HEAD
 		WriterErrorAndExit(&errors.PluginError{
 			Type:         errors.PluginInvalidIOError,
 			Message:      "error writing plugin response to stdOut",
 			ErrorMessage: err.Error(),
 		})
-=======
-		fmt.Fprint(stdErr(), fmt.Errorf("error writing plugin response to stdOut: %#v", err).Error())
-		os.Exit(1)
->>>>>>> eaa23c9 (Addressing feedback and more implementation for running the METADATA call when creating a plugin)
 	}
 }

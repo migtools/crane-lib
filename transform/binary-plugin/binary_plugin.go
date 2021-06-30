@@ -69,7 +69,7 @@ func (b *BinaryPlugin) Run(u *unstructured.Unstructured, extras map[string]strin
 	err = json.Unmarshal(out, &p)
 	if err != nil {
 		b.log.Errorf("unable to decode json sent by the plugin")
-		return p, fmt.Errorf("unable to decode json sent by the plugin: %s, err: %v", string(out), err)
+		return p, fmt.Errorf("unable to decode json for metadata sent by the plugin: %s, err: %v", string(out), err)
 	}
 
 	return p, nil
