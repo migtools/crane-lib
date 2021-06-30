@@ -26,6 +26,9 @@ func (c *CustomPlugin) Run(u *unstructured.Unstructured) (transform.PluginRespon
 	return c.runFunc(u)
 }
 
+func (c *CustomPlugin) Name() (string) {
+	return c.name
+}
 func NewCustomPlugin(name string, runFunc func(*unstructured.Unstructured) (transform.PluginResponse, error)) transform.Plugin {
 	return &CustomPlugin{
 		name:    name,

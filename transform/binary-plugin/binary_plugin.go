@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/konveyor/crane-lib/transform"
@@ -14,11 +15,16 @@ import (
 
 type BinaryPlugin struct {
 	commandRunner
-	log logrus.FieldLogger
+	name string
+	log  logrus.FieldLogger
 }
 
 func NewBinaryPlugin(path string) transform.Plugin {
-	return &BinaryPlugin{commandRunner: &binaryRunner{pluginPath: path}, log: logrus.New().WithField("pluginPath", path)}
+	return &BinaryPlugin{
+		commandRunner: &binaryRunner{pluginPath: path},
+		name:          filepath.Base(path),
+		log:           logrus.New().WithField("pluginPath", path),
+	}
 }
 
 func (b *BinaryPlugin) Run(u *unstructured.Unstructured) (transform.PluginResponse, error) {
@@ -45,6 +51,10 @@ func (b *BinaryPlugin) Run(u *unstructured.Unstructured) (transform.PluginRespon
 	}
 
 	return p, nil
+}
+
+func (b *BinaryPlugin) Name() (string) {
+	return b.name
 }
 
 type commandRunner interface {

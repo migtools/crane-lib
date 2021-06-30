@@ -1,6 +1,7 @@
 package transform
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -11,10 +12,16 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-type fakePlugin func(u *unstructured.Unstructured) (PluginResponse, error)
+type fakePlugin struct {
+	Func func(u *unstructured.Unstructured) (PluginResponse, error)
+	name string
+}
 
 func (fp fakePlugin) Run(u *unstructured.Unstructured) (PluginResponse, error) {
-	return fp(u)
+	return fp.Func(u)
+}
+func (fp fakePlugin) Name() string {
+	return fp.name
 }
 
 func TestRunnerRun(t *testing.T) {
@@ -24,6 +31,7 @@ func TestRunnerRun(t *testing.T) {
 		Object               unstructured.Unstructured
 		PatchesString        string
 		IgnoredPatchesString string
+		PluginPriorities     map[string]int
 		IsWhiteOut           bool
 		ShouldError          bool
 	}{
@@ -35,13 +43,16 @@ func TestRunnerRun(t *testing.T) {
 			Name:   "RunWithNoPluginResponse",
 			Object: unstructured.Unstructured{},
 			Plugins: []Plugin{
-				fakePlugin(func(u *unstructured.Unstructured) (PluginResponse, error) {
+				fakePlugin{
+					Func: func(u *unstructured.Unstructured) (PluginResponse, error) {
 					return PluginResponse{
 						Version:    "v1",
 						IsWhiteOut: false,
 						Patches:    []jsonpatch.Operation{},
 					}, nil
-				}),
+				},
+					name: "",
+				},
 			},
 			PatchesString: `[]`,
 		},
@@ -49,11 +60,14 @@ func TestRunnerRun(t *testing.T) {
 			Name:   "RunWithOneWhiteoutPlugin",
 			Object: unstructured.Unstructured{},
 			Plugins: []Plugin{
-				fakePlugin(func(u *unstructured.Unstructured) (PluginResponse, error) {
+				fakePlugin{
+					Func: func(u *unstructured.Unstructured) (PluginResponse, error) {
 					return PluginResponse{
 						IsWhiteOut: true,
 					}, nil
-				}),
+				},
+					name: "",
+				},
 			},
 			IsWhiteOut: true,
 		},
@@ -61,7 +75,8 @@ func TestRunnerRun(t *testing.T) {
 			Name:   "RunWithOnePatchPlugin",
 			Object: unstructured.Unstructured{},
 			Plugins: []Plugin{
-				fakePlugin(func(u *unstructured.Unstructured) (PluginResponse, error) {
+				fakePlugin{
+					Func: func(u *unstructured.Unstructured) (PluginResponse, error) {
 					p, err := jsonpatch.DecodePatch([]byte(`[{"op": "add", "path": "/spec/testing", "value": "test"}]`))
 					if err != nil {
 						return PluginResponse{}, err
@@ -69,7 +84,9 @@ func TestRunnerRun(t *testing.T) {
 					return PluginResponse{
 						Patches: p,
 					}, nil
-				}),
+				},
+					name: "",
+				},
 			},
 			PatchesString: `[{"op": "add", "path": "/spec/testing", "value": "test"}]`,
 		},
@@ -77,9 +94,12 @@ func TestRunnerRun(t *testing.T) {
 			Name:   "RunWithOneErrorPlugin",
 			Object: unstructured.Unstructured{},
 			Plugins: []Plugin{
-				fakePlugin(func(u *unstructured.Unstructured) (PluginResponse, error) {
+				fakePlugin{
+					Func: func(u *unstructured.Unstructured) (PluginResponse, error) {
 					return PluginResponse{}, fmt.Errorf("Adding a new error to test handling of error")
-				}),
+				},
+					name: "",
+				},
 			},
 			ShouldError: true,
 		},
@@ -92,15 +112,19 @@ func TestRunnerRun(t *testing.T) {
 				},
 			},
 			Plugins: []Plugin{
-				fakePlugin(func(u *unstructured.Unstructured) (PluginResponse, error) {
+				fakePlugin{
+					Func: func(u *unstructured.Unstructured) (PluginResponse, error) {
 					u.SetGroupVersionKind(schema.GroupVersionKind{
 						Group:   "group.testing.io",
 						Version: "v1",
 						Kind:    "Test",
 					})
 					return PluginResponse{}, nil
-				}),
-				fakePlugin(func(u *unstructured.Unstructured) (PluginResponse, error) {
+				},
+					name: "",
+				},
+				fakePlugin{
+					Func: func(u *unstructured.Unstructured) (PluginResponse, error) {
 					gvk := schema.GroupVersionKind{
 						Group:   "group.testing.io",
 						Version: "v1alpha1",
@@ -110,7 +134,9 @@ func TestRunnerRun(t *testing.T) {
 						return PluginResponse{}, nil
 					}
 					return PluginResponse{}, fmt.Errorf("Plugin was able to change the object")
-				}),
+				},
+					name: "",
+				},
 			},
 			ShouldError: false,
 		},
@@ -118,7 +144,8 @@ func TestRunnerRun(t *testing.T) {
 			Name:   "RunWithTwoPluginsAddingPatches",
 			Object: unstructured.Unstructured{},
 			Plugins: []Plugin{
-				fakePlugin(func(u *unstructured.Unstructured) (PluginResponse, error) {
+				fakePlugin{
+					Func: func(u *unstructured.Unstructured) (PluginResponse, error) {
 					p, err := jsonpatch.DecodePatch([]byte(`[{"op": "add", "path": "/spec/testing", "value": "test"}]`))
 					if err != nil {
 						return PluginResponse{}, err
@@ -126,8 +153,11 @@ func TestRunnerRun(t *testing.T) {
 					return PluginResponse{
 						Patches: p,
 					}, nil
-				}),
-				fakePlugin(func(u *unstructured.Unstructured) (PluginResponse, error) {
+				},
+					name: "",
+				},
+				fakePlugin{
+					Func: func(u *unstructured.Unstructured) (PluginResponse, error) {
 					p, err := jsonpatch.DecodePatch([]byte(`[{"op": "add", "path": "/spec/newValue", "value": "test"}]`))
 					if err != nil {
 						return PluginResponse{}, err
@@ -135,7 +165,9 @@ func TestRunnerRun(t *testing.T) {
 					return PluginResponse{
 						Patches: p,
 					}, nil
-				}),
+				},
+					name: "",
+				},
 			},
 			PatchesString: `[{"op": "add", "path": "/spec/newValue", "value": "test"},{"op": "add", "path": "/spec/testing", "value": "test"}]`,
 		},
@@ -143,7 +175,8 @@ func TestRunnerRun(t *testing.T) {
 			Name:   "RunWithTwoPluginsDuplicatePatches",
 			Object: unstructured.Unstructured{},
 			Plugins: []Plugin{
-				fakePlugin(func(u *unstructured.Unstructured) (PluginResponse, error) {
+				fakePlugin{
+					Func: func(u *unstructured.Unstructured) (PluginResponse, error) {
 					p, err := jsonpatch.DecodePatch([]byte(`[{"op": "add", "path": "/spec/testing", "value": "test"}]`))
 					if err != nil {
 						return PluginResponse{}, err
@@ -151,8 +184,11 @@ func TestRunnerRun(t *testing.T) {
 					return PluginResponse{
 						Patches: p,
 					}, nil
-				}),
-				fakePlugin(func(u *unstructured.Unstructured) (PluginResponse, error) {
+				},
+					name: "",
+				},
+				fakePlugin{
+					Func: func(u *unstructured.Unstructured) (PluginResponse, error) {
 					p, err := jsonpatch.DecodePatch([]byte(`[{"op": "add", "path": "/spec/testing", "value": "test"}]`))
 					if err != nil {
 						return PluginResponse{}, err
@@ -160,7 +196,9 @@ func TestRunnerRun(t *testing.T) {
 					return PluginResponse{
 						Patches: p,
 					}, nil
-				}),
+				},
+					name: "",
+				},
 			},
 			PatchesString: `[{"op": "add", "path": "/spec/testing", "value": "test"}]`,
 		},
@@ -168,7 +206,8 @@ func TestRunnerRun(t *testing.T) {
 			Name:   "RunWithTwoPluginsCollidedPatches",
 			Object: unstructured.Unstructured{},
 			Plugins: []Plugin{
-				fakePlugin(func(u *unstructured.Unstructured) (PluginResponse, error) {
+				fakePlugin{
+					Func: func(u *unstructured.Unstructured) (PluginResponse, error) {
 					p, err := jsonpatch.DecodePatch([]byte(`[{"op": "add", "path": "/spec/testing", "value": "test"}]`))
 					if err != nil {
 						return PluginResponse{}, err
@@ -176,8 +215,11 @@ func TestRunnerRun(t *testing.T) {
 					return PluginResponse{
 						Patches: p,
 					}, nil
-				}),
-				fakePlugin(func(u *unstructured.Unstructured) (PluginResponse, error) {
+				},
+					name: "plugin1",
+				},
+				fakePlugin{
+					Func: func(u *unstructured.Unstructured) (PluginResponse, error) {
 					p, err := jsonpatch.DecodePatch([]byte(`[{"op": "add", "path": "/spec/testing", "value": "test1"}]`))
 					if err != nil {
 						return PluginResponse{}, err
@@ -185,17 +227,55 @@ func TestRunnerRun(t *testing.T) {
 					return PluginResponse{
 						Patches: p,
 					}, nil
-				}),
+				},
+					name: "plugin2",
+				},
 			},
 			PatchesString:        `[{"op": "add", "path": "/spec/testing", "value": "test"}]`,
-			IgnoredPatchesString: `[{"op": "add", "path": "/spec/testing", "value": "test1"}]`,
+			IgnoredPatchesString: `[{"PluginName": "plugin2", "Operation": {"op": "add", "path": "/spec/testing", "value": "test1"}}]`,
+		},
+		{
+			Name:   "RunWithTwoPluginsCollidedPatchesPriorityToSecond",
+			Object: unstructured.Unstructured{},
+			Plugins: []Plugin{
+				fakePlugin{
+					Func: func(u *unstructured.Unstructured) (PluginResponse, error) {
+					p, err := jsonpatch.DecodePatch([]byte(`[{"op": "add", "path": "/spec/testing", "value": "test"}]`))
+					if err != nil {
+						return PluginResponse{}, err
+					}
+					return PluginResponse{
+						Patches: p,
+					}, nil
+				},
+					name: "plugin1",
+				},
+				fakePlugin{
+					Func: func(u *unstructured.Unstructured) (PluginResponse, error) {
+					p, err := jsonpatch.DecodePatch([]byte(`[{"op": "add", "path": "/spec/testing", "value": "test1"}]`))
+					if err != nil {
+						return PluginResponse{}, err
+					}
+					return PluginResponse{
+						Patches: p,
+					}, nil
+				},
+					name: "plugin2",
+				},
+			},
+			PluginPriorities: map[string]int{
+				"plugin2": 0,
+			},
+			PatchesString:        `[{"op": "add", "path": "/spec/testing", "value": "test1"}]`,
+			IgnoredPatchesString: `[{"PluginName": "plugin1", "Operation": {"op": "add", "path": "/spec/testing", "value": "test"}}]`,
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
 			runner := Runner{
-				Log: logrus.New(),
+				Log:              logrus.New(),
+				PluginPriorities: c.PluginPriorities,
 			}
 			response, err := runner.Run(c.Object, c.Plugins)
 			if err != nil && !c.ShouldError {
@@ -223,17 +303,18 @@ func TestRunnerRun(t *testing.T) {
 			}
 			// Two Bytes tells us that it is an empty list
 			if len(c.IgnoredPatchesString) != 0 || len(response.IgnoredPatches) > 2 {
-				p, err := jsonpatch.DecodePatch([]byte(c.IgnoredPatchesString))
+				ignoredPluginOperations := []PluginOperation{}
+				err := json.Unmarshal(response.IgnoredPatches, &ignoredPluginOperations)
 				if err != nil {
 					t.Error(err)
 				}
-				p2, err := jsonpatch.DecodePatch(response.IgnoredPatches)
+				expectedIgnoredPluginOperations := []PluginOperation{}
+				err = json.Unmarshal([]byte(c.IgnoredPatchesString), &expectedIgnoredPluginOperations)
 				if err != nil {
 					t.Error(err)
 				}
-
-				if ok, err := internaljsonpatch.Equal(p2, p); !ok || err != nil {
-					t.Errorf("incorrect jsonpathc, actual: %v expected: %v\nerror: %v", string(response.IgnoredPatches), c.IgnoredPatchesString, err)
+				if ok := EqualPluginOperationList(ignoredPluginOperations, expectedIgnoredPluginOperations); !ok || err != nil {
+					t.Errorf("incorrect plugin operations, actual: %v expected: %v", string(response.IgnoredPatches), c.IgnoredPatchesString)
 				}
 			}
 		})
