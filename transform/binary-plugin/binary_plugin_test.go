@@ -46,11 +46,16 @@ func TestBinaryPlugin_Run(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "NoStdoutSomeStderr",
-			stderr:  []byte("panic: invalid reference"),
-			runErr:  nil,
-			want:    transform.PluginResponse{},
-			wantErr: true,
+			name:   "NoStdoutSomeStderr",
+			stdout: []byte(`{"version": "v1", "isWhiteOut": true}`),
+			stderr: []byte("panic: invalid reference"),
+			runErr: nil,
+			want: transform.PluginResponse{
+				Version:    "v1",
+				IsWhiteOut: true,
+				Patches:    nil,
+			},
+			wantErr: false,
 		},
 		{
 			name:    "RunError",
