@@ -41,3 +41,16 @@ func IsPodSpecable(u unstructured.Unstructured) (*v1.PodTemplateSpec, bool) {
 
 	return &template, true
 }
+
+func HasStatusObject(u unstructured.Unstructured) (bool, error) {
+	status, ok := u.UnstructuredContent()["status"]
+	if !ok {
+		return false, nil
+	}
+	_, ok = status.(map[string]interface{})
+	if !ok {
+		return false, nil
+	}
+	return true, nil
+
+}

@@ -124,3 +124,57 @@ func TestIsPodSpecable(t *testing.T) {
 	}
 
 }
+
+func TestHasStatusObject(t *testing.T) {
+	cases := []struct {
+		Name      string
+		Object    unstructured.Unstructured
+		HasStatus bool
+	}{
+		{
+			Name: "HasStatus",
+			Object: unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"status": map[string]interface{}{
+						"testing": map[string]interface{}{
+							"image": "testImage",
+						},
+					},
+				},
+			},
+			HasStatus: true,
+		},
+		{
+			Name: "NoStatus",
+			Object: unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"testing": map[string]interface{}{
+							"image": "testImage",
+						},
+					},
+				},
+			},
+			HasStatus: false,
+		},
+		{
+			Name: "NoStatusMap",
+			Object: unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"status": "bad Status Value",
+				},
+			},
+			HasStatus: false,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.Name, func(t *testing.T) {
+			hasStatus, _ := types.HasStatusObject(c.Object)
+			if hasStatus != c.HasStatus {
+				t.Errorf("podSpecable is not correct, actual: %v, expected: %v", hasStatus, c.HasStatus)
+			}
+		})
+	}
+
+}
