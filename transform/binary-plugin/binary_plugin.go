@@ -34,7 +34,7 @@ func (b *BinaryPlugin) Run(u *unstructured.Unstructured) (transform.PluginRespon
 	if len(errBytes) != 0 {
 		logs = strings.Split(string(errBytes), "\n")
 		for _, line := range logs {
-			b.log.Info("Plugin Log line: ", line)
+			b.log.Debug("Plugin Log line: ", line)
 		}
 	}
 
