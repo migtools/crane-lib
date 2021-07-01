@@ -18,6 +18,9 @@ type NullTransport struct {
 	clientContainers []v1.Container
 	clientVolumes    []v1.Volume
 	direct           bool
+	proxyOptions     *transport.ProxyOptions
+	noVerifyCA       bool
+	caVerifyLevel    string
 }
 
 func NewTransport() transport.Transport {
@@ -58,4 +61,28 @@ func (s *NullTransport) ServerVolumes() []v1.Volume {
 
 func (s *NullTransport) Direct() bool {
 	return s.direct
+}
+
+func (s *NullTransport) SetProxyOptions(proxyOptions *transport.ProxyOptions) {
+	s.proxyOptions = proxyOptions
+}
+
+func (s *NullTransport) ProxyOptions() *transport.ProxyOptions {
+	return s.proxyOptions
+}
+
+func (s *NullTransport) SetNoVerifyCA(noVerifyCA bool) {
+	s.noVerifyCA = noVerifyCA
+}
+
+func (s *NullTransport) NoVerifyCA() bool {
+	return s.noVerifyCA
+}
+
+func (s *NullTransport) SetCAVerifyLevel(caVerifyLevel string) {
+	s.caVerifyLevel = caVerifyLevel
+}
+
+func (s *NullTransport) CAVerifyLevel() string {
+	return s.caVerifyLevel
 }

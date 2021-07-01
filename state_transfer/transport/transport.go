@@ -28,6 +28,18 @@ type Transport interface {
 	Direct() bool
 	CreateServer(client.Client, endpoint.Endpoint) error
 	CreateClient(client.Client, endpoint.Endpoint) error
+	ProxyOptions() *ProxyOptions
+	SetProxyOptions(*ProxyOptions)
+	NoVerifyCA() bool
+	SetNoVerifyCA(bool)
+	CAVerifyLevel() string
+	SetCAVerifyLevel(string)
+}
+
+type ProxyOptions struct {
+	URL      string
+	Username string
+	Password string
 }
 
 func CreateServer(t Transport, c client.Client, e endpoint.Endpoint) (Transport, error) {

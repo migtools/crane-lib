@@ -24,21 +24,21 @@ const (
  accept = {{ .stunnelPort }}
  cert = /etc/stunnel/certs/tls.crt
  key = /etc/stunnel/certs/tls.key
-{{ if not (eq .ProxyHost "") }}
+{{ if not (eq .proxyHost "") }}
  protocol = connect
- connect = {{ .ProxyHost }}
- protocolHost = {{ .RsyncRoute }}:443
-{{ if not (eq .ProxyUsername "") }}
- protocolUsername = {{ .ProxyUsername }}
+ connect = {{ .proxyHost }}
+ protocolHost = {{ .hostname }}:{{ .port }}
+{{ if not (eq .proxyUsername "") }}
+ protocolUsername = {{ .proxyUsername }}
 {{ end }}
-{{ if not (eq .ProxyPassword "") }}
- protocolPassword = {{ .ProxyPassword }}
+{{ if not (eq .proxyPassword "") }}
+ protocolPassword = {{ .proxyPassword }}
 {{ end }}
 {{ else }}
  connect = {{ .hostname }}:{{ .port }}
 {{ end }}
-{{ if .VerifyCA }}
- verify = {{ .VerifyCALevel }}
+{{ if not .noVerifyCA }}
+ verify = {{ .caVerifyLevel }}
 {{ end }}
 `
 )
@@ -53,7 +53,7 @@ func createClientResources(c client.Client, s *StunnelTransport, e endpoint.Endp
 
 	// assuming the name of the endpoint is the same as the name of the PVC
 
-	err := createClientConfig(c, e)
+	err := createClientConfig(c, s, e)
 	if err != nil {
 		return err
 	}
@@ -79,11 +79,16 @@ func getClientConfig(c client.Client, obj types.NamespacedName) (*corev1.ConfigM
 	return cm, err
 }
 
-func createClientConfig(c client.Client, e endpoint.Endpoint) error {
+func createClientConfig(c client.Client, s *StunnelTransport, e endpoint.Endpoint) error {
+
 	connections := map[string]string{
-		"stunnelPort": strconv.Itoa(int(stunnelPort)),
-		"hostname":    e.Hostname(),
-		"port":        strconv.Itoa(int(e.Port())),
+		"stunnelPort":   strconv.Itoa(int(stunnelPort)),
+		"hostname":      e.Hostname(),
+		"port":          strconv.Itoa(int(e.Port())),
+		"proxyHost":     s.ProxyOptions().URL,
+		"proxyUsername": s.ProxyOptions().Username,
+		"proxyPassword": s.ProxyOptions().Password,
+		"caVerifyLevel": s.CAVerifyLevel(),
 	}
 
 	var stunnelConf bytes.Buffer
