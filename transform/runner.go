@@ -14,20 +14,52 @@ type Runner struct {
 	// This should include generic args to be passed to each Plugin
 	// This also needs to handle the options that it will need.
 	// TODO: Figure out options that the runner will need and implement here.
+	PluginPriorities map[string]int
 	Log *logrus.Logger
 }
 
 // RunnerResponse will be responsble for
+// TransformFile is a marshaled jsonpatch.Patch
+// IgnoredPatches is a marshaled []PluginOperation
 type RunnerResponse struct {
 	TransformFile  []byte
 	HaveWhiteOut   bool
 	IgnoredPatches []byte
 }
 
+type PluginOperation struct {
+	PluginName string
+	Operation  jsonpatch.Operation
+}
+
+func PluginOperationsFromPatch(pluginName string, patches jsonpatch.Patch) []PluginOperation {
+	pluginOpList := []PluginOperation{}
+	for _, op := range patches {
+		pluginOpList = append(pluginOpList, PluginOperation{PluginName: pluginName, Operation: op})
+	}
+	return pluginOpList
+}
+
+func EqualPluginOperationList(pluginOps1, pluginOps2 []PluginOperation) bool {
+	if len(pluginOps1) != len(pluginOps2) {
+		return false
+	}
+	for i, op1 := range pluginOps1 {
+		if !EqualPluginOperation(op1, pluginOps2[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func EqualPluginOperation(pluginOp1, pluginOp2 PluginOperation) bool {
+	return pluginOp1.PluginName == pluginOp2.PluginName && ijsonpatch.EqualOperation(pluginOp1.Operation, pluginOp2.Operation)
+}
+
 func (r *Runner) Run(object unstructured.Unstructured, plugins []Plugin) (RunnerResponse, error) {
 	haveWhiteOut := false
 	havePatches := false
-	patches := jsonpatch.Patch{}
+	patches := []PluginOperation{}
 	errs := []error{}
 
 	for _, plugin := range plugins {
@@ -45,7 +77,7 @@ func (r *Runner) Run(object unstructured.Unstructured, plugins []Plugin) (Runner
 		}
 		if len(resp.Patches) > 0 {
 			havePatches = true
-			patches = append(patches, resp.Patches...)
+			patches = append(patches, PluginOperationsFromPatch(plugin.Name(), resp.Patches)...)
 		}
 	}
 	response := RunnerResponse{
@@ -96,30 +128,61 @@ type operatationKey struct {
 // sanitizePatches removes duplicate patch operatations as well as find
 // conflicting operations where path and operation are the same, but different values.
 // TODO: Handle where paths are the same, but operations are different.
-func (r *Runner) sanitizePatches(patch jsonpatch.Patch) (jsonpatch.Patch, jsonpatch.Patch, error) {
-	patchMap := map[operatationKey]jsonpatch.Operation{}
-	ignoredPatches := jsonpatch.Patch{}
-	for _, o := range patch {
-		p, err := o.Path()
+func (r *Runner) sanitizePatches(pluginOps []PluginOperation) (jsonpatch.Patch, []PluginOperation, error) {
+	patchMap := map[operatationKey]PluginOperation{}
+	ignoredPatches := []PluginOperation{}
+	for _, o := range pluginOps {
+		p, err := o.Operation.Path()
 		if err != nil {
 			return nil, nil, err
 		}
 		key := operatationKey{
-			Kind: o.Kind(),
+			Kind: o.Operation.Kind(),
 			Path: p,
 		}
-		if operation, ok := patchMap[key]; ok && !ijsonpatch.EqualOperation(operation, o) {
+		if foundOp, ok := patchMap[key]; ok {
+			currentPrio, currentOk := r.PluginPriorities[o.PluginName]
+			previousPrio, previousOk := r.PluginPriorities[foundOp.PluginName]
+			// replace value if current plugin is higher (lower int) priority than prior
+			replaceVal := currentOk && (!previousOk || currentPrio < previousPrio)
+			equalOp := ijsonpatch.EqualOperation(foundOp.Operation, o.Operation)
 			// Handle Collision
-			val, err := o.ValueInterface()
+			val, err := o.Operation.ValueInterface()
 			if err != nil {
 				return nil, nil, err
 			}
-			selectedVal, err := operation.ValueInterface()
+			previousVal, err := foundOp.Operation.ValueInterface()
 			if err != nil {
 				return nil, nil, err
 			}
-			r.Log.Debugf("Same operation: %v on path: %v with different values selected value: %v value that will be ignored: %v", key.Kind, key.Path, selectedVal, val)
-			ignoredPatches = append(ignoredPatches, o)
+			if replaceVal {
+				patchMap[key] = o
+			}
+			if !equalOp {
+				var selectedVal, rejectedVal interface{}
+				var selectedPlugin, rejectedPlugin string
+				if replaceVal {
+					selectedVal = val
+					rejectedVal = previousVal
+					selectedPlugin = o.PluginName
+					rejectedPlugin = foundOp.PluginName
+					ignoredPatches = append(ignoredPatches, foundOp)
+				} else {
+					selectedVal = previousVal
+					rejectedVal = val
+					selectedPlugin = foundOp.PluginName
+					rejectedPlugin = o.PluginName
+					ignoredPatches = append(ignoredPatches, o)
+				}
+				r.Log.Debugf("Same operation: %v on path: %v with different values selected value: %v (from plugin %v) value that will be ignored: %v (from plugin %v)",
+					key.Kind,
+					key.Path,
+					selectedVal,
+					selectedPlugin,
+					rejectedVal,
+					rejectedPlugin,
+				)
+			}
 			continue
 		}
 		patchMap[key] = o
@@ -128,7 +191,7 @@ func (r *Runner) sanitizePatches(patch jsonpatch.Patch) (jsonpatch.Patch, jsonpa
 	dedupedPatch := jsonpatch.Patch{}
 
 	for _, p := range patchMap {
-		dedupedPatch = append(dedupedPatch, p)
+		dedupedPatch = append(dedupedPatch, p.Operation)
 	}
 	return dedupedPatch, ignoredPatches, nil
 }

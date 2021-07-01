@@ -83,6 +83,10 @@ func (k KubernetesTransformPlugin) Run(u *unstructured.Unstructured) (transform.
 
 }
 
+func (k KubernetesTransformPlugin) Name() (string) {
+	return "kubernetes"
+}
+
 var _ transform.Plugin = &KubernetesTransformPlugin{}
 
 func (k KubernetesTransformPlugin) getWhiteOuts(groupKind schema.GroupKind) bool {

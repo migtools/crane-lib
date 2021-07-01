@@ -8,6 +8,8 @@ import (
 type Plugin interface {
 	// Determine for a given resources what the plugin is deciding to do with this
 	Run(*unstructured.Unstructured) (PluginResponse, error)
+	// Returns the name of the plugin
+	Name() (string)
 }
 
 type PluginResponse struct {
