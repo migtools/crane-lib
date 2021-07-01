@@ -25,20 +25,24 @@ type RsyncTransfer struct {
 	transport   transport.Transport
 	endpoint    endpoint.Endpoint
 	port        int32
+	options     TransferOptions
 }
 
-func CreateRsyncTransfer() *RsyncTransfer {
-	return &RsyncTransfer{}
-}
-
-func NewTransfer(t transport.Transport, e endpoint.Endpoint, src *rest.Config, dest *rest.Config, pvc corev1.PersistentVolumeClaim) transfer.Transfer {
+func NewTransfer(t transport.Transport, e endpoint.Endpoint, src *rest.Config, dest *rest.Config,
+	pvc corev1.PersistentVolumeClaim, opts ...TransferOption) (transfer.Transfer, error) {
+	options := TransferOptions{}
+	err := options.Apply(opts...)
+	if err != nil {
+		return nil, err
+	}
 	return &RsyncTransfer{
 		transport:   t,
 		endpoint:    e,
 		source:      src,
 		destination: dest,
 		pvc:         pvc,
-	}
+		options:     options,
+	}, nil
 }
 
 func (r *RsyncTransfer) PVC() corev1.PersistentVolumeClaim {
@@ -67,4 +71,8 @@ func (r *RsyncTransfer) Username() string {
 
 func (r *RsyncTransfer) Password() string {
 	return r.password
+}
+
+func (r *RsyncTransfer) transferOptions() TransferOptions {
+	return r.options
 }
