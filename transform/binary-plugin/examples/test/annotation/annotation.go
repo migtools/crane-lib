@@ -15,7 +15,7 @@ func main() {
 		cli.WriterErrorAndExit(fmt.Errorf("error getting unstructured object: %#v", err))
 	}
 
-	cli.RunAndExit(cli.NewCustomPlugin("WhiteoutPlugin", Run), u)
+	cli.RunAndExit(cli.NewCustomPlugin("AnnotationPlugin", Run), u)
 }
 
 func Run(u *unstructured.Unstructured) (transform.PluginResponse, error) {
