@@ -5,6 +5,7 @@ import (
 
 	jsonpatch "github.com/evanphx/json-patch"
 	ijsonpatch "github.com/konveyor/crane-lib/transform/internal/jsonpatch"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -120,25 +121,17 @@ func (r *Runner) Run(object unstructured.Unstructured, plugins []Plugin) (Runner
 	return response, nil
 }
 
-type operatationKey struct {
-	Kind string
-	Path string
-}
 
-// sanitizePatches removes duplicate patch operatations as well as find
-// conflicting operations where path and operation are the same, but different values.
+// sanitizePatches removes duplicate patch operations as well as find
+// conflicting operations where path is the same, but different kind or values.
 // TODO: Handle where paths are the same, but operations are different.
 func (r *Runner) sanitizePatches(pluginOps []PluginOperation) (jsonpatch.Patch, []PluginOperation, error) {
-	patchMap := map[operatationKey]PluginOperation{}
+	patchMap := map[string]PluginOperation{}
 	ignoredPatches := []PluginOperation{}
 	for _, o := range pluginOps {
-		p, err := o.Operation.Path()
+		key, err := o.Operation.Path()
 		if err != nil {
 			return nil, nil, err
-		}
-		key := operatationKey{
-			Kind: o.Operation.Kind(),
-			Path: p,
 		}
 		if foundOp, ok := patchMap[key]; ok {
 			currentPrio, currentOk := r.PluginPriorities[o.PluginName]
@@ -148,11 +141,13 @@ func (r *Runner) sanitizePatches(pluginOps []PluginOperation) (jsonpatch.Patch, 
 			equalOp := ijsonpatch.EqualOperation(foundOp.Operation, o.Operation)
 			// Handle Collision
 			val, err := o.Operation.ValueInterface()
-			if err != nil {
+			err1 := errors.Cause(err)
+			if err1 != nil && err1 != jsonpatch.ErrMissing {
 				return nil, nil, err
 			}
 			previousVal, err := foundOp.Operation.ValueInterface()
-			if err != nil {
+			err1 = errors.Cause(err)
+			if err1 != nil && err1 != jsonpatch.ErrMissing {
 				return nil, nil, err
 			}
 			if replaceVal {
@@ -160,27 +155,28 @@ func (r *Runner) sanitizePatches(pluginOps []PluginOperation) (jsonpatch.Patch, 
 			}
 			if !equalOp {
 				var selectedVal, rejectedVal interface{}
-				var selectedPlugin, rejectedPlugin string
+				var selectedPluginOp, rejectedPluginOp PluginOperation
 				if replaceVal {
 					selectedVal = val
 					rejectedVal = previousVal
-					selectedPlugin = o.PluginName
-					rejectedPlugin = foundOp.PluginName
+					selectedPluginOp = o
+					rejectedPluginOp = foundOp
 					ignoredPatches = append(ignoredPatches, foundOp)
 				} else {
 					selectedVal = previousVal
 					rejectedVal = val
-					selectedPlugin = foundOp.PluginName
-					rejectedPlugin = o.PluginName
+					selectedPluginOp = foundOp
+					rejectedPluginOp = o
 					ignoredPatches = append(ignoredPatches, o)
 				}
-				r.Log.Debugf("Same operation: %v on path: %v with different values selected value: %v (from plugin %v) value that will be ignored: %v (from plugin %v)",
-					key.Kind,
-					key.Path,
+				r.Log.Debugf("Operation on same path: %v with different kind or values selected kind, value: %v, %v (from plugin %v) kind, value that will be ignored: %v, %v (from plugin %v)",
+					key,
+					selectedPluginOp.Operation.Kind(),
 					selectedVal,
-					selectedPlugin,
+					selectedPluginOp.PluginName,
+					rejectedPluginOp.Operation.Kind(),
 					rejectedVal,
-					rejectedPlugin,
+					rejectedPluginOp.PluginName,
 				)
 			}
 			continue
