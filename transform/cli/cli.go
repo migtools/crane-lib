@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,21 @@ import (
 	"github.com/konveyor/crane-lib/transform/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
+
+var (
+	stdErr io.Writer
+	stdOut io.Writer
+	reader io.Reader
+	exiter func(int)
+)
+
+func init() {
+	stdErr = os.Stderr
+	stdOut = os.Stdout
+	reader = os.Stdin
+
+	exiter = os.Exit
+}
 
 type CustomPlugin struct {
 	// TODO: figure out a way to include the name of the plugin in the error messages.
@@ -44,22 +60,10 @@ func NewCustomPlugin(name, version string, optionalFields []string, runFunc func
 	}
 }
 
-func ObjectReaderOrDie() io.Reader {
-	return os.Stdin
-}
-
-func stdOut() io.Writer {
-	return os.Stdout
-}
-
-func stdErr() io.Writer {
-	return os.Stderr
-}
-
 // Will write the error the standard error and will exit with 1
 func WriterErrorAndExit(err error) {
-	fmt.Fprint(stdErr(), err.Error())
-	os.Exit(1)
+	fmt.Fprint(stdErr, err.Error())
+	exiter(1)
 }
 
 func Logger() logrus.FieldLogger {
@@ -68,26 +72,44 @@ func Logger() logrus.FieldLogger {
 
 func RunAndExit(plugin transform.Plugin) {
 	// Get the reader from Standard In.
-
-	var s string
-	_, err := fmt.Scanln(&s)
-	if err != nil {
-		WriterErrorAndExit(fmt.Errorf("error getting unstructured object: %#v", err))
+	//var s string
+	scan := bufio.NewScanner(reader)
+	ok := scan.Scan()
+	if !ok {
+		err := scan.Err()
+		if err != nil {
+			WriterErrorAndExit(&errors.PluginError{
+				Type:         errors.PluginInvalidIOError,
+				Message:      "error reading plugin input from input",
+				ErrorMessage: err.Error(),
+			})
+		}
 	}
+
+	s := string(scan.Bytes())
+
 	// Determine if Metadata Call
 	if s == transform.MetadataString {
-		err = json.NewEncoder(stdOut()).Encode(plugin.Metadata())
+		err := json.NewEncoder(stdOut).Encode(plugin.Metadata())
 		if err != nil {
-			WriterErrorAndExit(fmt.Errorf("error writing plugin response to stdOut: %#v", err))
+			WriterErrorAndExit(&errors.PluginError{
+				Type:         errors.PluginInvalidIOError,
+				Message:      "error writing plugin response to stdOut",
+				ErrorMessage: err.Error(),
+			})
 		}
 		return
 	}
 
 	// Get unstructured
 	u := unstructured.Unstructured{}
-	err = u.UnmarshalJSON([]byte(s))
+	err := u.UnmarshalJSON([]byte(s))
 	if err != nil {
-		WriterErrorAndExit(fmt.Errorf("error getting unstructured object: %#v", err))
+		WriterErrorAndExit(&errors.PluginError{
+			Type:         errors.PluginInvalidInputError,
+			Message:      "error writing plugin response to stdOut",
+			ErrorMessage: err.Error(),
+		})
 	}
 
 	resp, err := plugin.Run(&u, nil)
@@ -108,7 +130,7 @@ func RunAndExit(plugin transform.Plugin) {
 		})
 	}
 
-	_, err = io.Copy(stdOut(), bytes.NewReader(respBytes))
+	_, err = io.Copy(stdOut, bytes.NewReader(respBytes))
 	if err != nil {
 		WriterErrorAndExit(&errors.PluginError{
 			Type:         errors.PluginInvalidIOError,

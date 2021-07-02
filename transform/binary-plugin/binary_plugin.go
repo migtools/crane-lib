@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/konveyor/crane-lib/transform"
@@ -41,12 +40,11 @@ func NewBinaryPlugin(path string) (transform.Plugin, error) {
 	err = json.Unmarshal(out, &metadata)
 	if err != nil {
 		log.Errorf("unable to decode json sent by the plugin")
-		return nil, fmt.Errorf("unable to decode json sent by the plugin: %s, err: %v", string(out), err)
+		return nil, fmt.Errorf("unable to decode metadata sent by the plugin: %s, err: %v", string(out), err)
 	}
 
 	// TODO: Validate Versions contain the versions that this wrapper can use.
 	return &BinaryPlugin{commandRunner: commandRunner, pluginMetadata: metadata, log: log}, nil
->>>>>>> 8c4d27e (Addressing feedback and more implementation for running the METADATA call when creating a plugin)
 }
 
 func (b *BinaryPlugin) Run(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
@@ -69,7 +67,7 @@ func (b *BinaryPlugin) Run(u *unstructured.Unstructured, extras map[string]strin
 	err = json.Unmarshal(out, &p)
 	if err != nil {
 		b.log.Errorf("unable to decode json sent by the plugin")
-		return p, fmt.Errorf("unable to decode json for metadata sent by the plugin: %s, err: %v", string(out), err)
+		return p, fmt.Errorf("unable to decode object sent by the plugin: %s, err: %v", string(out), err)
 	}
 
 	return p, nil
