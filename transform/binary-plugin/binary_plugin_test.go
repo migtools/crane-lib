@@ -42,7 +42,7 @@ func TestShellMetadataSuccess(t *testing.T) {
 		os.Exit(1)
 	}
 
-	if s != transform.MetadataString {
+	if s != `{}` {
 		os.Exit(1)
 	}
 

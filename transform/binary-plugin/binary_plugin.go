@@ -12,6 +12,10 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
+const (
+	MetadataRequest string = `{}`
+)
+
 type BinaryPlugin struct {
 	commandRunner
 	pluginMetadata transform.PluginMetadata
@@ -107,7 +111,7 @@ func (b *binaryRunner) Metadata(log logrus.FieldLogger) ([]byte, []byte, error) 
 
 	// set the output to our variable
 	command.Stdout = &out
-	command.Stdin = bytes.NewBufferString(transform.MetadataString)
+	command.Stdin = bytes.NewBufferString(MetadataRequest)
 	command.Stderr = &errorBytes
 	err := command.Run()
 	if err != nil {

@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	cli.RunAndExit(cli.NewCustomPlugin("WhiteoutPlugin", "v1", nil, Run))
+	cli.RunAndExit(cli.NewCustomPlugin("WhiteoutPluginAll", "v1", nil, Run))
 }
 
 func Run(u *unstructured.Unstructured) (transform.PluginResponse, error) {

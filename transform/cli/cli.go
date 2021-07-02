@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -72,24 +71,20 @@ func Logger() logrus.FieldLogger {
 
 func RunAndExit(plugin transform.Plugin) {
 	// Get the reader from Standard In.
-	//var s string
-	scan := bufio.NewScanner(reader)
-	ok := scan.Scan()
-	if !ok {
-		err := scan.Err()
-		if err != nil {
-			WriterErrorAndExit(&errors.PluginError{
-				Type:         errors.PluginInvalidIOError,
-				Message:      "error reading plugin input from input",
-				ErrorMessage: err.Error(),
-			})
-		}
+	decoder := json.NewDecoder(reader)
+	m := map[string]interface{}{}
+
+	err := decoder.Decode(&m)
+	if err != nil {
+		WriterErrorAndExit(&errors.PluginError{
+			Type:         errors.PluginInvalidIOError,
+			Message:      "error reading plugin input from input",
+			ErrorMessage: err.Error(),
+		})
 	}
 
-	s := string(scan.Bytes())
-
 	// Determine if Metadata Call
-	if s == transform.MetadataString {
+	if len(m) == 0 {
 		err := json.NewEncoder(stdOut).Encode(plugin.Metadata())
 		if err != nil {
 			WriterErrorAndExit(&errors.PluginError{
@@ -101,9 +96,10 @@ func RunAndExit(plugin transform.Plugin) {
 		return
 	}
 
-	// Get unstructured
+	// Ignoring this error as anthing wrong here will be caught in the unmarshalJSON below
+	b, _ := json.Marshal(m)
 	u := unstructured.Unstructured{}
-	err := u.UnmarshalJSON([]byte(s))
+	err = u.UnmarshalJSON(b)
 	if err != nil {
 		WriterErrorAndExit(&errors.PluginError{
 			Type:         errors.PluginInvalidInputError,

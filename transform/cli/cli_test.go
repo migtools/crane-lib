@@ -10,6 +10,7 @@ import (
 
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/konveyor/crane-lib/transform"
+	bplugin "github.com/konveyor/crane-lib/transform/binary-plugin"
 	"github.com/konveyor/crane-lib/transform/errors"
 	ijsonpath "github.com/konveyor/crane-lib/transform/internal/jsonpatch"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -82,7 +83,7 @@ func TestRunAndExit(t *testing.T) {
 		},
 		{
 			name:    "MetadataRequest",
-			reader:  bytes.NewBufferString(transform.MetadataString),
+			reader:  bytes.NewBufferString(bplugin.MetadataRequest),
 			version: "v2",
 			metadata: &transform.PluginMetadata{
 				Name:            "MetadataRequest",
@@ -109,7 +110,7 @@ func TestRunAndExit(t *testing.T) {
 		{
 			name:    "InvalidKubernetesObject",
 			version: "v1",
-			reader:  bytes.NewBufferString("{}"),
+			reader:  bytes.NewBufferString(`{"apiVersion": "fake/v1"}`),
 			wantErr: true,
 			wantedErr: errors.PluginError{
 				Type: errors.PluginInvalidInputError,
