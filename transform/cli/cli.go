@@ -4,76 +4,111 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/sirupsen/logrus"
 	"io"
 	"os"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane-lib/transform/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-type CustomPlugin struct {
-	// TODO: figure out a way to include the name of the plugin in the error messages.
-	name    string
-	runFunc func(*unstructured.Unstructured) (transform.PluginResponse, error)
+var (
+	stdErr io.Writer
+	stdOut io.Writer
+	reader io.Reader
+	exiter func(int)
+)
+
+func init() {
+	stdErr = os.Stderr
+	stdOut = os.Stdout
+	reader = os.Stdin
+
+	exiter = os.Exit
 }
 
-func (c *CustomPlugin) Run(u *unstructured.Unstructured) (transform.PluginResponse, error) {
+type CustomPlugin struct {
+	// TODO: figure out a way to include the name of the plugin in the error messages.
+	metadata transform.PluginMetadata
+	runFunc  func(*unstructured.Unstructured) (transform.PluginResponse, error)
+}
+
+func (c *CustomPlugin) Run(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
 	if c.runFunc == nil {
 		return transform.PluginResponse{}, nil
 	}
 	return c.runFunc(u)
 }
 
-func (c *CustomPlugin) Name() (string) {
-	return c.name
+func (c *CustomPlugin) Metadata() transform.PluginMetadata {
+	return c.metadata
 }
-func NewCustomPlugin(name string, runFunc func(*unstructured.Unstructured) (transform.PluginResponse, error)) transform.Plugin {
+
+func NewCustomPlugin(name, version string, optionalFields []string, runFunc func(*unstructured.Unstructured) (transform.PluginResponse, error)) transform.Plugin {
 	return &CustomPlugin{
-		name:    name,
+		metadata: transform.PluginMetadata{
+			Name:            name,
+			Version:         version,
+			RequestVersion:  []transform.Version{transform.V1},
+			ResponseVersion: []transform.Version{transform.V1},
+			OptionalFields:  optionalFields,
+		},
 		runFunc: runFunc,
 	}
 }
 
-func Unstructured(reader io.Reader) (*unstructured.Unstructured, error) {
-	decoder := json.NewDecoder(reader)
-	u := &unstructured.Unstructured{}
-	err := decoder.Decode(u)
-	if err != nil {
-		return nil, &errors.PluginError{
-			Type:         errors.PluginInvalidIOError,
-			Message:      "unable to decode valid json from the reader",
-			ErrorMessage: err.Error(),
-		}
-	}
-	return u, nil
-}
-
-func ObjectReaderOrDie() io.Reader {
-	return os.Stdin
-}
-
-func stdOut() io.Writer {
-	return os.Stdout
-}
-
-func stdErr() io.Writer {
-	return os.Stderr
-}
-
+// Will write the error the standard error and will exit with 1
 func WriterErrorAndExit(err error) {
-	fmt.Fprintf(stdOut(), err.Error())
-	// TODO: provide different exit codes using the Is* methods on the errors
-	os.Exit(1)
+	fmt.Fprint(stdErr, err.Error())
+	exiter(1)
 }
 
 func Logger() logrus.FieldLogger {
 	return &logrus.Logger{}
 }
 
-func RunAndExit(plugin transform.Plugin, u *unstructured.Unstructured) {
-	resp, err := plugin.Run(u)
+func RunAndExit(plugin transform.Plugin) {
+	// Get the reader from Standard In.
+	decoder := json.NewDecoder(reader)
+	m := map[string]interface{}{}
+
+	err := decoder.Decode(&m)
+	if err != nil {
+		WriterErrorAndExit(&errors.PluginError{
+			Type:         errors.PluginInvalidIOError,
+			Message:      "error reading plugin input from input",
+			ErrorMessage: err.Error(),
+		})
+	}
+
+	// Determine if Metadata Call
+	if len(m) == 0 {
+		err := json.NewEncoder(stdOut).Encode(plugin.Metadata())
+		if err != nil {
+			WriterErrorAndExit(&errors.PluginError{
+				Type:         errors.PluginInvalidIOError,
+				Message:      "error writing plugin response to stdOut",
+				ErrorMessage: err.Error(),
+			})
+		}
+		return
+	}
+
+	// Ignoring this error as anthing wrong here will be caught in the unmarshalJSON below
+	b, _ := json.Marshal(m)
+	u := unstructured.Unstructured{}
+	err = u.UnmarshalJSON(b)
+	if err != nil {
+		WriterErrorAndExit(&errors.PluginError{
+			Type:         errors.PluginInvalidInputError,
+			Message:      "error writing plugin response to stdOut",
+			ErrorMessage: err.Error(),
+		})
+	}
+
+	resp, err := plugin.Run(&u, nil)
 	if err != nil {
 		WriterErrorAndExit(&errors.PluginError{
 			Type:         errors.PluginRunError,
@@ -91,7 +126,7 @@ func RunAndExit(plugin transform.Plugin, u *unstructured.Unstructured) {
 		})
 	}
 
-	_, err = io.Copy(stdOut(), bytes.NewReader(respBytes))
+	_, err = io.Copy(stdOut, bytes.NewReader(respBytes))
 	if err != nil {
 		WriterErrorAndExit(&errors.PluginError{
 			Type:         errors.PluginInvalidIOError,

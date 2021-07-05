@@ -1,7 +1,10 @@
 package binary_plugin
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
 	"reflect"
 	"testing"
 
@@ -11,12 +14,154 @@ import (
 )
 
 type fakeCommandRunner struct {
-	stdout, stderr      []byte
-	errorRunningCommand error
+	stdout, stderr                            []byte
+	errorRunningMetadata, errorRunningCommand error
+	metadataStdout, metadataStderr            []byte
 }
 
 func (f *fakeCommandRunner) Run(_ *unstructured.Unstructured, _ logrus.FieldLogger) ([]byte, []byte, error) {
 	return f.stdout, f.stderr, f.errorRunningCommand
+}
+
+func (f *fakeCommandRunner) Metadata(_ logrus.FieldLogger) ([]byte, []byte, error) {
+	return f.metadataStdout, f.metadataStderr, f.errorRunningMetadata
+
+}
+
+// TestShellMetadataSuccess is a method that is called as a substitute for a shell command,
+// the GO_TEST_PROCESS flag ensures that if it is called as part of the test suite, it is
+// skipped.
+func TestShellMetadataSuccess(t *testing.T) {
+	if os.Getenv("GO_TEST_PROCESS") != "1" {
+		return
+	}
+
+	var s string
+	_, err := fmt.Scanln(&s)
+	if err != nil {
+		os.Exit(1)
+	}
+
+	if s != `{}` {
+		os.Exit(1)
+	}
+
+	//TODO: Validate stdin is correct.
+	res, err := json.Marshal(transform.PluginMetadata{
+		Name:            "fakeShellMetadata",
+		Version:         "v1",
+		RequestVersion:  []transform.Version{transform.V1},
+		ResponseVersion: []transform.Version{transform.V1},
+		OptionalFields:  []string{},
+	})
+
+	if err != nil {
+		fmt.Fprint(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+
+	fmt.Fprint(os.Stdout, string(res))
+	os.Exit(0)
+}
+
+func TestShellMetadataFailure(t *testing.T) {
+	if os.Getenv("GO_TEST_PROCESS") != "1" {
+		return
+	}
+	os.Exit(1)
+}
+
+func TestShellMetadataPluginFailure(t *testing.T) {
+	if os.Getenv("GO_TEST_PROCESS") != "1" {
+		return
+	}
+	fmt.Fprint(os.Stderr, "Testing failure")
+	os.Exit(1)
+}
+
+func TestShellMetadataInvalid(t *testing.T) {
+	if os.Getenv("GO_TEST_PROCESS") != "1" {
+		return
+	}
+	fmt.Fprint(os.Stdout, "invalid json")
+	os.Exit(0)
+}
+
+func TestNewBinaryPlugin(t *testing.T) {
+	tests := []struct {
+		name       string
+		want       transform.PluginMetadata
+		wantErr    bool
+		cliContext execContext
+	}{
+		{
+			name: "ValidStdoutNoStderr",
+			want: transform.PluginMetadata{
+				Name:            "fakeShellMetadata",
+				Version:         "v1",
+				RequestVersion:  []transform.Version{transform.V1},
+				ResponseVersion: []transform.Version{transform.V1},
+			},
+			cliContext: func(name string, args ...string) *exec.Cmd {
+				cs := []string{"-test.run=TestShellMetadataSuccess", "--", name}
+				cs = append(cs, args...)
+				cmd := exec.Command(os.Args[0], cs...)
+				cmd.Env = []string{"GO_TEST_PROCESS=1"}
+				return cmd
+			},
+			wantErr: false,
+		},
+		{
+			name: "InValidStdoutNoStderr",
+			cliContext: func(name string, args ...string) *exec.Cmd {
+				cs := []string{"-test.run=TestShellMetadataInvalid", "--", name}
+				cs = append(cs, args...)
+				cmd := exec.Command(os.Args[0], cs...)
+				cmd.Env = []string{"GO_TEST_PROCESS=1"}
+				return cmd
+			},
+			wantErr: true,
+		},
+		{
+			name: "PluginFailure",
+			cliContext: func(name string, args ...string) *exec.Cmd {
+				cs := []string{"-test.run=TestShellMetadataPluginFailure", "--", name}
+				cs = append(cs, args...)
+				cmd := exec.Command(os.Args[0], cs...)
+				cmd.Env = []string{"GO_TEST_PROCESS=1"}
+				return cmd
+			},
+			wantErr: true,
+		},
+		{
+			name: "NoMetadataPlugin",
+			cliContext: func(name string, args ...string) *exec.Cmd {
+				cs := []string{"-test.run=TestShellMetadataFailure", "--", name}
+				cs = append(cs, args...)
+				cmd := exec.Command(os.Args[0], cs...)
+				cmd.Env = []string{"GO_TEST_PROCESS=1"}
+				return cmd
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cliContext = tt.cliContext
+			b, err := NewBinaryPlugin(tt.name)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Run() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr && err != nil {
+				return
+			}
+
+			if !reflect.DeepEqual(b.Metadata(), tt.want) {
+				t.Errorf("Metadata() got = %v, want %v", b.Metadata(), tt.want)
+			}
+		})
+	}
 }
 
 func TestBinaryPlugin_Run(t *testing.T) {
@@ -74,7 +219,7 @@ func TestBinaryPlugin_Run(t *testing.T) {
 				},
 				log: logrus.New().WithField("test", tt.name),
 			}
-			got, err := b.Run(&unstructured.Unstructured{})
+			got, err := b.Run(&unstructured.Unstructured{}, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Run() error = %v, wantErr %v", err, tt.wantErr)
 				return

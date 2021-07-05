@@ -10,12 +10,7 @@ import (
 )
 
 func main() {
-	u, err := cli.Unstructured(cli.ObjectReaderOrDie())
-	if err != nil {
-		cli.WriterErrorAndExit(fmt.Errorf("error getting unstructured object: %#v", err))
-	}
-
-	cli.RunAndExit(cli.NewCustomPlugin("AnnotationPlugin", Run), u)
+	cli.RunAndExit(cli.NewCustomPlugin("AnnotationPlugin", "v1", nil, Run))
 }
 
 func Run(u *unstructured.Unstructured) (transform.PluginResponse, error) {

@@ -1,10 +1,18 @@
 package cli
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"reflect"
 	"testing"
 
+	jsonpatch "github.com/evanphx/json-patch"
+	"github.com/konveyor/crane-lib/transform"
+	bplugin "github.com/konveyor/crane-lib/transform/binary-plugin"
+	"github.com/konveyor/crane-lib/transform/errors"
+	ijsonpath "github.com/konveyor/crane-lib/transform/internal/jsonpatch"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -18,7 +26,7 @@ func (f *fakeReader) Read(p []byte) (int, error) {
 		return 0, f.err
 	}
 	b, err := f.Unstructured.MarshalJSON()
-	for i, _ := range p {
+	for i := range p {
 		if i >= len(b) {
 			return len(b), err
 		}
@@ -28,12 +36,19 @@ func (f *fakeReader) Read(p []byte) (int, error) {
 	return len(b), err
 }
 
-func TestUnstructured(t *testing.T) {
+func TestRunAndExit(t *testing.T) {
 	tests := []struct {
-		name    string
-		reader  *fakeReader
-		want    unstructured.Unstructured
-		wantErr bool
+		name           string
+		reader         io.Reader
+		response       transform.PluginResponse
+		metadata       *transform.PluginMetadata
+		wantErr        bool
+		wantedErr      errors.PluginError
+		fakeFunc       func(*unstructured.Unstructured) (transform.PluginResponse, error)
+		version        string
+		errCapture     bytes.Buffer
+		outCapture     bytes.Buffer
+		optionalFields []string
 	}{
 		// TODO: Add test cases.
 		{
@@ -51,37 +66,154 @@ func TestUnstructured(t *testing.T) {
 				}},
 				err: nil,
 			},
-			want: unstructured.Unstructured{Object: map[string]interface{}{
-				"apiVersion": "v1",
-				"kind":       "pod",
-				"metadata": map[string]interface{}{
-					"name":      "foo",
-					"namespace": "bar",
-				},
-				"spec":   map[string]interface{}{},
-				"status": map[string]interface{}{},
-			}},
-			wantErr: false,
+			response: transform.PluginResponse{
+				Version:    "v1",
+				IsWhiteOut: false,
+				Patches:    []jsonpatch.Operation{},
+			},
+			fakeFunc: func(u *unstructured.Unstructured) (transform.PluginResponse, error) {
+				return transform.PluginResponse{
+					Version:    "v1",
+					IsWhiteOut: false,
+					Patches:    []jsonpatch.Operation{},
+				}, nil
+			},
+			errCapture: bytes.Buffer{},
+			outCapture: bytes.Buffer{},
 		},
 		{
-			name: "InValidJsonPodObject",
-			reader: &fakeReader{
-				Unstructured: &unstructured.Unstructured{},
-				err:          fmt.Errorf("error decoding json data"),
+			name:    "MetadataRequest",
+			reader:  bytes.NewBufferString(bplugin.MetadataRequest),
+			version: "v2",
+			metadata: &transform.PluginMetadata{
+				Name:            "MetadataRequest",
+				Version:         "v2",
+				RequestVersion:  []transform.Version{transform.V1},
+				ResponseVersion: []transform.Version{transform.V1},
 			},
-			want:    unstructured.Unstructured{},
+			errCapture: bytes.Buffer{},
+			outCapture: bytes.Buffer{},
+		},
+		{
+			name:    "CanNotReadScanner",
+			version: "v1",
+			reader: &fakeReader{
+				err: fmt.Errorf("Invalid input from stdIn"),
+			},
 			wantErr: true,
+			wantedErr: errors.PluginError{
+				Type: errors.PluginInvalidIOError,
+			},
+			errCapture: bytes.Buffer{},
+			outCapture: bytes.Buffer{},
+		},
+		{
+			name:    "InvalidKubernetesObject",
+			version: "v1",
+			reader:  bytes.NewBufferString(`{"apiVersion": "fake/v1"}`),
+			wantErr: true,
+			wantedErr: errors.PluginError{
+				Type: errors.PluginInvalidInputError,
+			},
+			errCapture: bytes.Buffer{},
+			outCapture: bytes.Buffer{},
+		},
+		{
+			name: "RunError",
+			reader: &fakeReader{
+				Unstructured: &unstructured.Unstructured{Object: map[string]interface{}{
+					"apiVersion": "v1",
+					"kind":       "pod",
+					"metadata": map[string]interface{}{
+						"name":      "foo",
+						"namespace": "bar",
+					},
+					"spec":   map[string]interface{}{},
+					"status": map[string]interface{}{},
+				}},
+				err: nil,
+			},
+			fakeFunc: func(u *unstructured.Unstructured) (transform.PluginResponse, error) {
+				return transform.PluginResponse{}, fmt.Errorf("invalid run")
+			},
+			errCapture: bytes.Buffer{},
+			outCapture: bytes.Buffer{},
+			wantErr:    true,
+			wantedErr:  errors.PluginError{Type: errors.PluginRunError},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Unstructured(tt.reader)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Unstructured() error = %v, wantErr %v", err, tt.wantErr)
+
+			// Create Custom Plugin to test with
+
+			plugin := NewCustomPlugin(tt.name, tt.version, tt.optionalFields, tt.fakeFunc)
+			// Set captures
+			exitCode := 0
+			stdErr = &tt.errCapture
+			stdOut = &tt.outCapture
+			reader = tt.reader
+			exiter = func(i int) {
+				exitCode = i
+				panic(fmt.Errorf("panic for ext"))
+			}
+
+			// Handle panics because this will occure everytime we call exiter
+			defer func() {
+				if r := recover(); r != nil {
+					errOut := tt.errCapture.Bytes()
+					if !tt.wantErr {
+						t.Errorf("Got error: %v\nwantErr: %v", string(errOut), tt.wantErr)
+					}
+
+					pluginError := errors.PluginError{}
+					err := json.Unmarshal(errOut, &pluginError)
+					if err != nil {
+						t.Errorf("unable to get captured data: %v", err)
+					}
+					if tt.wantedErr.Type != pluginError.Type || exitCode != 1 {
+						t.Errorf("Got error: %#v\nexpected error: %#v\nexitcode:%v", pluginError, tt.wantedErr, exitCode)
+					}
+				}
+			}()
+
+			RunAndExit(plugin)
+
+			if tt.wantErr {
+				t.Errorf("did not get expected error: %v", tt.wantedErr)
+			}
+			output := tt.outCapture.Bytes()
+
+			// If no object then metadata should be called.
+			if tt.metadata != nil {
+				var pluginMetadata transform.PluginMetadata
+				err := json.Unmarshal(output, &pluginMetadata)
+				if err != nil {
+					t.Errorf("unable to get captured data: %v", err)
+				}
+				if !reflect.DeepEqual(pluginMetadata, *tt.metadata) {
+					t.Errorf("unable to get captured data: %v", err)
+				}
 				return
 			}
-			if !tt.wantErr && !reflect.DeepEqual(*got, tt.want) {
-				t.Errorf("Unstructured() got = %v, want %v", got, tt.want)
+
+			pluginOutput := transform.PluginResponse{}
+
+			err := json.Unmarshal(output, &pluginOutput)
+			if err != nil {
+				t.Errorf("unable to get captured data: %v", err)
+				return
+			}
+
+			patchesEqual, err := ijsonpath.Equal(tt.response.Patches, pluginOutput.Patches)
+			if err != nil {
+				t.Errorf("unable to get captured data: %v", err)
+				return
+			}
+
+			if pluginOutput.IsWhiteOut != tt.response.IsWhiteOut || !patchesEqual || pluginOutput.Version != tt.response.Version {
+				t.Errorf("output: %v \nnot equal to what is expected: %v", pluginOutput, tt.response)
+				return
 			}
 		})
 	}

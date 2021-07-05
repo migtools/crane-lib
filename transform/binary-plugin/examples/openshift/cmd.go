@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane-lib/transform/cli"
@@ -15,14 +13,7 @@ var logger logrus.FieldLogger
 func main() {
 	// TODO: add plumbing for logger in the cli-library and instantiate here
 	// TODO: add plumbing for passing flags in the cli-library
-	u, err := cli.Unstructured(cli.ObjectReaderOrDie())
-	if err != nil {
-		cli.WriterErrorAndExit(fmt.Errorf("error getting unstructured object: %s", err))
-	}
-
-	logger = cli.Logger()
-
-	cli.RunAndExit(cli.NewCustomPlugin("OpenshiftCustomPlugin", Run), u)
+	cli.RunAndExit(cli.NewCustomPlugin("OpenshiftCustomPlugin", "V1", nil, Run))
 }
 
 func Run(u *unstructured.Unstructured) (transform.PluginResponse, error) {
