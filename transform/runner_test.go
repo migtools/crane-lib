@@ -270,6 +270,38 @@ func TestRunnerRun(t *testing.T) {
 			PatchesString:        `[{"op": "add", "path": "/spec/testing", "value": "test1"}]`,
 			IgnoredPatchesString: `[{"PluginName": "plugin1", "Operation": {"op": "add", "path": "/spec/testing", "value": "test"}}]`,
 		},
+		{
+			Name:   "RunWithTwoPluginsCollidedPatchesDifferentOps",
+			Object: unstructured.Unstructured{},
+			Plugins: []Plugin{
+				fakePlugin{
+					Func: func(u *unstructured.Unstructured) (PluginResponse, error) {
+					p, err := jsonpatch.DecodePatch([]byte(`[{"op": "replace", "path": "/spec/testing", "value": "test"}]`))
+					if err != nil {
+						return PluginResponse{}, err
+					}
+					return PluginResponse{
+						Patches: p,
+					}, nil
+				},
+					name: "pluginreplace",
+				},
+				fakePlugin{
+					Func: func(u *unstructured.Unstructured) (PluginResponse, error) {
+					p, err := jsonpatch.DecodePatch([]byte(`[{"op": "remove", "path": "/spec/testing"}]`))
+					if err != nil {
+						return PluginResponse{}, err
+					}
+					return PluginResponse{
+						Patches: p,
+					}, nil
+				},
+					name: "pluginremove",
+				},
+			},
+			PatchesString:        `[{"op": "replace", "path": "/spec/testing", "value": "test"}]`,
+			IgnoredPatchesString: `[{"PluginName": "pluginremove", "Operation": {"op": "remove", "path": "/spec/testing"}}]`,
+		},
 	}
 
 	for _, c := range cases {
