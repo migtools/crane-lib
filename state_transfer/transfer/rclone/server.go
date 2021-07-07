@@ -1,4 +1,4 @@
-package state_transfer
+package rclone
 
 import (
 	"context"
@@ -10,6 +10,9 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/konveyor/crane-lib/state_transfer/endpoint"
+	"github.com/konveyor/crane-lib/state_transfer/transport"
 )
 
 const (
@@ -24,22 +27,22 @@ func (r *RcloneTransfer) CreateServer(c client.Client) error {
 		return err
 	}
 
-	transport, err := CreateTransportServer(r.Transport(), c, r)
+	t, err := transport.CreateTransportServer(r.Transport(), c, r.Endpoint())
 	if err != nil {
 		return err
 	}
-	r.SetTransport(transport)
+	r.SetTransport(t)
 
 	err = createRcloneServer(c, r)
 	if err != nil {
 		return err
 	}
 
-	endpoint, err := CreateEndpoint(r.Endpoint(), c, r)
+	e, err := endpoint.CreateEndpoint(r.Endpoint(), c)
 	if err != nil {
 		return err
 	}
-	r.SetEndpoint(endpoint)
+	r.SetEndpoint(e)
 
 	return nil
 }
@@ -69,7 +72,7 @@ func createRcloneServerConfig(c client.Client, r *RcloneTransfer) error {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.PVC().Namespace,
 			Name:      rcloneConfigPrefix + r.PVC().Name,
-			Labels:    labels,
+			Labels:    r.Endpoint().Labels(),
 		},
 		Data: map[string]string{
 			"rclone.conf": rcloneServerConf,
@@ -80,7 +83,7 @@ func createRcloneServerConfig(c client.Client, r *RcloneTransfer) error {
 }
 
 func createRcloneServer(c client.Client, r *RcloneTransfer) error {
-	deploymentLabels := labels
+	deploymentLabels := r.Endpoint().Labels()
 	deploymentLabels["pvc"] = r.PVC().Name
 	containers := []v1.Container{
 		{

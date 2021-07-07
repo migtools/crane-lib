@@ -1,4 +1,4 @@
-package state_transfer
+package stunnel
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"text/template"
 
+	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -25,37 +26,38 @@ const (
 `
 )
 
-func (s *StunnelTransport) CreateClient(c client.Client, t Transfer) error {
-	err := createStunnelClientResources(c, s, t)
+func (s *StunnelTransport) CreateClient(c client.Client, e endpoint.Endpoint) error {
+	err := createStunnelClientResources(c, s, e)
 	return err
 }
 
-func createStunnelClientResources(c client.Client, s *StunnelTransport, t Transfer) error {
+func createStunnelClientResources(c client.Client, s *StunnelTransport, e endpoint.Endpoint) error {
 	s.SetPort(stunnelPort)
-	pvc := t.PVC()
 
-	err := createStunnelClientConfig(c, s, t)
+	// assuming the name of the endpoint is the same as the name of the PVC
+
+	err := createStunnelClientConfig(c, e)
 	if err != nil {
 		return err
 	}
 
-	err = createStunnelClientSecret(c, s, pvc)
+	err = createStunnelClientSecret(c, s, e)
 	if err != nil {
 		return err
 	}
 
-	createStunnelClientContainers(s, t)
+	createStunnelClientContainers(s, e)
 
-	createStunnelClientVolumes(s, t)
+	createStunnelClientVolumes(s, e)
 
 	return nil
 }
 
-func createStunnelClientConfig(c client.Client, s *StunnelTransport, t Transfer) error {
+func createStunnelClientConfig(c client.Client, e endpoint.Endpoint) error {
 	connections := map[string]string{
 		"stunnelPort": strconv.Itoa(int(stunnelPort)),
-		"hostname":    t.Endpoint().Hostname(),
-		"port":        strconv.Itoa(int(t.Endpoint().Port())),
+		"hostname":    e.Hostname(),
+		"port":        strconv.Itoa(int(e.Port())),
 	}
 
 	var stunnelConf bytes.Buffer
@@ -71,9 +73,9 @@ func createStunnelClientConfig(c client.Client, s *StunnelTransport, t Transfer)
 
 	stunnelConfigMap := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: t.PVC().Namespace,
-			Name:      stunnelConfigPrefix + t.PVC().Name,
-			Labels:    labels,
+			Namespace: e.Namespace(),
+			Name:      stunnelConfigPrefix + e.Name(),
+			Labels:    e.Labels(),
 		},
 		Data: map[string]string{
 			"stunnel.conf": string(stunnelConf.Bytes()),
@@ -84,12 +86,12 @@ func createStunnelClientConfig(c client.Client, s *StunnelTransport, t Transfer)
 
 }
 
-func createStunnelClientSecret(c client.Client, s *StunnelTransport, pvc v1.PersistentVolumeClaim) error {
+func createStunnelClientSecret(c client.Client, s *StunnelTransport, e endpoint.Endpoint) error {
 	stunnelSecret := &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: pvc.Namespace,
-			Name:      stunnelSecretPrefix + pvc.Name,
-			Labels:    labels,
+			Namespace: e.Namespace(),
+			Name:      stunnelSecretPrefix + e.Name(),
+			Labels:    e.Labels(),
 		},
 		Data: map[string][]byte{
 			"tls.crt": s.Crt().Bytes(),
@@ -100,7 +102,7 @@ func createStunnelClientSecret(c client.Client, s *StunnelTransport, pvc v1.Pers
 	return c.Create(context.TODO(), stunnelSecret, &client.CreateOptions{})
 }
 
-func createStunnelClientContainers(s *StunnelTransport, t Transfer) {
+func createStunnelClientContainers(s *StunnelTransport, e endpoint.Endpoint) {
 	s.SetClientContainers([]v1.Container{
 		{
 			Name:  "stunnel",
@@ -118,12 +120,12 @@ func createStunnelClientContainers(s *StunnelTransport, t Transfer) {
 			},
 			VolumeMounts: []v1.VolumeMount{
 				{
-					Name:      stunnelConfigPrefix + t.PVC().Name,
+					Name:      stunnelConfigPrefix + e.Name(),
 					MountPath: "/etc/stunnel/stunnel.conf",
 					SubPath:   "stunnel.conf",
 				},
 				{
-					Name:      stunnelSecretPrefix + t.PVC().Name,
+					Name:      stunnelSecretPrefix + e.Name(),
 					MountPath: "/etc/stunnel/certs",
 				},
 			},
@@ -131,23 +133,23 @@ func createStunnelClientContainers(s *StunnelTransport, t Transfer) {
 	})
 }
 
-func createStunnelClientVolumes(s *StunnelTransport, t Transfer) {
+func createStunnelClientVolumes(s *StunnelTransport, e endpoint.Endpoint) {
 	s.SetClientVolumes([]v1.Volume{
 		{
-			Name: stunnelConfigPrefix + t.PVC().Name,
+			Name: stunnelConfigPrefix + e.Name(),
 			VolumeSource: v1.VolumeSource{
 				ConfigMap: &v1.ConfigMapVolumeSource{
 					LocalObjectReference: v1.LocalObjectReference{
-						Name: stunnelConfigPrefix + t.PVC().Name,
+						Name: stunnelConfigPrefix + e.Name(),
 					},
 				},
 			},
 		},
 		{
-			Name: stunnelSecretPrefix + t.PVC().Name,
+			Name: stunnelSecretPrefix + e.Name(),
 			VolumeSource: v1.VolumeSource{
 				Secret: &v1.SecretVolumeSource{
-					SecretName: stunnelSecretPrefix + t.PVC().Name,
+					SecretName: stunnelSecretPrefix + e.Name(),
 					Items: []v1.KeyToPath{
 						{
 							Key:  "tls.crt",

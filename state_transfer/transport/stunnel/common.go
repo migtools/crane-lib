@@ -1,4 +1,4 @@
-package state_transfer
+package stunnel
 
 import (
 	"bytes"

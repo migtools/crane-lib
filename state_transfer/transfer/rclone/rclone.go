@@ -1,6 +1,8 @@
-package state_transfer
+package rclone
 
 import (
+	"github.com/konveyor/crane-lib/state_transfer/endpoint"
+	"github.com/konveyor/crane-lib/state_transfer/transport"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 )
@@ -18,8 +20,8 @@ type RcloneTransfer struct {
 	source      *rest.Config
 	destination *rest.Config
 	pvc         v1.PersistentVolumeClaim
-	transport   Transport
-	endpoint    Endpoint
+	transport   transport.Transport
+	endpoint    endpoint.Endpoint
 	port        int32
 }
 
@@ -35,19 +37,19 @@ func (r *RcloneTransfer) SetPVC(pvc v1.PersistentVolumeClaim) {
 	r.pvc = pvc
 }
 
-func (r *RcloneTransfer) Endpoint() Endpoint {
+func (r *RcloneTransfer) Endpoint() endpoint.Endpoint {
 	return r.endpoint
 }
 
-func (r *RcloneTransfer) SetEndpoint(endpoint Endpoint) {
+func (r *RcloneTransfer) SetEndpoint(endpoint endpoint.Endpoint) {
 	r.endpoint = endpoint
 }
 
-func (r *RcloneTransfer) Transport() Transport {
+func (r *RcloneTransfer) Transport() transport.Transport {
 	return r.transport
 }
 
-func (r *RcloneTransfer) SetTransport(transport Transport) {
+func (r *RcloneTransfer) SetTransport(transport transport.Transport) {
 	r.transport = transport
 }
 

@@ -1,4 +1,4 @@
-package state_transfer
+package rsync
 
 import (
 	"bytes"
@@ -6,6 +6,9 @@ import (
 	"strconv"
 	"text/template"
 	"time"
+
+	"github.com/konveyor/crane-lib/state_transfer/endpoint"
+	"github.com/konveyor/crane-lib/state_transfer/transport"
 
 	random "math/rand"
 
@@ -40,22 +43,22 @@ func (r *RsyncTransfer) CreateServer(c client.Client) error {
 		return err
 	}
 
-	transport, err := CreateTransportServer(r.Transport(), c, r)
+	t, err := transport.CreateTransportServer(r.Transport(), c, r.Endpoint())
 	if err != nil {
 		return err
 	}
-	r.SetTransport(transport)
+	r.SetTransport(t)
 
 	err = createRsyncServer(c, r)
 	if err != nil {
 		return err
 	}
 
-	endpoint, err := CreateEndpoint(r.Endpoint(), c, r)
+	e, err := endpoint.CreateEndpoint(r.Endpoint(), c)
 	if err != nil {
 		return err
 	}
-	r.SetEndpoint(endpoint)
+	r.SetEndpoint(e)
 
 	return nil
 }
@@ -93,7 +96,7 @@ func createRsyncServerConfig(c client.Client, r *RsyncTransfer) error {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.PVC().Namespace,
 			Name:      rsyncConfigPrefix + r.PVC().Name,
-			Labels:    labels,
+			Labels:    r.Endpoint().Labels(),
 		},
 		Data: map[string]string{
 			"rsyncd.conf": string(rsyncConf.Bytes()),
@@ -116,7 +119,7 @@ func createRsyncServerSecret(c client.Client, r *RsyncTransfer) error {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.PVC().Namespace,
 			Name:      rsyncSecretPrefix + r.PVC().Name,
-			Labels:    labels,
+			Labels:    r.Endpoint().Labels(),
 		},
 		Data: map[string][]byte{
 			"credentials": []byte(r.Username() + ":" + r.Password()),
@@ -126,7 +129,7 @@ func createRsyncServerSecret(c client.Client, r *RsyncTransfer) error {
 }
 
 func createRsyncServer(c client.Client, r *RsyncTransfer) error {
-	deploymentLabels := labels
+	deploymentLabels := r.Endpoint().Labels()
 	deploymentLabels["pvc"] = r.PVC().Name
 	containers := []v1.Container{
 		{

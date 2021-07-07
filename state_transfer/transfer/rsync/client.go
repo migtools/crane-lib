@@ -1,15 +1,16 @@
-package state_transfer
+package rsync
 
 import (
 	"context"
 	"strconv"
 
+	"github.com/konveyor/crane-lib/state_transfer/transfer"
+	"github.com/konveyor/crane-lib/state_transfer/transport"
+
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-const ()
 
 func (r *RsyncTransfer) CreateClient(c client.Client) error {
 	err := createRsyncClientResources(c, r)
@@ -17,11 +18,11 @@ func (r *RsyncTransfer) CreateClient(c client.Client) error {
 		return err
 	}
 
-	transport, err := CreateTransportClient(r.Transport(), c, r)
+	t, err := transport.CreateTransportClient(r.Transport(), c, r.Endpoint())
 	if err != nil {
 		return err
 	}
-	r.SetTransport(transport)
+	r.SetTransport(t)
 
 	err = createRsyncClient(c, r)
 	if err != nil {
@@ -37,7 +38,7 @@ func createRsyncClientResources(c client.Client, r *RsyncTransfer) error {
 }
 
 func createRsyncClient(c client.Client, r *RsyncTransfer) error {
-	podLabels := labels
+	podLabels := r.Endpoint().Labels()
 	podLabels["pvc"] = r.PVC().Name
 	containers := []v1.Container{
 		{
@@ -49,7 +50,7 @@ func createRsyncClient(c client.Client, r *RsyncTransfer) error {
 				"--delete",
 				"--recursive",
 				"--compress",
-				"rsync://" + r.Username() + "@" + connectionHostname(r) + ":" + strconv.Itoa(int(connectionPort(r))) + "/mnt",
+				"rsync://" + r.Username() + "@" + transfer.ConnectionHostname(r) + ":" + strconv.Itoa(int(transfer.ConnectionPort(r))) + "/mnt",
 				"/mnt/",
 			},
 			Env: []v1.EnvVar{
