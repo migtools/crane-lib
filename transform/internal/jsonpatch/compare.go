@@ -1,6 +1,8 @@
 package jsonpatch
 
 import (
+	"reflect"
+
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/pkg/errors"
 )
@@ -35,6 +37,19 @@ func EqualOperation(operation1, operation2 jsonpatch.Operation) bool {
 		if path1 != path2 {
 			return false
 		}
+		if (operation1.Kind() == "move" || operation1.Kind() == "copy") {
+			from1, err := operation1.From()
+			if err != nil {
+				return false
+			}
+			from2, err := operation2.From()
+			if err != nil {
+				return false
+			}
+			if from1 != from2 {
+				return false
+			}
+		}
 		val1, err := operation1.ValueInterface()
 		err1 := errors.Cause(err)
 		if err != nil && err1 != jsonpatch.ErrMissing {
@@ -45,7 +60,7 @@ func EqualOperation(operation1, operation2 jsonpatch.Operation) bool {
 		if err != nil && err2 != jsonpatch.ErrMissing {
 			return false
 		}
-		if val1 != val2 && !(err2 == jsonpatch.ErrMissing && err1 == jsonpatch.ErrMissing) {
+		if !reflect.DeepEqual(val1, val2) && !(err2 == jsonpatch.ErrMissing && err1 == jsonpatch.ErrMissing) {
 			return false
 		}
 		return true

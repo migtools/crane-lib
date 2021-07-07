@@ -23,6 +23,13 @@ func TestCompare(t *testing.T) {
 			IsEqual:     true,
 		},
 		{
+			Name:        "EqualPatchesArrayValue",
+			Patch1:      `[{"op": "add", "path": "/spec/testing", "value": ["value1", "value2"]}]`,
+			Patch2:      `[{"op": "add", "path": "/spec/testing", "value": ["value1", "value2"]}]`,
+			ShouldError: false,
+			IsEqual:     true,
+		},
+		{
 			Name:        "DifferentKinds",
 			Patch1:      `[{"op": "add", "path": "/spec/testing", "value": "value1"}]`,
 			Patch2:      `[{"op": "remove", "path": "/spec/testing"}]`,
@@ -44,11 +51,32 @@ func TestCompare(t *testing.T) {
 			IsEqual:     false,
 		},
 		{
+			Name:        "DifferentArrayValues",
+			Patch1:      `[{"op": "add", "path": "/spec/testing", "value": ["value1", "value2"]}]`,
+			Patch2:      `[{"op": "add", "path": "/spec/testing", "value": ["value1", "value3"]}]`,
+			ShouldError: false,
+			IsEqual:     false,
+		},
+		{
 			Name:        "EqualPatchesDifferentOrders",
 			Patch1:      `[{"op": "add", "path": "/spec/testingDiff", "value": "valueDiff"},{"op": "add", "path": "/spec/testing", "value": "value1"}]`,
 			Patch2:      `[{"op": "add", "path": "/spec/testing", "value": "value1"},{"op": "add", "path": "/spec/testingDiff", "value": "valueDiff"}]`,
 			ShouldError: false,
 			IsEqual:     true,
+		},
+		{
+			Name:        "SameMoveFrom",
+			Patch1:      `[{"op": "move", "from": "/spec/from1", "path": "/spec/testing"}]`,
+			Patch2:      `[{"op": "move", "from": "/spec/from1", "path": "/spec/testing"}]`,
+			ShouldError: false,
+			IsEqual:     true,
+		},
+		{
+			Name:        "DifferentMoveFrom",
+			Patch1:      `[{"op": "move", "from": "/spec/from1", "path": "/spec/testing"}]`,
+			Patch2:      `[{"op": "move", "from": "/spec/from2", "path": "/spec/testing"}]`,
+			ShouldError: false,
+			IsEqual:     false,
 		},
 	}
 
