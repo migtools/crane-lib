@@ -89,7 +89,28 @@ func (k KubernetesTransformPlugin) Metadata() transform.PluginMetadata {
 		Version:         "v1",
 		RequestVersion:  []transform.Version{transform.V1},
 		ResponseVersion: []transform.Version{transform.V1},
-		OptionalFields:  []string{"AddedAnnotations", "RegistryReplacement", "NewNamespace", "RemoveAnnotation"},
+		OptionalFields:  []transform.OptionalFields{
+			{
+				FlagName: "AddedAnnotations",
+				Help:     "Annotations to add to each resource",
+				Example:  "<FIXME: annotation example>",
+			},
+			{
+				FlagName: "RegistryReplacement",
+				Help:     "Map of image registry paths to swap on transform, in the format original-registry1=target-registry1,original-registry2=target-registry2...",
+				Example:  "docker-registry.default.svc:5000=image-registry.openshift-image-registry.svc:5000",
+			},
+			{
+				FlagName: "NewNamespace",
+				Help:     "Change the resource namespace to NewNamespace",
+				Example:  "destination-namespace",
+			},
+			{
+				FlagName: "RemoveAnnotation",
+				Help:     "Annotations to remove",
+				Example:  "annotation1,annotation2",
+			},
+		},
 	}
 }
 

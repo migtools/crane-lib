@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	goerrors "errors"
 	"fmt"
 	"io"
 	"os"
@@ -29,25 +30,25 @@ func init() {
 	exiter = os.Exit
 }
 
-type CustomPlugin struct {
+type customPlugin struct {
 	// TODO: figure out a way to include the name of the plugin in the error messages.
 	metadata transform.PluginMetadata
-	runFunc  func(*unstructured.Unstructured) (transform.PluginResponse, error)
+	runFunc  func(*unstructured.Unstructured, map[string]string) (transform.PluginResponse, error)
 }
 
-func (c *CustomPlugin) Run(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
+func (c *customPlugin) Run(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
 	if c.runFunc == nil {
 		return transform.PluginResponse{}, nil
 	}
-	return c.runFunc(u)
+	return c.runFunc(u, extras)
 }
 
-func (c *CustomPlugin) Metadata() transform.PluginMetadata {
+func (c *customPlugin) Metadata() transform.PluginMetadata {
 	return c.metadata
 }
 
-func NewCustomPlugin(name, version string, optionalFields []string, runFunc func(*unstructured.Unstructured) (transform.PluginResponse, error)) transform.Plugin {
-	return &CustomPlugin{
+func NewCustomPlugin(name, version string, optionalFields []transform.OptionalFields, runFunc func(*unstructured.Unstructured, map[string]string) (transform.PluginResponse, error)) transform.Plugin {
+	return &customPlugin{
 		metadata: transform.PluginMetadata{
 			Name:            name,
 			Version:         version,
@@ -108,7 +109,31 @@ func RunAndExit(plugin transform.Plugin) {
 		})
 	}
 
-	resp, err := plugin.Run(&u, nil)
+	extrasIn := map[string]interface{}{}
+
+	err = decoder.Decode(&extrasIn)
+	if err != nil && !goerrors.Is(err, io.EOF) {
+		WriterErrorAndExit(&errors.PluginError{
+			Type:         errors.PluginInvalidIOError,
+			Message:      "error reading extras input",
+			ErrorMessage: err.Error(),
+		})
+	}
+	extras := map[string]string{}
+	for key, value := range extrasIn {
+		switch value.(type) {
+		case string:
+			extras[key] = value.(string)
+		default:
+			WriterErrorAndExit(&errors.PluginError{
+				Type:         errors.PluginInvalidIOError,
+				Message:      "error getting extras value string",
+				ErrorMessage: fmt.Sprintf("value %v for param %v is not a string", value, key),
+			})
+		}
+	}
+
+	resp, err := plugin.Run(&u, extras)
 	if err != nil {
 		WriterErrorAndExit(&errors.PluginError{
 			Type:         errors.PluginRunError,

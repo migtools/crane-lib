@@ -10,12 +10,19 @@ import (
 )
 
 func main() {
-	cli.RunAndExit(cli.NewCustomPlugin("AnnotationPlugin", "v1", nil, Run))
+	fields := []transform.OptionalFields{
+		{
+			FlagName: "annotation-value",
+			Help:     "The value to set for the annotation test-crane-annotation",
+			Example:  "foo",
+		},
+	}
+	cli.RunAndExit(cli.NewCustomPlugin("AnnotationPlugin", "v1", fields, Run))
 }
 
-func Run(u *unstructured.Unstructured) (transform.PluginResponse, error) {
+func Run(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
 	// plugin writers need to write custome code here.
-	patch, err := AddAnnotation(*u)
+	patch, err := AddAnnotation(*u, extras)
 
 	if err != nil {
 		return transform.PluginResponse{}, err
@@ -27,10 +34,14 @@ func Run(u *unstructured.Unstructured) (transform.PluginResponse, error) {
 	}, nil
 }
 
-func AddAnnotation(u unstructured.Unstructured) (jsonpatch.Patch, error) {
+func AddAnnotation(u unstructured.Unstructured, extras map[string]string) (jsonpatch.Patch, error) {
+	val, ok := extras["annotation-value"]
+	if !ok {
+		val = "crane"
+	}
 	patchJSON := fmt.Sprintf(`[
-{ "op": "add", "path": "/metadata/annotations/test-crane-annotation", "value":"crane"}
-]`)
+{ "op": "add", "path": "/metadata/annotations/test-crane-annotation", "value":"%v"}
+]`, val)
 
 	patch, err := jsonpatch.DecodePatch([]byte(patchJSON))
 	if err != nil {
