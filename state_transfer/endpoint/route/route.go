@@ -30,7 +30,7 @@ type RouteEndpoint struct {
 	endpointType RouteEndpointType
 }
 
-func NewRouteEndpoint(name, namespace string, eType RouteEndpointType, labels map[string]string) endpoint.Endpoint {
+func NewEndpoint(name, namespace string, eType RouteEndpointType, labels map[string]string) endpoint.Endpoint {
 	if eType != RouteEndpointTypePassthrough && eType != RouteEndpointTypeInsecureEdge {
 		panic("unsupported endpoint type for routes")
 	}

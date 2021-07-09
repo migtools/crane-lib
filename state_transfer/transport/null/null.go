@@ -20,7 +20,7 @@ type NullTransport struct {
 	direct           bool
 }
 
-func NewNullTransport() transport.Transport {
+func NewTransport() transport.Transport {
 	return &NullTransport{}
 }
 

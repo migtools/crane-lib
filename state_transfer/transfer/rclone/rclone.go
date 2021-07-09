@@ -26,7 +26,7 @@ type RcloneTransfer struct {
 	port        int32
 }
 
-func NewRcloneTransfer(t transport.Transport, e endpoint.Endpoint, src *rest.Config, dest *rest.Config, pvc corev1.PersistentVolumeClaim) transfer.Transfer {
+func NewTransfer(t transport.Transport, e endpoint.Endpoint, src *rest.Config, dest *rest.Config, pvc corev1.PersistentVolumeClaim) transfer.Transfer {
 	return &RcloneTransfer{
 		transport:   t,
 		endpoint:    e,

@@ -31,7 +31,7 @@ func CreateRsyncTransfer() *RsyncTransfer {
 	return &RsyncTransfer{}
 }
 
-func NewRsyncTransfer(t transport.Transport, e endpoint.Endpoint, src *rest.Config, dest *rest.Config, pvc corev1.PersistentVolumeClaim) transfer.Transfer {
+func NewTransfer(t transport.Transport, e endpoint.Endpoint, src *rest.Config, dest *rest.Config, pvc corev1.PersistentVolumeClaim) transfer.Transfer {
 	return &RsyncTransfer{
 		transport:   t,
 		endpoint:    e,

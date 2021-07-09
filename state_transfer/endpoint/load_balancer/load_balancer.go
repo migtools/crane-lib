@@ -22,7 +22,7 @@ type LoadBalancerEndpoint struct {
 	port   int32
 }
 
-func NewLoadBalancerEndpoint(name, namespace string, labels map[string]string) endpoint.Endpoint {
+func NewEndpoint(name, namespace string, labels map[string]string) endpoint.Endpoint {
 	return &LoadBalancerEndpoint{
 		name:      name,
 		namespace: namespace,

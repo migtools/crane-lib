@@ -27,7 +27,7 @@ type StunnelTransport struct {
 	direct           bool
 }
 
-func NewStunnelTransport() transport.Transport {
+func NewTransport() transport.Transport {
 	return &StunnelTransport{}
 }
 
