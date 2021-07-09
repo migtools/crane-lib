@@ -7,6 +7,6 @@ import (
 
 func (s *NullTransport) CreateServer(c client.Client, e endpoint.Endpoint) error {
 	s.direct = true
-	s.SetPort(e.Port())
+	s.port = e.Port()
 	return nil
 }

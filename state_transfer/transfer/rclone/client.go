@@ -27,11 +27,10 @@ func (r *RcloneTransfer) CreateClient(c client.Client) error {
 		return err
 	}
 
-	t, err := transport.CreateTransportClient(r.Transport(), c, r.Endpoint())
+	_, err = transport.CreateTransportClient(r.Transport(), c, r.Endpoint())
 	if err != nil {
 		return err
 	}
-	r.SetTransport(t)
 
 	err = createRcloneClient(c, r)
 	if err != nil {

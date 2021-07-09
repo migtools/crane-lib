@@ -43,29 +43,27 @@ func (r *RsyncTransfer) CreateServer(c client.Client) error {
 		return err
 	}
 
-	t, err := transport.CreateTransportServer(r.Transport(), c, r.Endpoint())
+	_, err = transport.CreateTransportServer(r.Transport(), c, r.Endpoint())
 	if err != nil {
 		return err
 	}
-	r.SetTransport(t)
 
 	err = createRsyncServer(c, r)
 	if err != nil {
 		return err
 	}
 
-	e, err := endpoint.CreateEndpoint(r.Endpoint(), c)
+	_, err = endpoint.CreateEndpoint(r.Endpoint(), c)
 	if err != nil {
 		return err
 	}
-	r.SetEndpoint(e)
 
 	return nil
 }
 
 func createRsyncServerResources(c client.Client, r *RsyncTransfer) error {
-	r.SetPort(rsyncPort)
-	r.SetUsername(rsyncUser)
+	r.username = rsyncUser
+	r.port = rsyncPort
 
 	err := createRsyncServerConfig(c, r)
 	if err != nil {
@@ -113,7 +111,7 @@ func createRsyncServerSecret(c client.Client, r *RsyncTransfer) error {
 	for i := range password {
 		password[i] = letters[random.Intn(len(letters))]
 	}
-	r.SetPassword(string(password))
+	r.password = string(password)
 
 	rsyncSecret := &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

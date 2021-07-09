@@ -3,9 +3,10 @@ package stunnel
 import (
 	"bytes"
 	"context"
-	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 	"strconv"
 	"text/template"
+
+	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 
 	"github.com/konveyor/crane-lib/state_transfer/transport"
 
@@ -36,7 +37,7 @@ func (s *StunnelTransport) CreateServer(c client.Client, e endpoint.Endpoint) er
 }
 
 func createStunnelServerResources(c client.Client, s *StunnelTransport, e endpoint.Endpoint) error {
-	s.SetPort(stunnelPort)
+	s.port = stunnelPort
 
 	err := createStunnelServerConfig(c, e)
 	if err != nil {
@@ -89,8 +90,8 @@ func createStunnelServerConfig(c client.Client, e endpoint.Endpoint) error {
 
 func createStunnelServerSecret(c client.Client, s *StunnelTransport, e endpoint.Endpoint) error {
 	_, crt, key, err := transport.GenerateSSLCert()
-	s.SetKey(key)
-	s.SetCrt(crt)
+	s.key = key
+	s.crt = crt
 	if err != nil {
 		return err
 	}
@@ -111,7 +112,7 @@ func createStunnelServerSecret(c client.Client, s *StunnelTransport, e endpoint.
 }
 
 func createStunnelServerContainers(s *StunnelTransport, e endpoint.Endpoint) {
-	s.SetServerContainers([]v1.Container{
+	s.serverContainers = []v1.Container{
 		{
 			Name:  "stunnel",
 			Image: stunnelImage,
@@ -138,11 +139,11 @@ func createStunnelServerContainers(s *StunnelTransport, e endpoint.Endpoint) {
 				},
 			},
 		},
-	})
+	}
 }
 
 func createStunnelServerVolumes(s *StunnelTransport, e endpoint.Endpoint) {
-	s.SetServerVolumes([]v1.Volume{
+	s.serverVolumes = []v1.Volume{
 		{
 			Name: stunnelConfigPrefix + e.Name(),
 			VolumeSource: v1.VolumeSource{
@@ -171,5 +172,5 @@ func createStunnelServerVolumes(s *StunnelTransport, e endpoint.Endpoint) {
 				},
 			},
 		},
-	})
+	}
 }

@@ -17,21 +17,13 @@ import (
 )
 
 type Transport interface {
-	SetCA(*bytes.Buffer)
 	CA() *bytes.Buffer
-	SetCrt(*bytes.Buffer)
 	Crt() *bytes.Buffer
-	SetKey(*bytes.Buffer)
 	Key() *bytes.Buffer
-	SetPort(int32)
 	Port() int32
-	SetClientContainers([]v1.Container)
 	ClientContainers() []v1.Container
-	SetClientVolumes([]v1.Volume)
 	ClientVolumes() []v1.Volume
-	SetServerContainers([]v1.Container)
 	ServerContainers() []v1.Container
-	SetServerVolumes([]v1.Volume)
 	ServerVolumes() []v1.Volume
 	Direct() bool
 	CreateServer(client.Client, endpoint.Endpoint) error

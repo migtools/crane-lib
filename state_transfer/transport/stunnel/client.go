@@ -32,7 +32,7 @@ func (s *StunnelTransport) CreateClient(c client.Client, e endpoint.Endpoint) er
 }
 
 func createStunnelClientResources(c client.Client, s *StunnelTransport, e endpoint.Endpoint) error {
-	s.SetPort(stunnelPort)
+	s.port = stunnelPort
 
 	// assuming the name of the endpoint is the same as the name of the PVC
 
@@ -103,7 +103,7 @@ func createStunnelClientSecret(c client.Client, s *StunnelTransport, e endpoint.
 }
 
 func createStunnelClientContainers(s *StunnelTransport, e endpoint.Endpoint) {
-	s.SetClientContainers([]v1.Container{
+	s.clientContainers = []v1.Container{
 		{
 			Name:  "stunnel",
 			Image: stunnelImage,
@@ -130,11 +130,11 @@ func createStunnelClientContainers(s *StunnelTransport, e endpoint.Endpoint) {
 				},
 			},
 		},
-	})
+	}
 }
 
 func createStunnelClientVolumes(s *StunnelTransport, e endpoint.Endpoint) {
-	s.SetClientVolumes([]v1.Volume{
+	s.clientVolumes = []v1.Volume{
 		{
 			Name: stunnelConfigPrefix + e.Name(),
 			VolumeSource: v1.VolumeSource{
@@ -163,5 +163,5 @@ func createStunnelClientVolumes(s *StunnelTransport, e endpoint.Endpoint) {
 				},
 			},
 		},
-	})
+	}
 }

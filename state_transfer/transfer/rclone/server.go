@@ -12,7 +12,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
-	"github.com/konveyor/crane-lib/state_transfer/transport"
 )
 
 const (
@@ -27,24 +26,14 @@ func (r *RcloneTransfer) CreateServer(c client.Client) error {
 		return err
 	}
 
-	t, err := transport.CreateTransportServer(r.Transport(), c, r.Endpoint())
-	if err != nil {
-		return err
-	}
-	r.SetTransport(t)
-
 	err = createRcloneServer(c, r)
 	if err != nil {
 		return err
 	}
 
-	e, err := endpoint.CreateEndpoint(r.Endpoint(), c)
-	if err != nil {
-		return err
-	}
-	r.SetEndpoint(e)
+	_, err = endpoint.CreateEndpoint(r.Endpoint(), c)
 
-	return nil
+	return err
 }
 
 func createRcloneServerResources(c client.Client, r *RcloneTransfer) error {
@@ -55,9 +44,9 @@ func createRcloneServerResources(c client.Client, r *RcloneTransfer) error {
 		password[i] = letters[random.Intn(len(letters))]
 	}
 
-	r.SetPassword(string(password))
-	r.SetPort(rclonePort)
-	r.SetUsername(rcloneUser)
+	r.password = string(password)
+	r.port = rclonePort
+	r.username = rcloneUser
 
 	err := createRcloneServerConfig(c, r)
 	if err != nil {
@@ -97,7 +86,7 @@ func createRcloneServer(c client.Client, r *RcloneTransfer) error {
 				"--user",
 				rcloneUser,
 				"--pass",
-				r.Password(),
+				r.password,
 				"--config",
 				"/etc/rclone.conf",
 				"--addr",
