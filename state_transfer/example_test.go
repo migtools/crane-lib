@@ -63,7 +63,7 @@ func Example_basicTransfer() {
 	}
 
 	// create a route for data transfer
-	r := route.NewEndpoint(pvc.Name, pvc.Namespace, route.RouteEndpointTypePassthrough, map[string]string{"app": "dvm"})
+	r := route.NewEndpoint(pvc.Name, pvc.Namespace, route.EndpointTypePassthrough, map[string]string{"app": "dvm"})
 	e, err := endpoint.Create(r, destClient)
 	if err != nil {
 		log.Fatal(err, "unable to create route endpoint")

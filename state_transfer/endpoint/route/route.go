@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	RouteEndpointTypePassthrough  = "RouteEndpointTypePassthrough"
-	RouteEndpointTypeInsecureEdge = "RouteEndpointTypeInsecureEdge"
+	EndpointTypePassthrough  = "EndpointTypePassthrough"
+	EndpointTypeInsecureEdge = "EndpointTypeInsecureEdge"
 )
 
 type RouteEndpointType string
@@ -31,7 +31,7 @@ type RouteEndpoint struct {
 }
 
 func NewEndpoint(name, namespace string, eType RouteEndpointType, labels map[string]string) endpoint.Endpoint {
-	if eType != RouteEndpointTypePassthrough && eType != RouteEndpointTypeInsecureEdge {
+	if eType != EndpointTypePassthrough && eType != EndpointTypeInsecureEdge {
 		panic("unsupported endpoint type for routes")
 	}
 	return &RouteEndpoint{
@@ -147,13 +147,13 @@ func (r *RouteEndpoint) createRouteService(c client.Client) error {
 func (r *RouteEndpoint) createRoute(c client.Client) error {
 	termination := &routev1.TLSConfig{}
 	switch r.endpointType {
-	case RouteEndpointTypeInsecureEdge:
+	case EndpointTypeInsecureEdge:
 		termination = &routev1.TLSConfig{
 			Termination:                   routev1.TLSTerminationEdge,
 			InsecureEdgeTerminationPolicy: "Allow",
 		}
 		r.port = int32(80)
-	case RouteEndpointTypePassthrough:
+	case EndpointTypePassthrough:
 		termination = &routev1.TLSConfig{
 			Termination: routev1.TLSTerminationPassthrough,
 		}
