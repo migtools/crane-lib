@@ -14,19 +14,17 @@ import (
 )
 
 type LoadBalancerEndpoint struct {
-	name      string
-	namespace string
-	hostname  string
+	namespacedName types.NamespacedName
+	hostname       string
 
 	labels map[string]string
 	port   int32
 }
 
-func NewEndpoint(name, namespace string, labels map[string]string) endpoint.Endpoint {
+func NewEndpoint(namespacedName types.NamespacedName, labels map[string]string) endpoint.Endpoint {
 	return &LoadBalancerEndpoint{
-		name:      name,
-		namespace: namespace,
-		labels:    labels,
+		namespacedName: namespacedName,
+		labels:         labels,
 	}
 }
 
@@ -47,12 +45,8 @@ func (l *LoadBalancerEndpoint) Port() int32 {
 	return l.port
 }
 
-func (l *LoadBalancerEndpoint) Name() string {
-	return l.name
-}
-
-func (l *LoadBalancerEndpoint) Namespace() string {
-	return l.namespace
+func (l *LoadBalancerEndpoint) NamespacedName() types.NamespacedName {
+	return l.namespacedName
 }
 
 func (l *LoadBalancerEndpoint) Labels() map[string]string {
@@ -61,7 +55,7 @@ func (l *LoadBalancerEndpoint) Labels() map[string]string {
 
 func (l *LoadBalancerEndpoint) IsHealthy(c client.Client) (bool, error) {
 	service := corev1.Service{}
-	err := c.Get(context.TODO(), types.NamespacedName{Name: l.Name(), Namespace: l.Namespace()}, &service)
+	err := c.Get(context.TODO(), types.NamespacedName{Name: l.NamespacedName().Name, Namespace: l.NamespacedName().Namespace}, &service)
 	if err != nil {
 		return false, err
 	}
@@ -76,18 +70,18 @@ func (l *LoadBalancerEndpoint) IsHealthy(c client.Client) (bool, error) {
 
 func (l *LoadBalancerEndpoint) createLoadBalancerService(c client.Client) error {
 	serviceSelector := l.Labels()
-	serviceSelector["pvc"] = l.Name()
+	serviceSelector["pvc"] = l.NamespacedName().Name
 
 	service := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      l.Name(),
-			Namespace: l.Namespace(),
+			Name:      l.NamespacedName().Name,
+			Namespace: l.NamespacedName().Namespace,
 			Labels:    l.Labels(),
 		},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
 				{
-					Name:       l.Name(),
+					Name:       l.NamespacedName().Name,
 					Protocol:   corev1.ProtocolTCP,
 					Port:       l.Port(),
 					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: l.Port()},
@@ -105,7 +99,7 @@ func (l *LoadBalancerEndpoint) createLoadBalancerService(c client.Client) error 
 
 	//FIXME. Seems to take a moment, probably something better to do than wait 5 seconds
 	time.Sleep(5 * time.Second)
-	err = c.Get(context.TODO(), types.NamespacedName{Name: l.Name(), Namespace: l.Namespace()}, &service)
+	err = c.Get(context.TODO(), types.NamespacedName{Name: l.NamespacedName().Name, Namespace: l.NamespacedName().Namespace}, &service)
 	if err != nil {
 		return err
 	}

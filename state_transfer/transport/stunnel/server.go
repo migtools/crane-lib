@@ -75,8 +75,8 @@ func createStunnelServerConfig(c client.Client, e endpoint.Endpoint) error {
 
 	stunnelConfigMap := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: e.Namespace(),
-			Name:      stunnelConfigPrefix + e.Name(),
+			Namespace: e.NamespacedName().Namespace,
+			Name:      stunnelConfigPrefix + e.NamespacedName().Name,
 			Labels:    e.Labels(),
 		},
 		Data: map[string]string{
@@ -98,8 +98,8 @@ func createStunnelServerSecret(c client.Client, s *StunnelTransport, e endpoint.
 
 	stunnelSecret := &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: e.Namespace(),
-			Name:      stunnelSecretPrefix + e.Name(),
+			Namespace: e.NamespacedName().Namespace,
+			Name:      stunnelSecretPrefix + e.NamespacedName().Name,
 			Labels:    e.Labels(),
 		},
 		Data: map[string][]byte{
@@ -129,12 +129,12 @@ func createStunnelServerContainers(s *StunnelTransport, e endpoint.Endpoint) {
 			},
 			VolumeMounts: []v1.VolumeMount{
 				{
-					Name:      stunnelConfigPrefix + e.Name(),
+					Name:      stunnelConfigPrefix + e.NamespacedName().Name,
 					MountPath: "/etc/stunnel/stunnel.conf",
 					SubPath:   "stunnel.conf",
 				},
 				{
-					Name:      stunnelSecretPrefix + e.Name(),
+					Name:      stunnelSecretPrefix + e.NamespacedName().Name,
 					MountPath: "/etc/stunnel/certs",
 				},
 			},
@@ -145,20 +145,20 @@ func createStunnelServerContainers(s *StunnelTransport, e endpoint.Endpoint) {
 func createStunnelServerVolumes(s *StunnelTransport, e endpoint.Endpoint) {
 	s.serverVolumes = []v1.Volume{
 		{
-			Name: stunnelConfigPrefix + e.Name(),
+			Name: stunnelConfigPrefix + e.NamespacedName().Name,
 			VolumeSource: v1.VolumeSource{
 				ConfigMap: &v1.ConfigMapVolumeSource{
 					LocalObjectReference: v1.LocalObjectReference{
-						Name: stunnelConfigPrefix + e.Name(),
+						Name: stunnelConfigPrefix + e.NamespacedName().Name,
 					},
 				},
 			},
 		},
 		{
-			Name: stunnelSecretPrefix + e.Name(),
+			Name: stunnelSecretPrefix + e.NamespacedName().Name,
 			VolumeSource: v1.VolumeSource{
 				Secret: &v1.SecretVolumeSource{
-					SecretName: stunnelSecretPrefix + e.Name(),
+					SecretName: stunnelSecretPrefix + e.NamespacedName().Name,
 					Items: []v1.KeyToPath{
 						{
 							Key:  "tls.crt",

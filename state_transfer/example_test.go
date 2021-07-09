@@ -5,6 +5,8 @@ import (
 	"log"
 	"time"
 
+	"k8s.io/apimachinery/pkg/types"
+
 	"github.com/konveyor/crane-lib/state_transfer"
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 	"github.com/konveyor/crane-lib/state_transfer/endpoint/route"
@@ -63,7 +65,7 @@ func Example_basicTransfer() {
 	}
 
 	// create a route for data transfer
-	r := route.NewEndpoint(pvc.Name, pvc.Namespace, route.EndpointTypePassthrough, map[string]string{"app": "dvm"})
+	r := route.NewEndpoint(types.NamespacedName{Namespace: pvc.Name, Name: pvc.Namespace}, route.EndpointTypePassthrough, map[string]string{"app": "dvm"})
 	e, err := endpoint.Create(r, destClient)
 	if err != nil {
 		log.Fatal(err, "unable to create route endpoint")

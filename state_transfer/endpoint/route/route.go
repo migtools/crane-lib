@@ -21,24 +21,22 @@ const (
 type RouteEndpointType string
 
 type RouteEndpoint struct {
-	name      string
-	namespace string
-	hostname  string
+	hostname string
 
-	labels       map[string]string
-	port         int32
-	endpointType RouteEndpointType
+	labels         map[string]string
+	port           int32
+	endpointType   RouteEndpointType
+	namespacedName types.NamespacedName
 }
 
-func NewEndpoint(name, namespace string, eType RouteEndpointType, labels map[string]string) endpoint.Endpoint {
+func NewEndpoint(namespacedName types.NamespacedName, eType RouteEndpointType, labels map[string]string) endpoint.Endpoint {
 	if eType != EndpointTypePassthrough && eType != EndpointTypeInsecureEdge {
 		panic("unsupported endpoint type for routes")
 	}
 	return &RouteEndpoint{
-		name:         name,
-		namespace:    namespace,
-		labels:       labels,
-		endpointType: eType,
+		namespacedName: namespacedName,
+		labels:         labels,
+		endpointType:   eType,
 	}
 }
 
@@ -68,12 +66,8 @@ func (r *RouteEndpoint) Port() int32 {
 	return r.port
 }
 
-func (r *RouteEndpoint) Name() string {
-	return r.name
-}
-
-func (r *RouteEndpoint) Namespace() string {
-	return r.namespace
+func (r *RouteEndpoint) NamespacedName() types.NamespacedName {
+	return r.namespacedName
 }
 
 func (r *RouteEndpoint) Labels() map[string]string {
@@ -82,7 +76,7 @@ func (r *RouteEndpoint) Labels() map[string]string {
 
 func (r *RouteEndpoint) IsHealthy(c client.Client) (bool, error) {
 	route := &routev1.Route{}
-	err := c.Get(context.TODO(), types.NamespacedName{Name: r.Name(), Namespace: r.Namespace()}, route)
+	err := c.Get(context.TODO(), types.NamespacedName{Name: r.NamespacedName().Name, Namespace: r.NamespacedName().Namespace}, route)
 	if err != nil {
 		return false, err
 	}
@@ -119,18 +113,18 @@ func (r *RouteEndpoint) createRouteResources(c client.Client) error {
 
 func (r *RouteEndpoint) createRouteService(c client.Client) error {
 	serviceSelector := r.Labels()
-	serviceSelector["pvc"] = r.Name()
+	serviceSelector["pvc"] = r.NamespacedName().Name
 
 	service := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      r.Name(),
-			Namespace: r.Namespace(),
+			Name:      r.NamespacedName().Name,
+			Namespace: r.NamespacedName().Namespace,
 			Labels:    r.Labels(),
 		},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
 				{
-					Name:       r.Name(),
+					Name:       r.NamespacedName().Name,
 					Protocol:   corev1.ProtocolTCP,
 					Port:       r.Port(),
 					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: r.Port()},
@@ -162,14 +156,14 @@ func (r *RouteEndpoint) createRoute(c client.Client) error {
 
 	route := routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      r.Name(),
-			Namespace: r.Namespace(),
+			Name:      r.NamespacedName().Name,
+			Namespace: r.NamespacedName().Namespace,
 			Labels:    r.Labels(),
 		},
 		Spec: routev1.RouteSpec{
 			To: routev1.RouteTargetReference{
 				Kind: "Service",
-				Name: r.Name(),
+				Name: r.NamespacedName().Name,
 			},
 			Port: &routev1.RoutePort{
 				TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: r.Port()},
@@ -183,7 +177,7 @@ func (r *RouteEndpoint) createRoute(c client.Client) error {
 		return err
 	}
 
-	err = c.Get(context.TODO(), types.NamespacedName{Name: r.Name(), Namespace: r.Namespace()}, &route)
+	err = c.Get(context.TODO(), types.NamespacedName{Name: r.NamespacedName().Name, Namespace: r.NamespacedName().Namespace}, &route)
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package endpoint
 
 import (
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -8,8 +9,7 @@ type Endpoint interface {
 	Create(client.Client) error
 	Hostname() string
 	Port() int32
-	Name() string
-	Namespace() string
+	NamespacedName() types.NamespacedName
 	Labels() map[string]string
 	IsHealthy(c client.Client) (bool, error)
 }
