@@ -71,7 +71,7 @@ func (l *LoadBalancerEndpoint) IsHealthy(c client.Client) (bool, error) {
 		//l.hostname = service.Status.LoadBalancer.Ingress[0].Hostname
 		return true, nil
 	}
-	return false, fmt.Errorf("load balancer sevice status is not in valid state: %s", service.Status)
+	return false, fmt.Errorf("load balancer sevice status is not in valid state: %s", service.Status.String())
 }
 
 func (l *LoadBalancerEndpoint) createLoadBalancerService(c client.Client) error {
