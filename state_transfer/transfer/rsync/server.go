@@ -43,7 +43,7 @@ func (r *RsyncTransfer) CreateServer(c client.Client) error {
 		return err
 	}
 
-	_, err = transport.CreateTransportServer(r.Transport(), c, r.Endpoint())
+	_, err = transport.CreateServer(r.Transport(), c, r.Endpoint())
 	if err != nil {
 		return err
 	}
@@ -53,7 +53,7 @@ func (r *RsyncTransfer) CreateServer(c client.Client) error {
 		return err
 	}
 
-	_, err = endpoint.CreateEndpoint(r.Endpoint(), c)
+	_, err = endpoint.Create(r.Endpoint(), c)
 	if err != nil {
 		return err
 	}

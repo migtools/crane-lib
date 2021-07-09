@@ -31,7 +31,7 @@ func (r *RcloneTransfer) CreateServer(c client.Client) error {
 		return err
 	}
 
-	_, err = endpoint.CreateEndpoint(r.Endpoint(), c)
+	_, err = endpoint.Create(r.Endpoint(), c)
 
 	return err
 }

@@ -11,10 +11,10 @@ type Endpoint interface {
 	Name() string
 	Namespace() string
 	Labels() map[string]string
-	IsEndpointHealthy(c client.Client) (bool, error)
+	IsHealthy(c client.Client) (bool, error)
 }
 
-func CreateEndpoint(e Endpoint, c client.Client) (Endpoint, error) {
+func Create(e Endpoint, c client.Client) (Endpoint, error) {
 	err := e.Create(c)
 	if err != nil {
 		return nil, err
@@ -22,6 +22,6 @@ func CreateEndpoint(e Endpoint, c client.Client) (Endpoint, error) {
 	return e, nil
 }
 
-func DestroyEndpoint(e Endpoint) error {
+func Destroy(e Endpoint) error {
 	return nil
 }

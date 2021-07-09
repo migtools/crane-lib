@@ -84,7 +84,7 @@ func (r *RouteEndpoint) Type() RouteEndpointType {
 	return r.endpointType
 }
 
-func (r *RouteEndpoint) IsEndpointHealthy(c client.Client) (bool, error) {
+func (r *RouteEndpoint) IsHealthy(c client.Client) (bool, error) {
 	route := &routev1.Route{}
 	err := c.Get(context.TODO(), types.NamespacedName{Name: r.Name(), Namespace: r.Namespace()}, route)
 	if err != nil {

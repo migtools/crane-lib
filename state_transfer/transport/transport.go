@@ -30,7 +30,7 @@ type Transport interface {
 	CreateClient(client.Client, endpoint.Endpoint) error
 }
 
-func CreateTransportServer(t Transport, c client.Client, e endpoint.Endpoint) (Transport, error) {
+func CreateServer(t Transport, c client.Client, e endpoint.Endpoint) (Transport, error) {
 	err := t.CreateServer(c, e)
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func CreateTransportServer(t Transport, c client.Client, e endpoint.Endpoint) (T
 	return t, nil
 }
 
-func CreateTransportClient(t Transport, c client.Client, e endpoint.Endpoint) (Transport, error) {
+func CreateClient(t Transport, c client.Client, e endpoint.Endpoint) (Transport, error) {
 	err := t.CreateClient(c, e)
 	if err != nil {
 		return nil, err
@@ -48,11 +48,11 @@ func CreateTransportClient(t Transport, c client.Client, e endpoint.Endpoint) (T
 	return t, nil
 }
 
-func DestroyTransportServer(t Transport) error {
+func DestroyServer(t Transport) error {
 	return nil
 }
 
-func DestroyTransportClient(t Transport) error {
+func DestroyClient(t Transport) error {
 	return nil
 }
 

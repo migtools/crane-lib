@@ -59,7 +59,7 @@ func (l *LoadBalancerEndpoint) Labels() map[string]string {
 	return l.labels
 }
 
-func (l *LoadBalancerEndpoint) IsEndpointHealthy(c client.Client) (bool, error) {
+func (l *LoadBalancerEndpoint) IsHealthy(c client.Client) (bool, error) {
 	service := corev1.Service{}
 	err := c.Get(context.TODO(), types.NamespacedName{Name: l.Name(), Namespace: l.Namespace()}, &service)
 	if err != nil {

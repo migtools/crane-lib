@@ -18,7 +18,7 @@ func (r *RsyncTransfer) CreateClient(c client.Client) error {
 		return err
 	}
 
-	_, err = transport.CreateTransportClient(r.Transport(), c, r.Endpoint())
+	_, err = transport.CreateClient(r.Transport(), c, r.Endpoint())
 	if err != nil {
 		return err
 	}
