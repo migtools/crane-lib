@@ -80,10 +80,6 @@ func (r *RouteEndpoint) Labels() map[string]string {
 	return r.labels
 }
 
-func (r *RouteEndpoint) Type() RouteEndpointType {
-	return r.endpointType
-}
-
 func (r *RouteEndpoint) IsHealthy(c client.Client) (bool, error) {
 	route := &routev1.Route{}
 	err := c.Get(context.TODO(), types.NamespacedName{Name: r.Name(), Namespace: r.Namespace()}, route)
@@ -150,7 +146,7 @@ func (r *RouteEndpoint) createRouteService(c client.Client) error {
 
 func (r *RouteEndpoint) createRoute(c client.Client) error {
 	termination := &routev1.TLSConfig{}
-	switch r.Type() {
+	switch r.endpointType {
 	case RouteEndpointTypeInsecureEdge:
 		termination = &routev1.TLSConfig{
 			Termination:                   routev1.TLSTerminationEdge,
