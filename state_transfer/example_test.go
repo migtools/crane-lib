@@ -19,14 +19,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+var (
+	srcCfg       = &rest.Config{}
+	destCfg      = &rest.Config{}
+	srcNamespace = "src-namespace"
+	srcPVC       = "example-pvc"
+)
+
 // This example shows how to wire up the components of the lib to
 // transfer data from one PVC to another
 func Example_basicTransfer() {
-	srcCfg := &rest.Config{}
-	destCfg := &rest.Config{}
-	srcNamespace := "src-namespace"
-	srcPVC := "example-pvc"
-
 	srcClient, err := client.New(srcCfg, client.Options{Scheme: runtime.NewScheme()})
 	if err != nil {
 		log.Fatal(err, "unable to create source client")
@@ -37,7 +39,7 @@ func Example_basicTransfer() {
 		log.Fatal(err, "unable to create destination client")
 	}
 
-	// queisce the applications if needed on the source side
+	// quiesce the applications if needed on the source side
 	err = state_transfer.QuiesceApplications(srcCfg, srcNamespace)
 	if err != nil {
 		log.Fatal(err, "unable to quiesce application on source cluster")
