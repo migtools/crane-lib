@@ -3,9 +3,10 @@ package stunnel
 import (
 	"bytes"
 	"context"
-	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 	"strconv"
 	"text/template"
+
+	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 
 	"github.com/konveyor/crane-lib/state_transfer/transport"
 
@@ -36,7 +37,7 @@ func (s *StunnelTransport) CreateServer(c client.Client, e endpoint.Endpoint) er
 }
 
 func createStunnelServerResources(c client.Client, s *StunnelTransport, e endpoint.Endpoint) error {
-	s.SetPort(stunnelPort)
+	s.port = stunnelPort
 
 	err := createStunnelServerConfig(c, e)
 	if err != nil {
@@ -74,8 +75,8 @@ func createStunnelServerConfig(c client.Client, e endpoint.Endpoint) error {
 
 	stunnelConfigMap := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: e.Namespace(),
-			Name:      stunnelConfigPrefix + e.Name(),
+			Namespace: e.NamespacedName().Namespace,
+			Name:      stunnelConfigPrefix + e.NamespacedName().Name,
 			Labels:    e.Labels(),
 		},
 		Data: map[string]string{
@@ -89,16 +90,16 @@ func createStunnelServerConfig(c client.Client, e endpoint.Endpoint) error {
 
 func createStunnelServerSecret(c client.Client, s *StunnelTransport, e endpoint.Endpoint) error {
 	_, crt, key, err := transport.GenerateSSLCert()
-	s.SetKey(key)
-	s.SetCrt(crt)
+	s.key = key
+	s.crt = crt
 	if err != nil {
 		return err
 	}
 
 	stunnelSecret := &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: e.Namespace(),
-			Name:      stunnelSecretPrefix + e.Name(),
+			Namespace: e.NamespacedName().Namespace,
+			Name:      stunnelSecretPrefix + e.NamespacedName().Name,
 			Labels:    e.Labels(),
 		},
 		Data: map[string][]byte{
@@ -111,7 +112,7 @@ func createStunnelServerSecret(c client.Client, s *StunnelTransport, e endpoint.
 }
 
 func createStunnelServerContainers(s *StunnelTransport, e endpoint.Endpoint) {
-	s.SetServerContainers([]v1.Container{
+	s.serverContainers = []v1.Container{
 		{
 			Name:  "stunnel",
 			Image: stunnelImage,
@@ -128,36 +129,36 @@ func createStunnelServerContainers(s *StunnelTransport, e endpoint.Endpoint) {
 			},
 			VolumeMounts: []v1.VolumeMount{
 				{
-					Name:      stunnelConfigPrefix + e.Name(),
+					Name:      stunnelConfigPrefix + e.NamespacedName().Name,
 					MountPath: "/etc/stunnel/stunnel.conf",
 					SubPath:   "stunnel.conf",
 				},
 				{
-					Name:      stunnelSecretPrefix + e.Name(),
+					Name:      stunnelSecretPrefix + e.NamespacedName().Name,
 					MountPath: "/etc/stunnel/certs",
 				},
 			},
 		},
-	})
+	}
 }
 
 func createStunnelServerVolumes(s *StunnelTransport, e endpoint.Endpoint) {
-	s.SetServerVolumes([]v1.Volume{
+	s.serverVolumes = []v1.Volume{
 		{
-			Name: stunnelConfigPrefix + e.Name(),
+			Name: stunnelConfigPrefix + e.NamespacedName().Name,
 			VolumeSource: v1.VolumeSource{
 				ConfigMap: &v1.ConfigMapVolumeSource{
 					LocalObjectReference: v1.LocalObjectReference{
-						Name: stunnelConfigPrefix + e.Name(),
+						Name: stunnelConfigPrefix + e.NamespacedName().Name,
 					},
 				},
 			},
 		},
 		{
-			Name: stunnelSecretPrefix + e.Name(),
+			Name: stunnelSecretPrefix + e.NamespacedName().Name,
 			VolumeSource: v1.VolumeSource{
 				Secret: &v1.SecretVolumeSource{
-					SecretName: stunnelSecretPrefix + e.Name(),
+					SecretName: stunnelSecretPrefix + e.NamespacedName().Name,
 					Items: []v1.KeyToPath{
 						{
 							Key:  "tls.crt",
@@ -171,5 +172,5 @@ func createStunnelServerVolumes(s *StunnelTransport, e endpoint.Endpoint) {
 				},
 			},
 		},
-	})
+	}
 }

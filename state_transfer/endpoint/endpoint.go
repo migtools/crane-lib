@@ -1,29 +1,20 @@
 package endpoint
 
 import (
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	EndpointTypeRoutePassthrough  = "EndpointTypeRoutePassthrough"
-	EndpointTypeRouteInsecureEdge = "EndpointTypeRouteInsecureEdge"
-)
-
-type EndpointType string
-
 type Endpoint interface {
 	Create(client.Client) error
-	SetHostname(string)
 	Hostname() string
-	SetPort(int32)
 	Port() int32
-	Name() string
-	Namespace() string
+	NamespacedName() types.NamespacedName
 	Labels() map[string]string
-	Type() EndpointType
+	IsHealthy(c client.Client) (bool, error)
 }
 
-func CreateEndpoint(e Endpoint, c client.Client) (Endpoint, error) {
+func Create(e Endpoint, c client.Client) (Endpoint, error) {
 	err := e.Create(c)
 	if err != nil {
 		return nil, err
@@ -31,6 +22,6 @@ func CreateEndpoint(e Endpoint, c client.Client) (Endpoint, error) {
 	return e, nil
 }
 
-func DestroyEndpoint(e Endpoint) error {
+func Destroy(e Endpoint) error {
 	return nil
 }

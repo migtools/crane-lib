@@ -2,10 +2,11 @@ package load_balancer
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -13,16 +14,22 @@ import (
 )
 
 type LoadBalancerEndpoint struct {
-	name      string
-	namespace string
-	hostname  string
+	namespacedName types.NamespacedName
+	hostname       string
 
 	labels map[string]string
 	port   int32
 }
 
+func NewEndpoint(namespacedName types.NamespacedName, labels map[string]string) endpoint.Endpoint {
+	return &LoadBalancerEndpoint{
+		namespacedName: namespacedName,
+		labels:         labels,
+	}
+}
+
 func (l *LoadBalancerEndpoint) Create(c client.Client) error {
-	err := createLoadBalancerService(c, l)
+	err := l.createLoadBalancerService(c)
 	if err != nil {
 		return err
 	}
@@ -30,60 +37,58 @@ func (l *LoadBalancerEndpoint) Create(c client.Client) error {
 	return nil
 }
 
-func (l *LoadBalancerEndpoint) SetHostname(hostname string) {
-	l.hostname = hostname
-}
-
 func (l *LoadBalancerEndpoint) Hostname() string {
 	return l.hostname
-}
-
-func (l *LoadBalancerEndpoint) SetPort(port int32) {
-	l.port = port
 }
 
 func (l *LoadBalancerEndpoint) Port() int32 {
 	return l.port
 }
 
-func (l *LoadBalancerEndpoint) Name() string {
-	return l.name
-}
-
-func (l *LoadBalancerEndpoint) Namespace() string {
-	return l.namespace
+func (l *LoadBalancerEndpoint) NamespacedName() types.NamespacedName {
+	return l.namespacedName
 }
 
 func (l *LoadBalancerEndpoint) Labels() map[string]string {
 	return l.labels
 }
 
-func (l *LoadBalancerEndpoint) Type() endpoint.EndpointType {
-	// endpoint type is not valid for this
-	return ""
+func (l *LoadBalancerEndpoint) IsHealthy(c client.Client) (bool, error) {
+	service := corev1.Service{}
+	err := c.Get(context.TODO(), types.NamespacedName{Name: l.NamespacedName().Name, Namespace: l.NamespacedName().Namespace}, &service)
+	if err != nil {
+		return false, err
+	}
+
+	if service.Status.LoadBalancer.Ingress != nil && len(service.Status.LoadBalancer.Ingress) > 0 {
+		// TODO: set the hostname here
+		//l.hostname = service.Status.LoadBalancer.Ingress[0].Hostname
+		return true, nil
+	}
+	return false, fmt.Errorf("load balancer sevice status is not in valid state: %s", service.Status.String())
 }
 
-func createLoadBalancerService(c client.Client, e endpoint.Endpoint) error {
-	serviceSelector := e.Labels()
-	serviceSelector["pvc"] = e.Name()
+func (l *LoadBalancerEndpoint) createLoadBalancerService(c client.Client) error {
+	serviceSelector := l.Labels()
+	serviceSelector["pvc"] = l.NamespacedName().Name
 
-	service := v1.Service{
+	service := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      e.Name(),
-			Namespace: e.Namespace(),
-			Labels:    e.Labels(),
+			Name:      l.NamespacedName().Name,
+			Namespace: l.NamespacedName().Namespace,
+			Labels:    l.Labels(),
 		},
-		Spec: v1.ServiceSpec{
-			Ports: []v1.ServicePort{
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
 				{
-					Name:       e.Name(),
-					Protocol:   v1.ProtocolTCP,
-					Port:       e.Port(),
-					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: e.Port()},
+					Name:       l.NamespacedName().Name,
+					Protocol:   corev1.ProtocolTCP,
+					Port:       l.Port(),
+					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: l.Port()},
 				},
 			},
 			Selector: serviceSelector,
-			Type:     v1.ServiceTypeLoadBalancer,
+			Type:     corev1.ServiceTypeLoadBalancer,
 		},
 	}
 
@@ -94,12 +99,20 @@ func createLoadBalancerService(c client.Client, e endpoint.Endpoint) error {
 
 	//FIXME. Seems to take a moment, probably something better to do than wait 5 seconds
 	time.Sleep(5 * time.Second)
-	err = c.Get(context.TODO(), types.NamespacedName{Name: e.Name(), Namespace: e.Namespace()}, &service)
+	err = c.Get(context.TODO(), types.NamespacedName{Name: l.NamespacedName().Name, Namespace: l.NamespacedName().Namespace}, &service)
 	if err != nil {
 		return err
 	}
 
-	e.SetHostname(service.Status.LoadBalancer.Ingress[0].Hostname)
+	l.setHostname(service.Status.LoadBalancer.Ingress[0].Hostname)
 	return nil
 
+}
+
+func (l *LoadBalancerEndpoint) setPort(port int32) {
+	l.port = port
+}
+
+func (l *LoadBalancerEndpoint) setHostname(hostname string) {
+	l.hostname = hostname
 }
