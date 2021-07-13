@@ -240,13 +240,12 @@ func (wdpa WithDestinationPodLabels) ApplyTo(opts *TransferOptions) error {
 type WithOwnerReferences []metav1.OwnerReference
 
 func (woa WithOwnerReferences) ApplyTo(opts *TransferOptions) error {
-	var errs []error
 	for _, ref := range woa {
 		if len(ref.Kind)*len(ref.Name)*len(ref.UID) == 0 {
-			errs = append(errs, fmt.Errorf("all OwnerReferences must have Kind, Name and UID set"))
+			return fmt.Errorf("all OwnerReferences must have Kind, Name and UID set")
 		}
 	}
 	opts.sourceResourceMetadata.OwnerReferences = woa
 	opts.destinationResourceMetadata.OwnerReferences = woa
-	return errorsutil.NewAggregate(errs)
+	return nil
 }

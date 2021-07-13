@@ -99,6 +99,15 @@ func Example_basicTransfer() {
 		log.Fatal(err, "error creating rclone server")
 	}
 
+	// Rsync Example
+	// rsyncTransferOptions := []TransferOption{
+	//		rsync.StandardRsyncProgress(true),
+	//		rsync.ArchiveFiles(true),
+	//		rsync.WithSourcePodLabels(labels),
+	//      rsync.WithDestinationPodLabels(labels),
+	// }
+	// t, err := rsync.NewTransfer(s, r, srcCfg, destCfg, *pvc, rsyncTransferOptions)
+
 	// Create Rclone Client Pod
 	err = transfer.CreateClient(t)
 	if err != nil {
