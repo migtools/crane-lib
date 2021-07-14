@@ -36,8 +36,8 @@ const (
 // TransferOptions defines customizeable options for Rsync Transfer
 type TransferOptions struct {
 	CommandOptions
-	sourceResourceMetadata      transfer.ResourceMetadata
-	destinationResourceMetadata transfer.ResourceMetadata
+	SourcePodMeta      transfer.ResourceMetadata
+	DestinationPodMeta transfer.ResourceMetadata
 }
 
 // TransferOption
@@ -45,17 +45,14 @@ type TransferOption interface {
 	ApplyTo(*TransferOptions) error
 }
 
-func (rto *TransferOptions) Apply(opts ...TransferOption) (err error) {
-	errs := []string{}
+func (t *TransferOptions) Apply(opts ...TransferOption) error {
+	errs := []error{}
 	for _, opt := range opts {
-		if err := opt.ApplyTo(rto); err != nil {
-			errs = append(errs, err.Error())
+		if err := opt.ApplyTo(t); err != nil {
+			errs = append(errs, err)
 		}
 	}
-	if len(errs) > 0 {
-		return fmt.Errorf("failed applying options with errs: ['%s']", strings.Join(errs, ","))
-	}
-	return nil
+	return errorsutil.NewAggregate(errs)
 }
 
 // CommandOptions defines options that can be customized in the Rsync command
@@ -79,63 +76,63 @@ type CommandOptions struct {
 }
 
 // AsRsyncCommandOptions returns validated rsync options and validation errors as two lists
-func (rco *CommandOptions) AsRsyncCommandOptions() ([]string, error) {
+func (c *CommandOptions) AsRsyncCommandOptions() ([]string, error) {
 	var errs []error
 	opts := []string{}
-	if rco.Recursive {
+	if c.Recursive {
 		opts = append(opts, optRecursive)
 	}
-	if rco.SymLinks {
+	if c.SymLinks {
 		opts = append(opts, optSymLinks)
 	}
-	if rco.Permissions {
+	if c.Permissions {
 		opts = append(opts, optPermissions)
 	}
-	if rco.DeviceFiles {
+	if c.DeviceFiles {
 		opts = append(opts, optDeviceFiles)
 	}
-	if rco.SpecialFiles {
+	if c.SpecialFiles {
 		opts = append(opts, optSpecialFiles)
 	}
-	if rco.ModTimes {
+	if c.ModTimes {
 		opts = append(opts, optModTimes)
 	}
-	if rco.Owners {
+	if c.Owners {
 		opts = append(opts, optOwner)
 	}
-	if rco.Groups {
+	if c.Groups {
 		opts = append(opts, optGroup)
 	}
-	if rco.HardLinks {
+	if c.HardLinks {
 		opts = append(opts, optHardLinks)
 	}
-	if rco.Delete {
+	if c.Delete {
 		opts = append(opts, optDelete)
 	}
-	if rco.Partial {
+	if c.Partial {
 		opts = append(opts, optPartial)
 	}
-	if rco.BwLimit > 0 {
+	if c.BwLimit > 0 {
 		opts = append(opts,
-			fmt.Sprintf(optBwLimit, rco.BwLimit))
+			fmt.Sprintf(optBwLimit, c.BwLimit))
 	} else {
 		errs = append(errs, fmt.Errorf("rsync bwlimit value must be a positive integer"))
 	}
-	if rco.HumanReadable {
+	if c.HumanReadable {
 		opts = append(opts, optHumanReadable)
 	}
-	if rco.LogFile != "" {
-		opts = append(opts, fmt.Sprintf(optLogFile, rco.LogFile))
+	if c.LogFile != "" {
+		opts = append(opts, fmt.Sprintf(optLogFile, c.LogFile))
 	}
-	if len(rco.Info) > 0 {
-		validatedOptions, err := filterRsyncInfoOptions(rco.Info)
+	if len(c.Info) > 0 {
+		validatedOptions, err := filterRsyncInfoOptions(c.Info)
 		errs = append(errs, err)
 		opts = append(opts,
 			fmt.Sprintf(
 				optInfo, strings.Join(validatedOptions, ",")))
 	}
-	if len(rco.Extras) > 0 {
-		extraOpts, err := filterRsyncExtraOptions(rco.Extras)
+	if len(c.Extras) > 0 {
+		extraOpts, err := filterRsyncExtraOptions(c.Extras)
 		errs = append(errs, err)
 		opts = append(opts, extraOpts...)
 	}
@@ -177,29 +174,29 @@ func GetRsyncCommandDefaultOptions() []TransferOption {
 
 type ArchiveFiles bool
 
-func (rca ArchiveFiles) ApplyTo(opts *TransferOptions) error {
-	opts.Recursive = bool(rca)
-	opts.SymLinks = bool(rca)
-	opts.Permissions = bool(rca)
-	opts.ModTimes = bool(rca)
-	opts.Groups = bool(rca)
-	opts.Owners = bool(rca)
-	opts.DeviceFiles = bool(rca)
-	opts.SpecialFiles = bool(rca)
+func (a ArchiveFiles) ApplyTo(opts *TransferOptions) error {
+	opts.Recursive = bool(a)
+	opts.SymLinks = bool(a)
+	opts.Permissions = bool(a)
+	opts.ModTimes = bool(a)
+	opts.Groups = bool(a)
+	opts.Owners = bool(a)
+	opts.DeviceFiles = bool(a)
+	opts.SpecialFiles = bool(a)
 	return nil
 }
 
 type PreserveOwnership bool
 
-func (rca PreserveOwnership) ApplyTo(opts *TransferOptions) error {
-	opts.Owners = bool(rca)
-	opts.Groups = bool(rca)
+func (p PreserveOwnership) ApplyTo(opts *TransferOptions) error {
+	opts.Owners = bool(p)
+	opts.Groups = bool(p)
 	return nil
 }
 
 type StandardProgress bool
 
-func (rca StandardProgress) ApplyTo(opts *TransferOptions) error {
+func (s StandardProgress) ApplyTo(opts *TransferOptions) error {
 	opts.Info = []string{
 		"COPY2", "DEL2", "REMOVE2", "SKIP2", "FLIST2", "PROGRESS2", "STATS2",
 	}
@@ -210,42 +207,42 @@ func (rca StandardProgress) ApplyTo(opts *TransferOptions) error {
 
 type DeleteDestination bool
 
-func (rcad DeleteDestination) ApplyTo(opts *TransferOptions) error {
-	opts.Delete = bool(rcad)
+func (d DeleteDestination) ApplyTo(opts *TransferOptions) error {
+	opts.Delete = bool(d)
 	return nil
 }
 
 type WithSourcePodLabels map[string]string
 
-func (wspa WithSourcePodLabels) ApplyTo(opts *TransferOptions) error {
-	err := labels.ValidateLabels(wspa)
+func (w WithSourcePodLabels) ApplyTo(opts *TransferOptions) error {
+	err := labels.ValidateLabels(w)
 	if err != nil {
 		return err
 	}
-	opts.sourceResourceMetadata.Labels = wspa
+	opts.SourcePodMeta.Labels = w
 	return nil
 }
 
 type WithDestinationPodLabels map[string]string
 
-func (wdpa WithDestinationPodLabels) ApplyTo(opts *TransferOptions) error {
-	err := labels.ValidateLabels(wdpa)
+func (w WithDestinationPodLabels) ApplyTo(opts *TransferOptions) error {
+	err := labels.ValidateLabels(w)
 	if err != nil {
 		return err
 	}
-	opts.destinationResourceMetadata.Labels = wdpa
+	opts.DestinationPodMeta.Labels = w
 	return nil
 }
 
 type WithOwnerReferences []metav1.OwnerReference
 
-func (woa WithOwnerReferences) ApplyTo(opts *TransferOptions) error {
-	for _, ref := range woa {
+func (w WithOwnerReferences) ApplyTo(opts *TransferOptions) error {
+	for _, ref := range w {
 		if len(ref.Kind)*len(ref.Name)*len(ref.UID) == 0 {
 			return fmt.Errorf("all OwnerReferences must have Kind, Name and UID set")
 		}
 	}
-	opts.sourceResourceMetadata.OwnerReferences = woa
-	opts.destinationResourceMetadata.OwnerReferences = woa
+	opts.SourcePodMeta.OwnerReferences = w
+	opts.DestinationPodMeta.OwnerReferences = w
 	return nil
 }

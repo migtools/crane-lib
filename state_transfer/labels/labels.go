@@ -12,9 +12,9 @@ var Labels = map[string]string{"app": "crane2"}
 func ValidateLabels(labels map[string]string) (err error) {
 	var errs []error
 	for key, val := range labels {
-		err := validation.IsDNS1123Label(key)
+		err := validation.IsQualifiedName(key)
 		if len(err) > 0 {
-			errs = append(errs, fmt.Errorf("label key %s is not valid. must conform to RFC-1123", key))
+			errs = append(errs, fmt.Errorf("label key %s is not a valid qualified name", key))
 		}
 		err = validation.IsValidLabelValue(val)
 		if len(err) > 0 {

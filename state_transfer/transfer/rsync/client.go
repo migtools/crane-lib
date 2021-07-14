@@ -47,7 +47,7 @@ func createRsyncClient(c client.Client, r *RsyncTransfer) error {
 	rsyncCommand = append(rsyncCommand, "/mnt/")
 	rsyncCommand = append(rsyncCommand,
 		fmt.Sprintf("rsync://%s@%s:%d/mnt", r.Username(), transfer.ConnectionHostname(r), int(transfer.ConnectionPort(r))))
-	podLabels := transferOptions.sourceResourceMetadata.Labels
+	podLabels := transferOptions.SourcePodMeta.Labels
 	// TODO: validate the below label or take from consumer
 	podLabels["pvc"] = r.PVC().Name
 	containers := []v1.Container{
