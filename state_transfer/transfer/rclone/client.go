@@ -22,7 +22,9 @@ url = http://{{ .username }}:{{ .password }}@{{ .hostname }}:{{ .port }}
 )
 
 func (r *RcloneTransfer) CreateClient(c client.Client) error {
-	err := createRcloneClientResources(c, r)
+	pvc := r.pvcList[0]
+
+	err := createRcloneClientResources(c, r, pvc)
 	if err != nil {
 		return err
 	}
@@ -32,7 +34,7 @@ func (r *RcloneTransfer) CreateClient(c client.Client) error {
 		return err
 	}
 
-	err = createRcloneClient(c, r)
+	err = createRcloneClient(c, r, pvc)
 	if err != nil {
 		return err
 	}
@@ -40,8 +42,8 @@ func (r *RcloneTransfer) CreateClient(c client.Client) error {
 	return nil
 }
 
-func createRcloneClientResources(c client.Client, r *RcloneTransfer) error {
-	err := createRcloneClientConfig(c, r)
+func createRcloneClientResources(c client.Client, r *RcloneTransfer, pvc transfer.PVC) error {
+	err := createRcloneClientConfig(c, r, pvc)
 	if err != nil {
 		return err
 	}
@@ -49,7 +51,7 @@ func createRcloneClientResources(c client.Client, r *RcloneTransfer) error {
 	return nil
 }
 
-func createRcloneClientConfig(c client.Client, r *RcloneTransfer) error {
+func createRcloneClientConfig(c client.Client, r *RcloneTransfer, pvc transfer.PVC) error {
 	var rcloneConf bytes.Buffer
 	rcloneConfTemplate, err := template.New("config").Parse(rcloneClientConfTemplate)
 	if err != nil {
@@ -70,8 +72,8 @@ func createRcloneClientConfig(c client.Client, r *RcloneTransfer) error {
 
 	rcloneConfigMap := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: r.PVC().Namespace,
-			Name:      rcloneConfigPrefix + r.PVC().Name,
+			Namespace: pvc.Source().Claim().Namespace,
+			Name:      rcloneConfigPrefix + pvc.Source().ValidatedName(),
 			Labels:    r.Endpoint().Labels(),
 		},
 		Data: map[string]string{
@@ -82,9 +84,10 @@ func createRcloneClientConfig(c client.Client, r *RcloneTransfer) error {
 	return c.Create(context.TODO(), rcloneConfigMap, &client.CreateOptions{})
 }
 
-func createRcloneClient(c client.Client, r *RcloneTransfer) error {
+func createRcloneClient(c client.Client, r *RcloneTransfer, pvc transfer.PVC) error {
 	podLabels := r.Endpoint().Labels()
-	podLabels["pvc"] = r.PVC().Name
+	podLabels["pvc"] = pvc.Source().ValidatedName()
+
 	containers := []v1.Container{
 		{
 			Name:  "rclone",
@@ -105,7 +108,7 @@ func createRcloneClient(c client.Client, r *RcloneTransfer) error {
 					MountPath: "/mnt",
 				},
 				{
-					Name:      rcloneConfigPrefix + r.PVC().Name,
+					Name:      rcloneConfigPrefix + pvc.Source().ValidatedName(),
 					MountPath: "/etc/rclone.conf",
 					SubPath:   "rclone.conf",
 				},
@@ -122,16 +125,16 @@ func createRcloneClient(c client.Client, r *RcloneTransfer) error {
 			Name: "mnt",
 			VolumeSource: v1.VolumeSource{
 				PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
-					ClaimName: r.PVC().Name,
+					ClaimName: pvc.Source().Claim().Name,
 				},
 			},
 		},
 		{
-			Name: rcloneConfigPrefix + r.PVC().Name,
+			Name: rcloneConfigPrefix + pvc.Source().ValidatedName(),
 			VolumeSource: v1.VolumeSource{
 				ConfigMap: &v1.ConfigMapVolumeSource{
 					LocalObjectReference: v1.LocalObjectReference{
-						Name: rcloneConfigPrefix + r.PVC().Name,
+						Name: rcloneConfigPrefix + pvc.Source().ValidatedName(),
 					},
 				},
 			},
@@ -144,8 +147,8 @@ func createRcloneClient(c client.Client, r *RcloneTransfer) error {
 
 	pod := v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      r.PVC().Name,
-			Namespace: r.PVC().Namespace,
+			Name:      pvc.Source().Claim().Name,
+			Namespace: pvc.Source().Claim().Namespace,
 			Labels:    podLabels,
 		},
 		Spec: v1.PodSpec{

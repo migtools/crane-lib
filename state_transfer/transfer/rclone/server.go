@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
+	"github.com/konveyor/crane-lib/state_transfer/transfer"
 )
 
 const (
@@ -21,12 +22,14 @@ type = local
 )
 
 func (r *RcloneTransfer) CreateServer(c client.Client) error {
-	err := createRcloneServerResources(c, r)
+	pvc := r.pvcList[0]
+
+	err := createRcloneServerResources(c, r, pvc)
 	if err != nil {
 		return err
 	}
 
-	err = createRcloneServer(c, r)
+	err = createRcloneServer(c, r, pvc)
 	if err != nil {
 		return err
 	}
@@ -36,7 +39,7 @@ func (r *RcloneTransfer) CreateServer(c client.Client) error {
 	return err
 }
 
-func createRcloneServerResources(c client.Client, r *RcloneTransfer) error {
+func createRcloneServerResources(c client.Client, r *RcloneTransfer, pvc transfer.PVC) error {
 	var letters = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 	random.Seed(time.Now().UnixNano())
 	password := make([]byte, 24)
@@ -48,7 +51,7 @@ func createRcloneServerResources(c client.Client, r *RcloneTransfer) error {
 	r.port = rclonePort
 	r.username = rcloneUser
 
-	err := createRcloneServerConfig(c, r)
+	err := createRcloneServerConfig(c, r, pvc)
 	if err != nil {
 		return err
 	}
@@ -56,11 +59,11 @@ func createRcloneServerResources(c client.Client, r *RcloneTransfer) error {
 	return nil
 }
 
-func createRcloneServerConfig(c client.Client, r *RcloneTransfer) error {
+func createRcloneServerConfig(c client.Client, r *RcloneTransfer, pvc transfer.PVC) error {
 	rcloneConfigMap := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: r.PVC().Namespace,
-			Name:      rcloneConfigPrefix + r.PVC().Name,
+			Namespace: pvc.Destination().Claim().Name,
+			Name:      rcloneConfigPrefix + pvc.Destination().ValidatedName(),
 			Labels:    r.Endpoint().Labels(),
 		},
 		Data: map[string]string{
@@ -71,9 +74,9 @@ func createRcloneServerConfig(c client.Client, r *RcloneTransfer) error {
 	return c.Create(context.TODO(), rcloneConfigMap, &client.CreateOptions{})
 }
 
-func createRcloneServer(c client.Client, r *RcloneTransfer) error {
+func createRcloneServer(c client.Client, r *RcloneTransfer, pvc transfer.PVC) error {
 	deploymentLabels := r.Endpoint().Labels()
-	deploymentLabels["pvc"] = r.PVC().Name
+	deploymentLabels["pvc"] = pvc.Destination().ValidatedName()
 	containers := []v1.Container{
 		{
 			Name:  "rclone",
@@ -105,7 +108,7 @@ func createRcloneServer(c client.Client, r *RcloneTransfer) error {
 					MountPath: "/mnt",
 				},
 				{
-					Name:      rcloneConfigPrefix + r.PVC().Name,
+					Name:      rcloneConfigPrefix + pvc.Destination().ValidatedName(),
 					MountPath: "/etc/rclone.conf",
 					SubPath:   "rclone.conf",
 				},
@@ -113,39 +116,35 @@ func createRcloneServer(c client.Client, r *RcloneTransfer) error {
 		},
 	}
 
-	for _, container := range r.Transport().ServerContainers() {
-		containers = append(containers, container)
-	}
+	containers = append(containers, r.Transport().ServerContainers()...)
 
 	volumes := []v1.Volume{
 		{
 			Name: "mnt",
 			VolumeSource: v1.VolumeSource{
 				PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
-					ClaimName: r.PVC().Name,
+					ClaimName: pvc.Destination().Claim().Name,
 				},
 			},
 		},
 		{
-			Name: rcloneConfigPrefix + r.PVC().Name,
+			Name: rcloneConfigPrefix + pvc.Destination().ValidatedName(),
 			VolumeSource: v1.VolumeSource{
 				ConfigMap: &v1.ConfigMapVolumeSource{
 					LocalObjectReference: v1.LocalObjectReference{
-						Name: rcloneConfigPrefix + r.PVC().Name,
+						Name: rcloneConfigPrefix + pvc.Destination().ValidatedName(),
 					},
 				},
 			},
 		},
 	}
 
-	for _, volume := range r.Transport().ServerVolumes() {
-		volumes = append(volumes, volume)
-	}
+	volumes = append(volumes, r.Transport().ServerVolumes()...)
 
 	server := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      r.PVC().Name,
-			Namespace: r.PVC().Namespace,
+			Name:      pvc.Destination().Claim().Name,
+			Namespace: pvc.Destination().Claim().Namespace,
 			Labels:    deploymentLabels,
 		},
 		Spec: appsv1.DeploymentSpec{

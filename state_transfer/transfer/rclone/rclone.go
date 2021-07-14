@@ -4,7 +4,6 @@ import (
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 	"github.com/konveyor/crane-lib/state_transfer/transfer"
 	"github.com/konveyor/crane-lib/state_transfer/transport"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 )
 
@@ -20,24 +19,28 @@ type RcloneTransfer struct {
 	password    string
 	source      *rest.Config
 	destination *rest.Config
-	pvc         corev1.PersistentVolumeClaim
+	pvcList     transfer.PersistentVolumeClaimList
 	transport   transport.Transport
 	endpoint    endpoint.Endpoint
 	port        int32
 }
 
-func NewTransfer(t transport.Transport, e endpoint.Endpoint, src *rest.Config, dest *rest.Config, pvc corev1.PersistentVolumeClaim) transfer.Transfer {
+func NewTransfer(t transport.Transport, e endpoint.Endpoint, src *rest.Config, dest *rest.Config, pvcList transfer.PersistentVolumeClaimList) (transfer.Transfer, error) {
+	err := validatePVCList(pvcList)
+	if err != nil {
+		return nil, err
+	}
 	return &RcloneTransfer{
 		transport:   t,
 		endpoint:    e,
 		source:      src,
 		destination: dest,
-		pvc:         pvc,
-	}
+		pvcList:     pvcList,
+	}, nil
 }
 
-func (r *RcloneTransfer) PVC() corev1.PersistentVolumeClaim {
-	return r.pvc
+func (r *RcloneTransfer) PVCs() transfer.PersistentVolumeClaimList {
+	return r.pvcList
 }
 
 func (r *RcloneTransfer) Endpoint() endpoint.Endpoint {
