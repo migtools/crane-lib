@@ -26,14 +26,20 @@ type PluginResponse struct {
 }
 
 type PluginMetadata struct {
-	Name            string    `json:"name"`
-	Version         string    `json:"version"`
-	RequestVersion  []Version `json:"requestVersion"`
-	ResponseVersion []Version `json:"responseVersion"`
-	OptionalFields  []string  `json:"optionalFields,omitempty"`
+	Name            string           `json:"name"`
+	Version         string           `json:"version"`
+	RequestVersion  []Version        `json:"requestVersion"`
+	ResponseVersion []Version        `json:"responseVersion"`
+	OptionalFields  []OptionalFields `json:"optionalFields,omitempty"`
 }
 
 type Version string
+
+type OptionalFields struct {
+	FlagName string `json:"flagName"`
+	Help     string `json:"help"`
+	Example  string `json:"example"`
+}
 
 const (
 	V1 Version = "v1"

@@ -16,7 +16,7 @@ func main() {
 	cli.RunAndExit(cli.NewCustomPlugin("OpenshiftCustomPlugin", "V1", nil, Run))
 }
 
-func Run(u *unstructured.Unstructured) (transform.PluginResponse, error) {
+func Run(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
 	// plugin writers need to write custom code here.
 	var patch jsonpatch.Patch
 	var err error

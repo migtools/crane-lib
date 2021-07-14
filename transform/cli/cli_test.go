@@ -18,22 +18,41 @@ import (
 
 type fakeReader struct {
 	*unstructured.Unstructured
+	extras map[string]string
 	err error
+	readObj bool
+	readExtras bool
 }
 
 func (f *fakeReader) Read(p []byte) (int, error) {
 	if f.err != nil {
 		return 0, f.err
 	}
-	b, err := f.Unstructured.MarshalJSON()
-	for i := range p {
-		if i >= len(b) {
-			return len(b), err
+	if !f.readObj {
+		b, err := f.Unstructured.MarshalJSON()
+		for i := range p {
+			if i >= len(b) {
+				f.readObj = true
+				return len(b), err
+			}
+			p[i] = b[i]
 		}
-		p[i] = b[i]
+		f.readObj = true
+		return len(b), err
 	}
-
-	return len(b), err
+	if !f.readExtras {
+		b, err := json.Marshal(&f.extras)
+		for i := range p {
+			if i >= len(b) {
+				f.readExtras = true
+				return len(b), err
+			}
+			p[i] = b[i]
+		}
+		f.readExtras = true
+		return len(b), err
+	}
+	return 0, io.EOF
 }
 
 func TestRunAndExit(t *testing.T) {
@@ -44,11 +63,11 @@ func TestRunAndExit(t *testing.T) {
 		metadata       *transform.PluginMetadata
 		wantErr        bool
 		wantedErr      errors.PluginError
-		fakeFunc       func(*unstructured.Unstructured) (transform.PluginResponse, error)
+		fakeFunc       func(*unstructured.Unstructured, map[string]string) (transform.PluginResponse, error)
 		version        string
 		errCapture     bytes.Buffer
 		outCapture     bytes.Buffer
-		optionalFields []string
+		optionalFields []transform.OptionalFields
 	}{
 		// TODO: Add test cases.
 		{
@@ -71,7 +90,7 @@ func TestRunAndExit(t *testing.T) {
 				IsWhiteOut: false,
 				Patches:    []jsonpatch.Operation{},
 			},
-			fakeFunc: func(u *unstructured.Unstructured) (transform.PluginResponse, error) {
+			fakeFunc: func(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
 				return transform.PluginResponse{
 					Version:    "v1",
 					IsWhiteOut: false,
@@ -133,7 +152,7 @@ func TestRunAndExit(t *testing.T) {
 				}},
 				err: nil,
 			},
-			fakeFunc: func(u *unstructured.Unstructured) (transform.PluginResponse, error) {
+			fakeFunc: func(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
 				return transform.PluginResponse{}, fmt.Errorf("invalid run")
 			},
 			errCapture: bytes.Buffer{},

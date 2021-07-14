@@ -11,7 +11,7 @@ func main() {
 	cli.RunAndExit(cli.NewCustomPlugin("WhiteoutPluginAll", "v1", nil, Run))
 }
 
-func Run(u *unstructured.Unstructured) (transform.PluginResponse, error) {
+func Run(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
 	// plugin writers need to write custome code here.
 	var patch jsonpatch.Patch
 	return transform.PluginResponse{

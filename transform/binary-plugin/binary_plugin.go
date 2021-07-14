@@ -55,7 +55,7 @@ func (b *BinaryPlugin) Run(u *unstructured.Unstructured, extras map[string]strin
 	p := transform.PluginResponse{}
 	logs := []string{}
 
-	out, errBytes, err := b.commandRunner.Run(u, b.log)
+	out, errBytes, err := b.commandRunner.Run(u, extras, b.log)
 	if err != nil {
 		b.log.Errorf("error running the plugin command")
 		return p, fmt.Errorf("error running the plugin command: %v", err)
@@ -82,7 +82,7 @@ func (b *BinaryPlugin) Metadata() transform.PluginMetadata {
 }
 
 type commandRunner interface {
-	Run(u *unstructured.Unstructured, log logrus.FieldLogger) ([]byte, []byte, error)
+	Run(u *unstructured.Unstructured, extras map[string]string, log logrus.FieldLogger) ([]byte, []byte, error)
 	Metadata(log logrus.FieldLogger) ([]byte, []byte, error)
 }
 
@@ -123,11 +123,19 @@ func (b *binaryRunner) Metadata(log logrus.FieldLogger) ([]byte, []byte, error) 
 
 }
 
-func (b *binaryRunner) Run(u *unstructured.Unstructured, log logrus.FieldLogger) ([]byte, []byte, error) {
+func (b *binaryRunner) Run(u *unstructured.Unstructured, extras map[string]string, log logrus.FieldLogger) ([]byte, []byte, error) {
 	objJson, err := u.MarshalJSON()
 	if err != nil {
 		log.Errorf("unable to marshal unstructured Object")
 		return nil, nil, fmt.Errorf("unable to marshal unstructured Object: %s, err: %v", u, err)
+	}
+	if len(extras) > 0 {
+		extrasJson, err := json.Marshal(extras)
+		if err != nil {
+			log.Errorf("unable to marshal extras map")
+			return nil, nil, fmt.Errorf("unable to marshal extras map: %v, err: %v", extras, err)
+		}
+		objJson = append(objJson, extrasJson...)
 	}
 
 	command := cliContext.getCommand(b.pluginPath)

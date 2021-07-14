@@ -19,7 +19,7 @@ type fakeCommandRunner struct {
 	metadataStdout, metadataStderr            []byte
 }
 
-func (f *fakeCommandRunner) Run(_ *unstructured.Unstructured, _ logrus.FieldLogger) ([]byte, []byte, error) {
+func (f *fakeCommandRunner) Run(_ *unstructured.Unstructured, _ map[string]string, _ logrus.FieldLogger) ([]byte, []byte, error) {
 	return f.stdout, f.stderr, f.errorRunningCommand
 }
 
@@ -52,7 +52,42 @@ func TestShellMetadataSuccess(t *testing.T) {
 		Version:         "v1",
 		RequestVersion:  []transform.Version{transform.V1},
 		ResponseVersion: []transform.Version{transform.V1},
-		OptionalFields:  []string{},
+		OptionalFields:  []transform.OptionalFields{},
+	})
+
+	if err != nil {
+		fmt.Fprint(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+
+	fmt.Fprint(os.Stdout, string(res))
+	os.Exit(0)
+}
+
+func TestShellMetadataSuccessOptionalField(t *testing.T) {
+	if os.Getenv("GO_TEST_PROCESS") != "1" {
+		return
+	}
+
+	var s string
+	_, err := fmt.Scanln(&s)
+	if err != nil {
+		os.Exit(1)
+	}
+
+	if s != `{}` {
+		os.Exit(1)
+	}
+
+	//TODO: Validate stdin is correct.
+	res, err := json.Marshal(transform.PluginMetadata{
+		Name:            "fakeShellMetadata",
+		Version:         "v1",
+		RequestVersion:  []transform.Version{transform.V1},
+		ResponseVersion: []transform.Version{transform.V1},
+		OptionalFields:  []transform.OptionalFields{
+			{FlagName:"testFlag",Help:"Test help.", Example:"test"},
+		},
 	})
 
 	if err != nil {
@@ -104,6 +139,26 @@ func TestNewBinaryPlugin(t *testing.T) {
 			},
 			cliContext: func(name string, args ...string) *exec.Cmd {
 				cs := []string{"-test.run=TestShellMetadataSuccess", "--", name}
+				cs = append(cs, args...)
+				cmd := exec.Command(os.Args[0], cs...)
+				cmd.Env = []string{"GO_TEST_PROCESS=1"}
+				return cmd
+			},
+			wantErr: false,
+		},
+		{
+			name: "ValidStdoutOptionalFieldNoStderr",
+			want: transform.PluginMetadata{
+				Name:            "fakeShellMetadata",
+				Version:         "v1",
+				RequestVersion:  []transform.Version{transform.V1},
+				ResponseVersion: []transform.Version{transform.V1},
+				OptionalFields:  []transform.OptionalFields{
+					{FlagName:"testFlag",Help:"Test help.", Example:"test"},
+				},
+			},
+			cliContext: func(name string, args ...string) *exec.Cmd {
+				cs := []string{"-test.run=TestShellMetadataSuccessOptionalField", "--", name}
 				cs = append(cs, args...)
 				cmd := exec.Command(os.Args[0], cs...)
 				cmd.Env = []string{"GO_TEST_PROCESS=1"}
