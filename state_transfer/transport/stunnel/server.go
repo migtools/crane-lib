@@ -6,11 +6,13 @@ import (
 	"strconv"
 	"text/template"
 
+	"k8s.io/apimachinery/pkg/types"
+
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 
 	"github.com/konveyor/crane-lib/state_transfer/transport"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -49,9 +51,9 @@ func createStunnelServerResources(c client.Client, s *StunnelTransport, e endpoi
 		return err
 	}
 
-	createStunnelServerContainers(s, e)
+	createStunnelServerContainers(s, e.NamespacedName())
 
-	createStunnelServerVolumes(s, e)
+	createStunnelServerVolumes(s, e.NamespacedName())
 
 	return nil
 }
@@ -73,7 +75,7 @@ func createStunnelServerConfig(c client.Client, e endpoint.Endpoint) error {
 		return err
 	}
 
-	stunnelConfigMap := &v1.ConfigMap{
+	stunnelConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: e.NamespacedName().Namespace,
 			Name:      stunnelConfigPrefix + e.NamespacedName().Name,
@@ -88,6 +90,15 @@ func createStunnelServerConfig(c client.Client, e endpoint.Endpoint) error {
 
 }
 
+func getServerConfig(c client.Client, obj types.NamespacedName) (*corev1.ConfigMap, error) {
+	cm := &corev1.ConfigMap{}
+	err := c.Get(context.Background(), types.NamespacedName{
+		Namespace: obj.Namespace,
+		Name:      stunnelConfigPrefix + obj.Name,
+	}, cm)
+	return cm, err
+}
+
 func createStunnelServerSecret(c client.Client, s *StunnelTransport, e endpoint.Endpoint) error {
 	_, crt, key, err := transport.GenerateSSLCert()
 	s.key = key
@@ -96,7 +107,7 @@ func createStunnelServerSecret(c client.Client, s *StunnelTransport, e endpoint.
 		return err
 	}
 
-	stunnelSecret := &v1.Secret{
+	stunnelSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: e.NamespacedName().Namespace,
 			Name:      stunnelSecretPrefix + e.NamespacedName().Name,
@@ -111,8 +122,17 @@ func createStunnelServerSecret(c client.Client, s *StunnelTransport, e endpoint.
 	return c.Create(context.TODO(), stunnelSecret, &client.CreateOptions{})
 }
 
-func createStunnelServerContainers(s *StunnelTransport, e endpoint.Endpoint) {
-	s.serverContainers = []v1.Container{
+func getServerSecret(c client.Client, obj types.NamespacedName) (*corev1.Secret, error) {
+	secret := &corev1.Secret{}
+	err := c.Get(context.Background(), types.NamespacedName{
+		Namespace: obj.Namespace,
+		Name:      stunnelSecretPrefix + obj.Name,
+	}, secret)
+	return secret, err
+}
+
+func createStunnelServerContainers(s *StunnelTransport, obj types.NamespacedName) {
+	s.serverContainers = []corev1.Container{
 		{
 			Name:  "stunnel",
 			Image: stunnelImage,
@@ -120,21 +140,21 @@ func createStunnelServerContainers(s *StunnelTransport, e endpoint.Endpoint) {
 				"/bin/stunnel",
 				"/etc/stunnel/stunnel.conf",
 			},
-			Ports: []v1.ContainerPort{
+			Ports: []corev1.ContainerPort{
 				{
 					Name:          "stunnel",
-					Protocol:      v1.ProtocolTCP,
+					Protocol:      corev1.ProtocolTCP,
 					ContainerPort: stunnelPort,
 				},
 			},
-			VolumeMounts: []v1.VolumeMount{
+			VolumeMounts: []corev1.VolumeMount{
 				{
-					Name:      stunnelConfigPrefix + e.NamespacedName().Name,
+					Name:      stunnelConfigPrefix + obj.Name,
 					MountPath: "/etc/stunnel/stunnel.conf",
 					SubPath:   "stunnel.conf",
 				},
 				{
-					Name:      stunnelSecretPrefix + e.NamespacedName().Name,
+					Name:      stunnelSecretPrefix + obj.Name,
 					MountPath: "/etc/stunnel/certs",
 				},
 			},
@@ -142,24 +162,24 @@ func createStunnelServerContainers(s *StunnelTransport, e endpoint.Endpoint) {
 	}
 }
 
-func createStunnelServerVolumes(s *StunnelTransport, e endpoint.Endpoint) {
-	s.serverVolumes = []v1.Volume{
+func createStunnelServerVolumes(s *StunnelTransport, obj types.NamespacedName) {
+	s.serverVolumes = []corev1.Volume{
 		{
-			Name: stunnelConfigPrefix + e.NamespacedName().Name,
-			VolumeSource: v1.VolumeSource{
-				ConfigMap: &v1.ConfigMapVolumeSource{
-					LocalObjectReference: v1.LocalObjectReference{
-						Name: stunnelConfigPrefix + e.NamespacedName().Name,
+			Name: stunnelConfigPrefix + obj.Name,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: stunnelConfigPrefix + obj.Name,
 					},
 				},
 			},
 		},
 		{
-			Name: stunnelSecretPrefix + e.NamespacedName().Name,
-			VolumeSource: v1.VolumeSource{
-				Secret: &v1.SecretVolumeSource{
-					SecretName: stunnelSecretPrefix + e.NamespacedName().Name,
-					Items: []v1.KeyToPath{
+			Name: stunnelSecretPrefix + obj.Name,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: stunnelSecretPrefix + obj.Name,
+					Items: []corev1.KeyToPath{
 						{
 							Key:  "tls.crt",
 							Path: "tls.crt",

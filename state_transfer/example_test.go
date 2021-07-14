@@ -87,13 +87,55 @@ func Example_basicTransfer() {
 		log.Fatal(err, "error creating stunnel server")
 	}
 
-	_, err = transport.CreateClient(s, destClient, e)
+	_, err = transport.CreateClient(s, srcClient, e)
 	if err != nil {
 		log.Fatal(err, "error creating stunnel client")
 	}
 
 	// Create Rclone Transfer Pod
 	t := rclone.NewTransfer(s, r, srcCfg, destCfg, *pvc)
+	err = transfer.CreateServer(t)
+	if err != nil {
+		log.Fatal(err, "error creating rclone server")
+	}
+
+	// Create Rclone Client Pod
+	err = transfer.CreateClient(t)
+	if err != nil {
+		log.Fatal(err, "error creating rclone client")
+	}
+
+	// TODO: check if the client is completed
+}
+
+// This example shows how to get the endpoint and transport objects for creating the transfer after endpoint and
+// transport are created in previous reconcile attempt
+func Example_getFromCreatedObjects() {
+	srcClient, err := client.New(srcCfg, client.Options{Scheme: runtime.NewScheme()})
+	if err != nil {
+		log.Fatal(err, "unable to create source client")
+	}
+
+	destClient, err := client.New(destCfg, client.Options{Scheme: runtime.NewScheme()})
+	if err != nil {
+		log.Fatal(err, "unable to create destination client")
+	}
+
+	// set up the PVC on destination to receive the data
+	pvc := &corev1.PersistentVolumeClaim{}
+
+	e, err := route.GetReadyEndpoint(destClient, types.NamespacedName{Namespace: srcNamespace, Name: srcPVC})
+	if err != nil {
+		log.Fatal(err, "error getting route endpoint")
+	}
+
+	s, err := stunnel.GetTransport(srcClient, destClient, types.NamespacedName{Namespace: srcNamespace, Name: srcPVC})
+	if err != nil {
+		log.Fatal(err, "error getting stunnel transfer")
+	}
+
+	// Create Rclone Transfer Pod
+	t := rclone.NewTransfer(s, e, srcCfg, destCfg, *pvc)
 	err = transfer.CreateServer(t)
 	if err != nil {
 		log.Fatal(err, "error creating rclone server")
