@@ -94,10 +94,10 @@ func createRsyncServerConfig(c client.Client, r *RsyncTransfer) error {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.PVC().Namespace,
 			Name:      rsyncConfigPrefix + r.PVC().Name,
-			Labels:    r.Endpoint().Labels(),
+			Labels:    r.transferOptions().DestinationPodMeta.Labels,
 		},
 		Data: map[string]string{
-			"rsyncd.conf": string(rsyncConf.Bytes()),
+			"rsyncd.conf": rsyncConf.String(),
 		},
 	}
 
@@ -117,7 +117,7 @@ func createRsyncServerSecret(c client.Client, r *RsyncTransfer) error {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.PVC().Namespace,
 			Name:      rsyncSecretPrefix + r.PVC().Name,
-			Labels:    r.Endpoint().Labels(),
+			Labels:    r.transferOptions().DestinationPodMeta.Labels,
 		},
 		Data: map[string][]byte{
 			"credentials": []byte(r.Username() + ":" + r.Password()),
@@ -127,7 +127,9 @@ func createRsyncServerSecret(c client.Client, r *RsyncTransfer) error {
 }
 
 func createRsyncServer(c client.Client, r *RsyncTransfer) error {
-	deploymentLabels := r.Endpoint().Labels()
+	transferOptions := r.transferOptions()
+	deploymentLabels := transferOptions.DestinationPodMeta.Labels
+	// TODO: validate the below label or take from consumer
 	deploymentLabels["pvc"] = r.PVC().Name
 	containers := []v1.Container{
 		{
@@ -165,9 +167,7 @@ func createRsyncServer(c client.Client, r *RsyncTransfer) error {
 		},
 	}
 
-	for _, container := range r.Transport().ServerContainers() {
-		containers = append(containers, container)
-	}
+	containers = append(containers, r.Transport().ServerContainers()...)
 
 	mode := int32(0600)
 
@@ -207,9 +207,7 @@ func createRsyncServer(c client.Client, r *RsyncTransfer) error {
 		},
 	}
 
-	for _, volume := range r.Transport().ServerVolumes() {
-		volumes = append(volumes, volume)
-	}
+	volumes = append(volumes, r.Transport().ServerVolumes()...)
 
 	server := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{

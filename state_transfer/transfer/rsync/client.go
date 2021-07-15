@@ -2,7 +2,7 @@ package rsync
 
 import (
 	"context"
-	"strconv"
+	"fmt"
 
 	"github.com/konveyor/crane-lib/state_transfer/transfer"
 	"github.com/konveyor/crane-lib/state_transfer/transport"
@@ -37,21 +37,24 @@ func createRsyncClientResources(c client.Client, r *RsyncTransfer) error {
 }
 
 func createRsyncClient(c client.Client, r *RsyncTransfer) error {
-	podLabels := r.Endpoint().Labels()
+	transferOptions := r.transferOptions()
+	rsyncOptions, err := transferOptions.AsRsyncCommandOptions()
+	if err != nil {
+		return err
+	}
+	rsyncCommand := []string{"/usr/bin/rsync"}
+	rsyncCommand = append(rsyncCommand, rsyncOptions...)
+	rsyncCommand = append(rsyncCommand, "/mnt/")
+	rsyncCommand = append(rsyncCommand,
+		fmt.Sprintf("rsync://%s@%s:%d/mnt", r.Username(), transfer.ConnectionHostname(r), int(transfer.ConnectionPort(r))))
+	podLabels := transferOptions.SourcePodMeta.Labels
+	// TODO: validate the below label or take from consumer
 	podLabels["pvc"] = r.PVC().Name
 	containers := []v1.Container{
 		{
-			Name:  "rsync",
-			Image: rsyncImage,
-			Command: []string{
-				"/usr/bin/rsync",
-				"-vvvv",
-				"--delete",
-				"--recursive",
-				"--compress",
-				"rsync://" + r.Username() + "@" + transfer.ConnectionHostname(r) + ":" + strconv.Itoa(int(transfer.ConnectionPort(r))) + "/mnt",
-				"/mnt/",
-			},
+			Name:    "rsync",
+			Image:   rsyncImage,
+			Command: rsyncCommand,
 			Env: []v1.EnvVar{
 				{
 					Name:  "RSYNC_PASSWORD",
@@ -68,9 +71,7 @@ func createRsyncClient(c client.Client, r *RsyncTransfer) error {
 		},
 	}
 
-	for _, container := range r.Transport().ClientContainers() {
-		containers = append(containers, container)
-	}
+	containers = append(containers, r.Transport().ClientContainers()...)
 
 	volumes := []v1.Volume{
 		{
@@ -83,9 +84,7 @@ func createRsyncClient(c client.Client, r *RsyncTransfer) error {
 		},
 	}
 
-	for _, volume := range r.Transport().ClientVolumes() {
-		volumes = append(volumes, volume)
-	}
+	volumes = append(volumes, r.Transport().ClientVolumes()...)
 
 	pod := v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{

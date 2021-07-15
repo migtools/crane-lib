@@ -12,6 +12,7 @@ import (
 	"github.com/konveyor/crane-lib/state_transfer/endpoint/route"
 	"github.com/konveyor/crane-lib/state_transfer/transfer"
 	"github.com/konveyor/crane-lib/state_transfer/transfer/rclone"
+	"github.com/konveyor/crane-lib/state_transfer/transfer/rsync"
 	"github.com/konveyor/crane-lib/state_transfer/transport"
 	"github.com/konveyor/crane-lib/state_transfer/transport/stunnel"
 	corev1 "k8s.io/api/core/v1"
@@ -97,6 +98,20 @@ func Example_basicTransfer() {
 	err = transfer.CreateServer(t)
 	if err != nil {
 		log.Fatal(err, "error creating rclone server")
+	}
+
+	// Rsync Example
+	rsyncTransferOptions := []rsync.TransferOption{
+		rsync.StandardProgress(true),
+		rsync.ArchiveFiles(true),
+		rsync.WithSourcePodLabels(map[string]string{}),
+		rsync.WithDestinationPodLabels(map[string]string{}),
+	}
+	rsyncTransfer, err := rsync.NewTransfer(s, r, srcCfg, destCfg, *pvc, rsyncTransferOptions...)
+	if err != nil {
+		log.Fatal(err, "error creating rsync transfer")
+	} else {
+		log.Printf("rsync transfer created for user %s\n", rsyncTransfer.Username())
 	}
 
 	// Create Rclone Client Pod
