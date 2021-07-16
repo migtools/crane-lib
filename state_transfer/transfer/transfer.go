@@ -22,7 +22,7 @@ type Transfer interface {
 	Password() string
 	CreateServer(client.Client) error
 	CreateClient(client.Client) error
-	PVCs() PersistentVolumeClaimList
+	PVCs() PVCPairList
 }
 
 func CreateServer(t Transfer) error {

@@ -39,7 +39,7 @@ func (r *RcloneTransfer) CreateServer(c client.Client) error {
 	return err
 }
 
-func createRcloneServerResources(c client.Client, r *RcloneTransfer, pvc transfer.PVC) error {
+func createRcloneServerResources(c client.Client, r *RcloneTransfer, pvc transfer.PVCPair) error {
 	var letters = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 	random.Seed(time.Now().UnixNano())
 	password := make([]byte, 24)
@@ -59,11 +59,11 @@ func createRcloneServerResources(c client.Client, r *RcloneTransfer, pvc transfe
 	return nil
 }
 
-func createRcloneServerConfig(c client.Client, r *RcloneTransfer, pvc transfer.PVC) error {
+func createRcloneServerConfig(c client.Client, r *RcloneTransfer, pvc transfer.PVCPair) error {
 	rcloneConfigMap := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: pvc.Destination().Claim().Name,
-			Name:      rcloneConfigPrefix + pvc.Destination().ValidatedName(),
+			Name:      rcloneConfigPrefix + pvc.Destination().LabelSafeName(),
 			Labels:    r.Endpoint().Labels(),
 		},
 		Data: map[string]string{
@@ -74,9 +74,9 @@ func createRcloneServerConfig(c client.Client, r *RcloneTransfer, pvc transfer.P
 	return c.Create(context.TODO(), rcloneConfigMap, &client.CreateOptions{})
 }
 
-func createRcloneServer(c client.Client, r *RcloneTransfer, pvc transfer.PVC) error {
+func createRcloneServer(c client.Client, r *RcloneTransfer, pvc transfer.PVCPair) error {
 	deploymentLabels := r.Endpoint().Labels()
-	deploymentLabels["pvc"] = pvc.Destination().ValidatedName()
+	deploymentLabels["pvc"] = pvc.Destination().LabelSafeName()
 	containers := []v1.Container{
 		{
 			Name:  "rclone",
@@ -108,7 +108,7 @@ func createRcloneServer(c client.Client, r *RcloneTransfer, pvc transfer.PVC) er
 					MountPath: "/mnt",
 				},
 				{
-					Name:      rcloneConfigPrefix + pvc.Destination().ValidatedName(),
+					Name:      rcloneConfigPrefix + pvc.Destination().LabelSafeName(),
 					MountPath: "/etc/rclone.conf",
 					SubPath:   "rclone.conf",
 				},
@@ -128,11 +128,11 @@ func createRcloneServer(c client.Client, r *RcloneTransfer, pvc transfer.PVC) er
 			},
 		},
 		{
-			Name: rcloneConfigPrefix + pvc.Destination().ValidatedName(),
+			Name: rcloneConfigPrefix + pvc.Destination().LabelSafeName(),
 			VolumeSource: v1.VolumeSource{
 				ConfigMap: &v1.ConfigMapVolumeSource{
 					LocalObjectReference: v1.LocalObjectReference{
-						Name: rcloneConfigPrefix + pvc.Destination().ValidatedName(),
+						Name: rcloneConfigPrefix + pvc.Destination().LabelSafeName(),
 					},
 				},
 			},

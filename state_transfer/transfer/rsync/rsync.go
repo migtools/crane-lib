@@ -20,7 +20,7 @@ type RsyncTransfer struct {
 	password    string
 	source      *rest.Config
 	destination *rest.Config
-	pvcList     transfer.PersistentVolumeClaimList
+	pvcList     transfer.PVCPairList
 	transport   transport.Transport
 	endpoint    endpoint.Endpoint
 	port        int32
@@ -28,7 +28,7 @@ type RsyncTransfer struct {
 }
 
 func NewTransfer(t transport.Transport, e endpoint.Endpoint, src *rest.Config, dest *rest.Config,
-	pvcList transfer.PersistentVolumeClaimList, opts ...TransferOption) (transfer.Transfer, error) {
+	pvcList transfer.PVCPairList, opts ...TransferOption) (transfer.Transfer, error) {
 	err := validatePVCList(pvcList)
 	if err != nil {
 		return nil, err
@@ -48,7 +48,7 @@ func NewTransfer(t transport.Transport, e endpoint.Endpoint, src *rest.Config, d
 	}, nil
 }
 
-func (r *RsyncTransfer) PVCs() transfer.PersistentVolumeClaimList {
+func (r *RsyncTransfer) PVCs() transfer.PVCPairList {
 	return r.pvcList
 }
 

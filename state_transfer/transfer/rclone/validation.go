@@ -7,7 +7,7 @@ import (
 )
 
 // validatePVCList validates list of PVCs provided to rclone transfer
-func validatePVCList(pvcList transfer.PersistentVolumeClaimList) error {
+func validatePVCList(pvcList transfer.PVCPairList) error {
 	if len(pvcList) > 1 {
 		return fmt.Errorf("unimplemented: rclone transfer does not support multiple pvcs")
 	}

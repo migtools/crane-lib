@@ -19,13 +19,13 @@ type RcloneTransfer struct {
 	password    string
 	source      *rest.Config
 	destination *rest.Config
-	pvcList     transfer.PersistentVolumeClaimList
+	pvcList     transfer.PVCPairList
 	transport   transport.Transport
 	endpoint    endpoint.Endpoint
 	port        int32
 }
 
-func NewTransfer(t transport.Transport, e endpoint.Endpoint, src *rest.Config, dest *rest.Config, pvcList transfer.PersistentVolumeClaimList) (transfer.Transfer, error) {
+func NewTransfer(t transport.Transport, e endpoint.Endpoint, src *rest.Config, dest *rest.Config, pvcList transfer.PVCPairList) (transfer.Transfer, error) {
 	err := validatePVCList(pvcList)
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func NewTransfer(t transport.Transport, e endpoint.Endpoint, src *rest.Config, d
 	}, nil
 }
 
-func (r *RcloneTransfer) PVCs() transfer.PersistentVolumeClaimList {
+func (r *RcloneTransfer) PVCs() transfer.PVCPairList {
 	return r.pvcList
 }
 

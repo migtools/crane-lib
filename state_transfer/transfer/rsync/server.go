@@ -148,8 +148,8 @@ func createRsyncServer(c client.Client, r *RsyncTransfer, ns string) error {
 		pvcVolumeMounts = append(
 			pvcVolumeMounts,
 			v1.VolumeMount{
-				Name:      pvc.Destination().ValidatedName(),
-				MountPath: fmt.Sprintf("/mnt/%s", pvc.Destination().ValidatedName()),
+				Name:      pvc.Destination().LabelSafeName(),
+				MountPath: fmt.Sprintf("/mnt/%s", pvc.Destination().LabelSafeName()),
 			})
 	}
 	volumeMounts = append(volumeMounts, configVolumeMounts...)
@@ -212,7 +212,7 @@ func createRsyncServer(c client.Client, r *RsyncTransfer, ns string) error {
 		pvcVolumes = append(
 			pvcVolumes,
 			v1.Volume{
-				Name: pvc.Destination().ValidatedName(),
+				Name: pvc.Destination().LabelSafeName(),
 				VolumeSource: v1.VolumeSource{
 					PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
 						ClaimName: pvc.Destination().Claim().Name,

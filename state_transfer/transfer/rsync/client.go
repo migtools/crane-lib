@@ -53,8 +53,8 @@ func createRsyncClient(c client.Client, r *RsyncTransfer, ns string) error {
 		rsyncCommand = append(rsyncCommand,
 			fmt.Sprintf("rsync://%s@%s:%d/mnt/%s",
 				r.Username(), transfer.ConnectionHostname(r),
-				transfer.ConnectionPort(r), pvc.Destination().ValidatedName()))
-		podLabels["created-for-pvc"] = pvc.Destination().ValidatedName()
+				transfer.ConnectionPort(r), pvc.Destination().LabelSafeName()))
+		podLabels["created-for-pvc"] = pvc.Destination().LabelSafeName()
 		containers := []v1.Container{
 			{
 				Name:    "rsync",
