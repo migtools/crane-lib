@@ -14,7 +14,6 @@ import (
 type Transfer interface {
 	Source() *rest.Config
 	Destination() *rest.Config
-	PVC() v1.PersistentVolumeClaim
 	Endpoint() endpoint.Endpoint
 	Transport() transport.Transport
 	// TODO: define a more generic type for auth
@@ -23,6 +22,7 @@ type Transfer interface {
 	Password() string
 	CreateServer(client.Client) error
 	CreateClient(client.Client) error
+	PVCs() PVCPairList
 }
 
 func CreateServer(t Transfer) error {

@@ -29,7 +29,7 @@ type RouteEndpoint struct {
 	namespacedName types.NamespacedName
 }
 
-func NewEndpoint(namespacedName types.NamespacedName, eType RouteEndpointType, labels map[string]string) endpoint.Endpoint {
+func NewEndpoint(namespacedName types.NamespacedName, port int32, eType RouteEndpointType, labels map[string]string) endpoint.Endpoint {
 	if eType != EndpointTypePassthrough && eType != EndpointTypeInsecureEdge {
 		panic("unsupported endpoint type for routes")
 	}
@@ -37,6 +37,7 @@ func NewEndpoint(namespacedName types.NamespacedName, eType RouteEndpointType, l
 		namespacedName: namespacedName,
 		labels:         labels,
 		endpointType:   eType,
+		port:           port,
 	}
 }
 

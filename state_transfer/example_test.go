@@ -10,6 +10,7 @@ import (
 	"github.com/konveyor/crane-lib/state_transfer"
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 	"github.com/konveyor/crane-lib/state_transfer/endpoint/route"
+	"github.com/konveyor/crane-lib/state_transfer/labels"
 	"github.com/konveyor/crane-lib/state_transfer/transfer"
 	"github.com/konveyor/crane-lib/state_transfer/transfer/rclone"
 	"github.com/konveyor/crane-lib/state_transfer/transfer/rsync"
@@ -65,8 +66,20 @@ func Example_basicTransfer() {
 		log.Fatal(err, "unable to create destination PVC")
 	}
 
+	pvcList, err := transfer.NewPVCPairList(
+		transfer.NewPVCPair(pvc, destPVC),
+	)
+	if err != nil {
+		log.Fatal(err, "invalid pvc list")
+	}
+
+	endpointPort := int32(2222)
 	// create a route for data transfer
-	r := route.NewEndpoint(types.NamespacedName{Namespace: pvc.Name, Name: pvc.Namespace}, route.EndpointTypePassthrough, map[string]string{"app": "dvm"})
+	r := route.NewEndpoint(
+		types.NamespacedName{
+			Namespace: pvc.Name,
+			Name:      pvc.Namespace,
+		}, endpointPort, route.EndpointTypePassthrough, labels.Labels)
 	e, err := endpoint.Create(r, destClient)
 	if err != nil {
 		log.Fatal(err, "unable to create route endpoint")
@@ -94,7 +107,11 @@ func Example_basicTransfer() {
 	}
 
 	// Create Rclone Transfer Pod
-	t := rclone.NewTransfer(s, r, srcCfg, destCfg, *pvc)
+	t, err := rclone.NewTransfer(s, r, srcCfg, destCfg, pvcList)
+	if err != nil {
+		log.Fatal(err, "errror creating rclone transfer")
+	}
+
 	err = transfer.CreateServer(t)
 	if err != nil {
 		log.Fatal(err, "error creating rclone server")
@@ -107,7 +124,8 @@ func Example_basicTransfer() {
 		rsync.WithSourcePodLabels(map[string]string{}),
 		rsync.WithDestinationPodLabels(map[string]string{}),
 	}
-	rsyncTransfer, err := rsync.NewTransfer(s, r, srcCfg, destCfg, *pvc, rsyncTransferOptions...)
+
+	rsyncTransfer, err := rsync.NewTransfer(s, r, srcCfg, destCfg, pvcList, rsyncTransferOptions...)
 	if err != nil {
 		log.Fatal(err, "error creating rsync transfer")
 	} else {
