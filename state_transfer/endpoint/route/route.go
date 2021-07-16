@@ -191,3 +191,62 @@ func (r *RouteEndpoint) createRoute(c client.Client) error {
 func (r *RouteEndpoint) setPort(port int32) {
 	r.port = port
 }
+
+func (r *RouteEndpoint) getRoute(c client.Client) (*routev1.Route, error) {
+	route := &routev1.Route{}
+	err := c.Get(context.TODO(), types.NamespacedName{Name: r.NamespacedName().Name, Namespace: r.NamespacedName().Namespace}, route)
+	if err != nil {
+		return nil, err
+	}
+	return route, err
+}
+
+func (r *RouteEndpoint) setFields(c client.Client) error {
+	route, err := r.getRoute(c)
+	if err != nil {
+		return err
+	}
+
+	if route.Spec.Host == "" {
+		return fmt.Errorf("route %s has empty spec.host field", r.NamespacedName())
+	}
+	if route.Spec.Port == nil {
+		return fmt.Errorf("route %s has empty spec.port field", r.NamespacedName())
+	}
+
+	r.hostname = route.Spec.Host
+
+	r.port = route.Spec.Port.TargetPort.IntVal
+
+	switch route.Spec.TLS.Termination {
+	case routev1.TLSTerminationEdge:
+		r.endpointType = EndpointTypeInsecureEdge
+	case routev1.TLSTerminationPassthrough:
+		r.endpointType = EndpointTypePassthrough
+	default:
+		return fmt.Errorf("route %s has unsupported spec.spec.tls.termination value", r.NamespacedName())
+	}
+
+	return nil
+}
+
+// GetEndpointFromKubeObjects check if the required Route is created and healthy. It populates the fields
+// for the Endpoint needed for transfer and transport objects.
+func GetEndpointFromKubeObjects(c client.Client, obj types.NamespacedName) (endpoint.Endpoint, error) {
+	r := &RouteEndpoint{namespacedName: obj}
+
+	healthy, err := r.IsHealthy(c)
+	if err != nil {
+		return nil, err
+	}
+	if !healthy {
+		return nil, fmt.Errorf("route %s not healthy", obj)
+	}
+
+	err = r.setFields(c)
+	if err != nil {
+		return nil, err
+	}
+
+	return r, nil
+}
