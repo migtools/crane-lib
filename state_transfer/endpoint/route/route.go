@@ -229,9 +229,9 @@ func (r *RouteEndpoint) setFields(c client.Client) error {
 	return nil
 }
 
-// GetReadyEndpoint check if the required Route is created and healthy. It populates the fields
+// GetEndpointFromKubeObjects check if the required Route is created and healthy. It populates the fields
 // for the Endpoint needed for transfer and transport objects.
-func GetReadyEndpoint(c client.Client, obj types.NamespacedName) (endpoint.Endpoint, error) {
+func GetEndpointFromKubeObjects(c client.Client, obj types.NamespacedName) (endpoint.Endpoint, error) {
 	r := &RouteEndpoint{namespacedName: obj}
 
 	healthy, err := r.IsHealthy(c)

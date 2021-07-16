@@ -124,12 +124,12 @@ func Example_getFromCreatedObjects() {
 	// set up the PVC on destination to receive the data
 	pvc := &corev1.PersistentVolumeClaim{}
 
-	e, err := route.GetReadyEndpoint(destClient, types.NamespacedName{Namespace: srcNamespace, Name: srcPVC})
+	e, err := route.GetEndpointFromKubeObjects(destClient, types.NamespacedName{Namespace: srcNamespace, Name: srcPVC})
 	if err != nil {
 		log.Fatal(err, "error getting route endpoint")
 	}
 
-	s, err := stunnel.GetTransport(srcClient, destClient, types.NamespacedName{Namespace: srcNamespace, Name: srcPVC})
+	s, err := stunnel.GetTransferFromKubeObjects(srcClient, destClient, types.NamespacedName{Namespace: srcNamespace, Name: srcPVC})
 	if err != nil {
 		log.Fatal(err, "error getting stunnel transfer")
 	}
