@@ -43,15 +43,15 @@ func validatePVCList(pvcList transfer.PVCPairList) error {
 }
 
 // validatePVCName validates pvc names for rsync transfer
-func validatePVCName(pvc transfer.PVCPair) error {
+func validatePVCName(pvcPair transfer.PVCPair) error {
 	validationErrors := []error{}
-	if errs := validation.IsValidLabelValue(pvc.Source().LabelSafeName()); len(errs) > 0 {
+	if errs := validation.IsValidLabelValue(pvcPair.Source().LabelSafeName()); len(errs) > 0 {
 		validationErrors = append(validationErrors,
-			fmt.Errorf("labelSafeName() for %s must be a valid label value", pvc.Source().NamespacedName()))
+			fmt.Errorf("labelSafeName() for %s must be a valid label value", pvcPair.Source().Claim().Name))
 	}
-	if errs := validation.IsValidLabelValue(pvc.Destination().LabelSafeName()); len(errs) > 0 {
+	if errs := validation.IsValidLabelValue(pvcPair.Destination().LabelSafeName()); len(errs) > 0 {
 		validationErrors = append(validationErrors,
-			fmt.Errorf("labelSafeName() for %s must be a valid label value", pvc.Destination().NamespacedName()))
+			fmt.Errorf("labelSafeName() for %s must be a valid label value", pvcPair.Destination().Claim().Name))
 	}
 	return errorsutil.NewAggregate(validationErrors)
 }
