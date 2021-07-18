@@ -3,10 +3,13 @@ package null
 import (
 	"bytes"
 
+	"github.com/konveyor/crane-lib/state_transfer/meta"
 	"github.com/konveyor/crane-lib/state_transfer/transport"
 
 	v1 "k8s.io/api/core/v1"
 )
+
+const TransportTypeNull = "null"
 
 type NullTransport struct {
 	crt              *bytes.Buffer
@@ -19,10 +22,13 @@ type NullTransport struct {
 	clientVolumes    []v1.Volume
 	direct           bool
 	options          *transport.Options
+	nsNamePair       meta.NamespacedNamePair
 }
 
-func NewTransport() transport.Transport {
-	return &NullTransport{}
+func NewTransport(nsNamePair meta.NamespacedNamePair) transport.Transport {
+	return &NullTransport{
+		nsNamePair: nsNamePair,
+	}
 }
 
 func (s *NullTransport) CA() *bytes.Buffer {
@@ -38,6 +44,10 @@ func (s *NullTransport) Key() *bytes.Buffer {
 }
 
 func (s *NullTransport) Port() int32 {
+	return s.port
+}
+
+func (s *NullTransport) ExposedPort() int32 {
 	return s.port
 }
 
@@ -63,4 +73,12 @@ func (s *NullTransport) Direct() bool {
 
 func (s *NullTransport) Options() *transport.Options {
 	return s.options
+}
+
+func (s *NullTransport) NamespacedNamePair() meta.NamespacedNamePair {
+	return s.nsNamePair
+}
+
+func (s *NullTransport) Type() transport.TransportType {
+	return transport.TransportType(TransportTypeNull)
 }

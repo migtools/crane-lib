@@ -11,24 +11,39 @@ import (
 	"time"
 
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
+	"github.com/konveyor/crane-lib/state_transfer/meta"
 
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// Transport knows how to create an end to end tunnel for a transfer to work on
 type Transport interface {
+	// NamespacedNamePair returns a source and a destination pair to identify this transport
+	NamespacedNamePair() meta.NamespacedNamePair
+	//.CA returns CA used by the transport
 	CA() *bytes.Buffer
+	// Crt returns certificate used by the transport for encryption
 	Crt() *bytes.Buffer
 	Key() *bytes.Buffer
+	// Port returns a port on which the transport listens for connections
 	Port() int32
+	// ExposedPort returns an exposed port for transfers to use
+	ExposedPort() int32
+	// ClientContainers returns a list of containers transfers can add to their client Pods
 	ClientContainers() []v1.Container
+	// ClientVolumes returns a list of volumes transfers can add to their client Pods
 	ClientVolumes() []v1.Volume
+	// ServerContainers returns a list of containers transfers can add to their server Pods
 	ServerContainers() []v1.Container
+	// ServerVolumes returns a list of volumes transfers can add to their server Pods
 	ServerVolumes() []v1.Volume
 	Direct() bool
 	CreateServer(client.Client, endpoint.Endpoint) error
 	CreateClient(client.Client, endpoint.Endpoint) error
 	Options() *Options
+	// Type
+	Type() TransportType
 }
 
 type Options struct {
@@ -38,6 +53,8 @@ type Options struct {
 	NoVerifyCA    bool
 	CAVerifyLevel string
 }
+
+type TransportType string
 
 func CreateServer(t Transport, c client.Client, e endpoint.Endpoint) (Transport, error) {
 	err := t.CreateServer(c, e)

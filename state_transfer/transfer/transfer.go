@@ -16,18 +16,22 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// Transfer knows how to transfer PV data from a source to a destination
 type Transfer interface {
+	// Source returns a source client
 	Source() *rest.Config
+	// Destination returns a destination client
 	Destination() *rest.Config
+	// Endpoint returns the endpoint used by the transfer
 	Endpoint() endpoint.Endpoint
+	// Transport returns the transport used by the transfer
 	Transport() transport.Transport
-	// TODO: define a more generic type for auth
-	// for example some transfers could be authenticated by certificates instead of username/password
-	Username() string
-	Password() string
+	// CreateServer creates a transfer server either on source or the destination
 	CreateServer(client.Client) error
+	// CreateClient creates a transfer client either on source or the destination
 	CreateClient(client.Client) error
 	IsServerHealthy(c client.Client) (bool, error)
+	// PVCs returns the list of PVCs the transfer will migrate
 	PVCs() PVCPairList
 }
 
@@ -86,7 +90,7 @@ func ConnectionHostname(t Transfer) string {
 
 func ConnectionPort(t Transfer) int32 {
 	if t.Transport().Direct() {
-		return t.Endpoint().Port()
+		return t.Endpoint().ExposedPort()
 	}
 	return t.Transport().Port()
 }
