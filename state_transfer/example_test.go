@@ -156,19 +156,35 @@ func Example_getFromCreatedObjects() {
 
 	// set up the PVC on destination to receive the data
 	pvc := &corev1.PersistentVolumeClaim{}
+	err = srcClient.Get(context.TODO(), client.ObjectKey{Namespace: srcNamespace, Name: srcPVC}, pvc)
+	if err != nil {
+		log.Fatal(err, "unable to get source PVC")
+	}
+
+	destPVC := pvc.DeepCopy()
+
+	pvcList, err := transfer.NewPVCPairList(
+		transfer.NewPVCPair(pvc, destPVC),
+	)
+	if err != nil {
+		log.Fatal(err, "invalid pvc list")
+	}
 
 	e, err := route.GetEndpointFromKubeObjects(destClient, types.NamespacedName{Namespace: srcNamespace, Name: srcPVC})
 	if err != nil {
 		log.Fatal(err, "error getting route endpoint")
 	}
 
-	s, err := stunnel.GetTransferFromKubeObjects(srcClient, destClient, types.NamespacedName{Namespace: srcNamespace, Name: srcPVC})
+	s, err := stunnel.GetTransportFromKubeObjects(srcClient, destClient, types.NamespacedName{Namespace: srcNamespace, Name: srcPVC})
 	if err != nil {
-		log.Fatal(err, "error getting stunnel transfer")
+		log.Fatal(err, "error getting stunnel transport")
 	}
 
 	// Create Rclone Transfer Pod
-	t := rclone.NewTransfer(s, e, srcCfg, destCfg, *pvc)
+	t, err := rclone.NewTransfer(s, e, srcCfg, destCfg, pvcList)
+	if err != nil {
+		log.Fatal(err, "errror creating rclone transfer")
+	}
 	err = transfer.CreateServer(t)
 	if err != nil {
 		log.Fatal(err, "error creating rclone server")
