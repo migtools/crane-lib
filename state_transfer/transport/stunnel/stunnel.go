@@ -70,9 +70,9 @@ func (s *StunnelTransport) Direct() bool {
 	return s.direct
 }
 
-// GetTransferFromKubeObjects checks if the required configmaps and secretes are created for the transport
+// GetTransportFromKubeObjects checks if the required configmaps and secretes are created for the transport
 //. It populates the fields for the Transport needed for transfer object.
-func GetTransferFromKubeObjects(srcClient client.Client, destClient client.Client, obj types.NamespacedName) (transport.Transport, error) {
+func GetTransportFromKubeObjects(srcClient client.Client, destClient client.Client, obj types.NamespacedName) (transport.Transport, error) {
 	_, err := getClientConfig(srcClient, obj)
 	switch {
 	case errors.IsNotFound(err):
