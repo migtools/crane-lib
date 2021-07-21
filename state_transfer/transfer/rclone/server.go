@@ -62,7 +62,7 @@ func createRcloneServerResources(c client.Client, r *RcloneTransfer, pvc transfe
 func createRcloneServerConfig(c client.Client, r *RcloneTransfer, pvc transfer.PVCPair) error {
 	rcloneConfigMap := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: pvc.Destination().Claim().Name,
+			Namespace: pvc.Destination().Claim().Namespace,
 			Name:      rcloneConfigPrefix + pvc.Destination().LabelSafeName(),
 			Labels:    r.Endpoint().Labels(),
 		},
