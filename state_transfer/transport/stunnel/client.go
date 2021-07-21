@@ -24,22 +24,22 @@ const (
  accept = {{ .stunnelPort }}
  cert = /etc/stunnel/certs/tls.crt
  key = /etc/stunnel/certs/tls.key
-{{ if not (eq .proxyHost "") }}
+{{- if not (eq .proxyHost "") }}
  protocol = connect
  connect = {{ .proxyHost }}
  protocolHost = {{ .hostname }}:{{ .port }}
-{{ if not (eq .proxyUsername "") }}
+{{- if not (eq .proxyUsername "") }}
  protocolUsername = {{ .proxyUsername }}
-{{ end }}
-{{ if not (eq .proxyPassword "") }}
+{{- end }}
+{{- if not (eq .proxyPassword "") }}
  protocolPassword = {{ .proxyPassword }}
-{{ end }}
-{{ else }}
+{{- end }}
+{{- else }}
  connect = {{ .hostname }}:{{ .port }}
-{{ end }}
-{{ if not .noVerifyCA }}
+{{- end }}
+{{- if not (eq .noVerifyCA "false") }}
  verify = {{ .caVerifyLevel }}
-{{ end }}
+{{- end }}
 `
 )
 
@@ -80,6 +80,13 @@ func getClientConfig(c client.Client, obj types.NamespacedName) (*corev1.ConfigM
 }
 
 func createClientConfig(c client.Client, s *StunnelTransport, e endpoint.Endpoint) error {
+	var caVerifyLevel string
+
+	if s.CAVerifyLevel() == "" {
+		caVerifyLevel = "2"
+	} else {
+		caVerifyLevel = s.CAVerifyLevel()
+	}
 
 	connections := map[string]string{
 		"stunnelPort":   strconv.Itoa(int(stunnelPort)),
@@ -88,7 +95,8 @@ func createClientConfig(c client.Client, s *StunnelTransport, e endpoint.Endpoin
 		"proxyHost":     s.ProxyOptions().URL,
 		"proxyUsername": s.ProxyOptions().Username,
 		"proxyPassword": s.ProxyOptions().Password,
-		"caVerifyLevel": s.CAVerifyLevel(),
+		"caVerifyLevel": caVerifyLevel,
+		"noVerifyCA":    strconv.FormatBool(s.NoVerifyCA()),
 	}
 
 	var stunnelConf bytes.Buffer
