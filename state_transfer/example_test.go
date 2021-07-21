@@ -16,6 +16,8 @@ import (
 	"github.com/konveyor/crane-lib/state_transfer/transfer/rsync"
 	"github.com/konveyor/crane-lib/state_transfer/transport"
 	"github.com/konveyor/crane-lib/state_transfer/transport/stunnel"
+	routev1 "github.com/openshift/api/route/v1"
+	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -33,12 +35,24 @@ var (
 // This example shows how to wire up the components of the lib to
 // transfer data from one PVC to another
 func Example_basicTransfer() {
-	srcClient, err := client.New(srcCfg, client.Options{Scheme: runtime.NewScheme()})
+	scheme := runtime.NewScheme()
+	if err := routev1.AddToScheme(scheme); err != nil {
+		log.Fatal(err, "unable to add routev1 scheme")
+	}
+	if err := v1.AddToScheme(scheme); err != nil {
+		log.Fatal(err, "unable to add v1 scheme")
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+
+		log.Fatal(err, "unable to add corev1 scheme")
+	}
+
+	srcClient, err := client.New(srcCfg, client.Options{Scheme: scheme})
 	if err != nil {
 		log.Fatal(err, "unable to create source client")
 	}
 
-	destClient, err := client.New(destCfg, client.Options{Scheme: runtime.NewScheme()})
+	destClient, err := client.New(destCfg, client.Options{Scheme: scheme})
 	if err != nil {
 		log.Fatal(err, "unable to create destination client")
 	}
