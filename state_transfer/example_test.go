@@ -77,8 +77,8 @@ func Example_basicTransfer() {
 	// create a route for data transfer
 	r := route.NewEndpoint(
 		types.NamespacedName{
-			Namespace: pvc.Name,
-			Name:      pvc.Namespace,
+			Namespace: pvc.Namespace,
+			Name:      pvc.Name,
 		}, endpointPort, route.EndpointTypePassthrough, labels.Labels)
 	e, err := endpoint.Create(r, destClient)
 	if err != nil {
