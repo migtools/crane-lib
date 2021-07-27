@@ -82,21 +82,21 @@ func getClientConfig(c client.Client, obj types.NamespacedName) (*corev1.ConfigM
 func createClientConfig(c client.Client, s *StunnelTransport, e endpoint.Endpoint) error {
 	var caVerifyLevel string
 
-	if s.CAVerifyLevel() == "" {
+	if s.Options().CAVerifyLevel == "" {
 		caVerifyLevel = "2"
 	} else {
-		caVerifyLevel = s.CAVerifyLevel()
+		caVerifyLevel = s.Options().CAVerifyLevel
 	}
 
 	connections := map[string]string{
 		"stunnelPort":   strconv.Itoa(int(stunnelPort)),
 		"hostname":      e.Hostname(),
 		"port":          strconv.Itoa(int(e.Port())),
-		"proxyHost":     s.ProxyOptions().URL,
-		"proxyUsername": s.ProxyOptions().Username,
-		"proxyPassword": s.ProxyOptions().Password,
+		"proxyHost":     s.Options().ProxyURL,
+		"proxyUsername": s.Options().ProxyUsername,
+		"proxyPassword": s.Options().ProxyPassword,
 		"caVerifyLevel": caVerifyLevel,
-		"noVerifyCA":    strconv.FormatBool(s.NoVerifyCA()),
+		"noVerifyCA":    strconv.FormatBool(s.Options().NoVerifyCA),
 	}
 
 	var stunnelConf bytes.Buffer
