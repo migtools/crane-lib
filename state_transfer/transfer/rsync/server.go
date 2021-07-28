@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/konveyor/crane-lib/state_transfer/transfer"
 	"strconv"
 	"text/template"
 	"time"
@@ -13,7 +14,7 @@ import (
 
 	random "math/rand"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -62,6 +63,10 @@ func (r *RsyncTransfer) CreateServer(c client.Client) error {
 	return nil
 }
 
+func (r *RsyncTransfer) IsServerHealthy(c client.Client) (bool, error) {
+	return transfer.IsPodHealthy(c, client.ObjectKey{Namespace: r.pvcList.GetDestinationNamespaces()[0], Name: "rsync-server"})
+}
+
 func createRsyncServerResources(c client.Client, r *RsyncTransfer, ns string) error {
 	r.username = rsyncUser
 	r.port = rsyncPort
@@ -91,7 +96,7 @@ func createRsyncServerConfig(c client.Client, r *RsyncTransfer, ns string) error
 		return err
 	}
 
-	rsyncConfigMap := &v1.ConfigMap{
+	rsyncConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: ns,
 			Name:      rsyncConfigPrefix,
@@ -114,7 +119,7 @@ func createRsyncServerSecret(c client.Client, r *RsyncTransfer, ns string) error
 	}
 	r.password = string(password)
 
-	rsyncSecret := &v1.Secret{
+	rsyncSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: ns,
 			Name:      rsyncSecretPrefix,
@@ -131,8 +136,8 @@ func createRsyncServer(c client.Client, r *RsyncTransfer, ns string) error {
 	transferOptions := r.transferOptions()
 	podLabels := transferOptions.DestinationPodMeta.Labels
 
-	volumeMounts := []v1.VolumeMount{}
-	configVolumeMounts := []v1.VolumeMount{
+	volumeMounts := []corev1.VolumeMount{}
+	configVolumeMounts := []corev1.VolumeMount{
 		{
 			Name:      rsyncConfigPrefix,
 			MountPath: "/etc/rsyncd.conf",
@@ -143,18 +148,18 @@ func createRsyncServer(c client.Client, r *RsyncTransfer, ns string) error {
 			MountPath: "/etc/rsync-secret",
 		},
 	}
-	pvcVolumeMounts := []v1.VolumeMount{}
+	pvcVolumeMounts := []corev1.VolumeMount{}
 	for _, pvc := range r.pvcList.InDestinationNamespace(ns) {
 		pvcVolumeMounts = append(
 			pvcVolumeMounts,
-			v1.VolumeMount{
+			corev1.VolumeMount{
 				Name:      pvc.Destination().LabelSafeName(),
 				MountPath: fmt.Sprintf("/mnt/%s", pvc.Destination().LabelSafeName()),
 			})
 	}
 	volumeMounts = append(volumeMounts, configVolumeMounts...)
 	volumeMounts = append(volumeMounts, pvcVolumeMounts...)
-	containers := []v1.Container{
+	containers := []corev1.Container{
 		{
 			Name:  "rsync",
 			Image: rsyncImage,
@@ -165,10 +170,10 @@ func createRsyncServer(c client.Client, r *RsyncTransfer, ns string) error {
 				"--port=" + strconv.Itoa(int(rsyncPort)),
 				"-vvv",
 			},
-			Ports: []v1.ContainerPort{
+			Ports: []corev1.ContainerPort{
 				{
 					Name:          "rsyncd",
-					Protocol:      v1.ProtocolTCP,
+					Protocol:      corev1.ProtocolTCP,
 					ContainerPort: rsyncPort,
 				},
 			},
@@ -180,12 +185,12 @@ func createRsyncServer(c client.Client, r *RsyncTransfer, ns string) error {
 
 	mode := int32(0600)
 
-	configVolumes := []v1.Volume{
+	configVolumes := []corev1.Volume{
 		{
 			Name: rsyncConfigPrefix,
-			VolumeSource: v1.VolumeSource{
-				ConfigMap: &v1.ConfigMapVolumeSource{
-					LocalObjectReference: v1.LocalObjectReference{
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
 						Name: rsyncConfigPrefix,
 					},
 				},
@@ -193,11 +198,11 @@ func createRsyncServer(c client.Client, r *RsyncTransfer, ns string) error {
 		},
 		{
 			Name: rsyncSecretPrefix,
-			VolumeSource: v1.VolumeSource{
-				Secret: &v1.SecretVolumeSource{
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
 					SecretName:  rsyncSecretPrefix,
 					DefaultMode: &mode,
-					Items: []v1.KeyToPath{
+					Items: []corev1.KeyToPath{
 						{
 							Key:  "credentials",
 							Path: "rsyncd.secrets",
@@ -207,14 +212,14 @@ func createRsyncServer(c client.Client, r *RsyncTransfer, ns string) error {
 			},
 		},
 	}
-	pvcVolumes := []v1.Volume{}
+	pvcVolumes := []corev1.Volume{}
 	for _, pvc := range r.pvcList.InDestinationNamespace(ns) {
 		pvcVolumes = append(
 			pvcVolumes,
-			v1.Volume{
+			corev1.Volume{
 				Name: pvc.Destination().LabelSafeName(),
-				VolumeSource: v1.VolumeSource{
-					PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 						ClaimName: pvc.Destination().Claim().Name,
 					},
 				},
@@ -224,13 +229,13 @@ func createRsyncServer(c client.Client, r *RsyncTransfer, ns string) error {
 	volumes := append(pvcVolumes, configVolumes...)
 	volumes = append(volumes, r.Transport().ServerVolumes()...)
 
-	server := &v1.Pod{
+	server := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "rsync-server",
 			Namespace: ns,
 			Labels:    podLabels,
 		},
-		Spec: v1.PodSpec{
+		Spec: corev1.PodSpec{
 			Containers: containers,
 			Volumes:    volumes,
 		},

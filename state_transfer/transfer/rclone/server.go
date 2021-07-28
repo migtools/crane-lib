@@ -39,6 +39,12 @@ func (r *RcloneTransfer) CreateServer(c client.Client) error {
 	return err
 }
 
+func (r *RcloneTransfer) IsServerHealthy(c client.Client) (bool, error) {
+	deploymentLabels := r.Endpoint().Labels()
+	deploymentLabels["pvc"] = r.pvcList[0].Destination().LabelSafeName()
+	return transfer.AreFilteredPodsHealthy(c, r.pvcList.GetDestinationNamespaces()[0], deploymentLabels)
+}
+
 func createRcloneServerResources(c client.Client, r *RcloneTransfer, pvc transfer.PVCPair) error {
 	var letters = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 	random.Seed(time.Now().UnixNano())
