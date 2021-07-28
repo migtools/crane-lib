@@ -4,20 +4,17 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/konveyor/crane-lib/state_transfer/transfer"
+	random "math/rand"
 	"strconv"
 	"text/template"
 	"time"
 
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
+	"github.com/konveyor/crane-lib/state_transfer/transfer"
 	"github.com/konveyor/crane-lib/state_transfer/transport"
-
-	random "math/rand"
-
 	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
