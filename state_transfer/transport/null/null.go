@@ -18,6 +18,7 @@ type NullTransport struct {
 	clientContainers []v1.Container
 	clientVolumes    []v1.Volume
 	direct           bool
+	options          *transport.Options
 }
 
 func NewTransport() transport.Transport {
@@ -58,4 +59,8 @@ func (s *NullTransport) ServerVolumes() []v1.Volume {
 
 func (s *NullTransport) Direct() bool {
 	return s.direct
+}
+
+func (s *NullTransport) Options() *transport.Options {
+	return s.options
 }

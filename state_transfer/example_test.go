@@ -95,7 +95,7 @@ func Example_basicTransfer() {
 	}, make(<-chan struct{}))
 
 	// create an stunnel transport to carry the data over the route
-	s := stunnel.NewTransport()
+	s := stunnel.NewTransport(&transport.Options{})
 	_, err = transport.CreateServer(s, destClient, e)
 	if err != nil {
 		log.Fatal(err, "error creating stunnel server")

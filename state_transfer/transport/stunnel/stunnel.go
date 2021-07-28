@@ -29,10 +29,15 @@ type StunnelTransport struct {
 	clientContainers []corev1.Container
 	clientVolumes    []corev1.Volume
 	direct           bool
+	options          *transport.Options
+	noVerifyCA       bool
+	caVerifyLevel    string
 }
 
-func NewTransport() transport.Transport {
-	return &StunnelTransport{}
+func NewTransport(options *transport.Options) transport.Transport {
+	return &StunnelTransport{
+		options: options,
+	}
 }
 
 func (s *StunnelTransport) CA() *bytes.Buffer {
@@ -131,4 +136,8 @@ func GetTransportFromKubeObjects(srcClient client.Client, destClient client.Clie
 	createClientVolumes(s, obj)
 	s.port = stunnelPort
 	return s, nil
+}
+
+func (s *StunnelTransport) Options() *transport.Options {
+	return s.options
 }

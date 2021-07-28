@@ -23,8 +23,23 @@ const (
  [rsync]
  accept = {{ .stunnelPort }}
  cert = /etc/stunnel/certs/tls.crt
- connect = {{ .hostname }}:{{ .port }}
  key = /etc/stunnel/certs/tls.key
+{{- if not (eq .proxyHost "") }}
+ protocol = connect
+ connect = {{ .proxyHost }}
+ protocolHost = {{ .hostname }}:{{ .port }}
+{{- if not (eq .proxyUsername "") }}
+ protocolUsername = {{ .proxyUsername }}
+{{- end }}
+{{- if not (eq .proxyPassword "") }}
+ protocolPassword = {{ .proxyPassword }}
+{{- end }}
+{{- else }}
+ connect = {{ .hostname }}:{{ .port }}
+{{- end }}
+{{- if not (eq .noVerifyCA "false") }}
+ verify = {{ .caVerifyLevel }}
+{{- end }}
 `
 )
 
@@ -38,7 +53,7 @@ func createClientResources(c client.Client, s *StunnelTransport, e endpoint.Endp
 
 	// assuming the name of the endpoint is the same as the name of the PVC
 
-	err := createClientConfig(c, e)
+	err := createClientConfig(c, s, e)
 	if err != nil {
 		return err
 	}
@@ -64,11 +79,24 @@ func getClientConfig(c client.Client, obj types.NamespacedName) (*corev1.ConfigM
 	return cm, err
 }
 
-func createClientConfig(c client.Client, e endpoint.Endpoint) error {
+func createClientConfig(c client.Client, s *StunnelTransport, e endpoint.Endpoint) error {
+	var caVerifyLevel string
+
+	if s.Options().CAVerifyLevel == "" {
+		caVerifyLevel = "2"
+	} else {
+		caVerifyLevel = s.Options().CAVerifyLevel
+	}
+
 	connections := map[string]string{
-		"stunnelPort": strconv.Itoa(int(stunnelPort)),
-		"hostname":    e.Hostname(),
-		"port":        strconv.Itoa(int(e.Port())),
+		"stunnelPort":   strconv.Itoa(int(stunnelPort)),
+		"hostname":      e.Hostname(),
+		"port":          strconv.Itoa(int(e.Port())),
+		"proxyHost":     s.Options().ProxyURL,
+		"proxyUsername": s.Options().ProxyUsername,
+		"proxyPassword": s.Options().ProxyPassword,
+		"caVerifyLevel": caVerifyLevel,
+		"noVerifyCA":    strconv.FormatBool(s.Options().NoVerifyCA),
 	}
 
 	var stunnelConf bytes.Buffer
