@@ -190,6 +190,16 @@ func Example_getFromCreatedObjects() {
 		log.Fatal(err, "error creating rclone server")
 	}
 
+	// check if the server is healthy before creating the client
+	_ = wait.PollUntil(time.Second*5, func() (done bool, err error) {
+		isHealthy, err := t.IsServerHealthy(destClient)
+		if err != nil {
+			log.Println(err, "unable to check server health, retrying...")
+			return false, nil
+		}
+		return isHealthy, nil
+	}, make(<-chan struct{}))
+
 	// Create Rclone Client Pod
 	err = transfer.CreateClient(t)
 	if err != nil {
