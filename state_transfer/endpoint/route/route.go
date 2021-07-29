@@ -125,6 +125,7 @@ func (r *RouteEndpoint) createRouteService(c client.Client) error {
 			Type:     corev1.ServiceTypeClusterIP,
 		},
 	}
+	// TODO: consider patching an existing object if it already exists
 	err := c.Create(context.TODO(), &service, &client.CreateOptions{})
 	if err != nil && !k8serrors.IsAlreadyExists(err) {
 		return err

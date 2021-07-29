@@ -281,7 +281,7 @@ type SourceContainerMutation struct {
 	C *v1.Container
 }
 
-func (s *SourceContainerMutation) ApplyTo(opts *TransferOptions) error {
+func (s SourceContainerMutation) ApplyTo(opts *TransferOptions) error {
 	opts.SourceContainerMutations = append(opts.SourceContainerMutations,
 		meta.NewContainerMutation(s.C, meta.MutationTypeReplace))
 	return nil
@@ -291,7 +291,7 @@ type DestinationContainerMutation struct {
 	C *v1.Container
 }
 
-func (s *DestinationContainerMutation) ApplyTo(opts *TransferOptions) error {
+func (s DestinationContainerMutation) ApplyTo(opts *TransferOptions) error {
 	opts.DestContainerMutations = append(opts.SourceContainerMutations,
 		meta.NewContainerMutation(s.C, meta.MutationTypeReplace))
 	return nil

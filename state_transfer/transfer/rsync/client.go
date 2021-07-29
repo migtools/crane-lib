@@ -141,7 +141,13 @@ func createRsyncClient(c client.Client, r *RsyncTransfer, ns string) error {
 func customizeTransportClientContainers(t transport.Transport) {
 	switch t.Type() {
 	case stunnel.TransportTypeStunnel:
-		stunnelContainer := &t.ClientContainers()[0]
+		var stunnelContainer *v1.Container
+		for i := range t.ClientContainers() {
+			c := &t.ClientContainers()[i]
+			if c.Name == stunnel.StunnelContainer {
+				stunnelContainer = c
+			}
+		}
 		stunnelContainer.Command = []string{
 			"/bin/bash",
 			"-c",

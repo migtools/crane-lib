@@ -32,8 +32,11 @@ type PodSpecMutation interface {
 
 type ContainerMutation interface {
 	Mutation
+	// Name returns a name for the container
+	Name() *string
 	// SecurityContext returns mutated security context for the target container
 	SecurityContext() *corev1.SecurityContext
+	//
 }
 
 // ObjectMetaMutation knows how to mutate fields of a metav1.ObjectMeta resource

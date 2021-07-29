@@ -95,9 +95,9 @@ func (s *StunnelTransport) Type() transport.TransportType {
 	return transport.TransportType(TransportTypeStunnel)
 }
 
-// GetTransferFromKubeObjects checks if the required configmaps and secretes are created for the transport
+// GetTransportFromKubeObjects checks if the required configmaps and secretes are created for the transport
 //. It populates the fields for the Transport needed for transfer object.
-func GetTransferFromKubeObjects(srcClient client.Client, destClient client.Client, nnPair meta.NamespacedNamePair, e endpoint.Endpoint) (transport.Transport, error) {
+func GetTransportFromKubeObjects(srcClient client.Client, destClient client.Client, nnPair meta.NamespacedNamePair, e endpoint.Endpoint) (transport.Transport, error) {
 	_, err := getClientConfig(srcClient, nnPair.Source())
 	switch {
 	case errors.IsNotFound(err):
@@ -157,6 +157,7 @@ func GetTransferFromKubeObjects(srcClient client.Client, destClient client.Clien
 	createClientVolumes(s)
 	setClientContainers(s, e)
 	createStunnelServerContainers(s, e)
+	s.nsNamePair = nnPair
 	return s, nil
 }
 

@@ -12,89 +12,115 @@ const (
 	MutationTypeReplace = "replace"
 )
 
-type mutation struct {
-	t       MutationType
-	podSpec *corev1.PodSpec
-	meta    *metav1.ObjectMeta
-	c       *corev1.Container
+// podmutation
+type podmutation struct {
+	t MutationType
+	p *corev1.PodSpec
 }
 
-func (m *mutation) Type() MutationType {
+// containermutation
+type containermutation struct {
+	t MutationType
+	c *corev1.Container
+}
+
+// metamutation
+type metamutation struct {
+	t MutationType
+	m *metav1.ObjectMeta
+}
+
+func (p *podmutation) Type() MutationType {
+	return p.t
+}
+
+func (p *podmutation) PodSecurityContext() *corev1.PodSecurityContext {
+	if p.p == nil {
+		return nil
+	}
+	return p.p.SecurityContext
+}
+
+func (p *podmutation) NodeSelector() map[string]string {
+	if p.p == nil {
+		return nil
+	}
+	return p.p.NodeSelector
+}
+
+func (p *podmutation) NodeName() *string {
+	if p.p == nil {
+		return nil
+	}
+	return &p.p.NodeName
+}
+
+func (c *containermutation) Type() MutationType {
+	return c.t
+}
+
+func (c *containermutation) SecurityContext() *corev1.SecurityContext {
+	if c.c == nil {
+		return nil
+	}
+	return c.c.SecurityContext
+}
+
+func (c *containermutation) Name() *string {
+	if c.c == nil {
+		return nil
+	}
+	return &c.c.Name
+}
+
+func (m *metamutation) Type() MutationType {
 	return m.t
 }
 
-func (m *mutation) PodSecurityContext() *corev1.PodSecurityContext {
-	if m.podSpec == nil {
+func (m *metamutation) Labels() map[string]string {
+	if m.m == nil {
 		return nil
 	}
-	return m.podSpec.SecurityContext
+	return m.m.Labels
 }
 
-func (m *mutation) SecurityContext() *corev1.SecurityContext {
-	if m.c == nil {
+func (m *metamutation) Annotations() map[string]string {
+	if m.m == nil {
 		return nil
 	}
-	return m.c.SecurityContext
+	return m.m.Annotations
 }
 
-func (m *mutation) NodeSelector() map[string]string {
-	if m.podSpec == nil {
+func (m *metamutation) Name() *string {
+	if m.m == nil {
 		return nil
 	}
-	return m.podSpec.NodeSelector
+	return &m.m.Name
 }
 
-func (m *mutation) NodeName() *string {
-	if m.podSpec == nil {
+func (m *metamutation) OwnerReferences() []metav1.OwnerReference {
+	if m.m == nil {
 		return nil
 	}
-	return &m.podSpec.NodeName
-}
-
-func (m *mutation) Labels() map[string]string {
-	if m.meta == nil {
-		return nil
-	}
-	return m.meta.Labels
-}
-
-func (m *mutation) Annotations() map[string]string {
-	if m.meta == nil {
-		return nil
-	}
-	return m.meta.Annotations
-}
-
-func (m *mutation) Name() *string {
-	if m.meta == nil {
-		return nil
-	}
-	return &m.meta.Name
-}
-
-func (m *mutation) OwnerReferences() []metav1.OwnerReference {
-	if m.meta == nil {
-		return nil
-	}
-	return m.meta.OwnerReferences
+	return m.m.OwnerReferences
 }
 
 func NewPodSpecMutation(spec *corev1.PodSpec, typ MutationType) PodSpecMutation {
-	return &mutation{
-		t:       typ,
-		podSpec: spec,
+	return &podmutation{
+		t: typ,
+		p: spec,
 	}
 }
 
 func NewObjectMetaMutation(objectMeta *metav1.ObjectMeta, typ MutationType) ObjectMetaMutation {
-	return &mutation{
-		t:    typ,
-		meta: objectMeta,
+	return &metamutation{
+		t: typ,
+		m: objectMeta,
 	}
 }
 
 func NewContainerMutation(spec *corev1.Container, typ MutationType) ContainerMutation {
-	return &mutation{
+	return &containermutation{
 		t: typ,
 		c: spec,
 	}

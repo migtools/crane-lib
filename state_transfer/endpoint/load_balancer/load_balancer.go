@@ -53,10 +53,6 @@ func (l *LoadBalancerEndpoint) Labels() map[string]string {
 	return l.labels
 }
 
-func (l *LoadBalancerEndpoint) TransportPort() int32 {
-	return l.port
-}
-
 func (l *LoadBalancerEndpoint) ExposedPort() int32 {
 	return l.port
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 	"github.com/konveyor/crane-lib/state_transfer/endpoint/route"
 	"github.com/konveyor/crane-lib/state_transfer/meta"
-	metadata "github.com/konveyor/crane-lib/state_transfer/meta"
+	statetransfermeta "github.com/konveyor/crane-lib/state_transfer/meta"
 	"github.com/konveyor/crane-lib/state_transfer/transfer"
 	"github.com/konveyor/crane-lib/state_transfer/transfer/rclone"
 	"github.com/konveyor/crane-lib/state_transfer/transfer/rsync"
@@ -79,7 +79,7 @@ func Example_basicTransfer() {
 		types.NamespacedName{
 			Namespace: pvc.Name,
 			Name:      pvc.Namespace,
-		}, route.EndpointTypePassthrough, metadata.Labels)
+		}, route.EndpointTypePassthrough, statetransfermeta.Labels)
 	e, err := endpoint.Create(r, destClient)
 	if err != nil {
 		log.Fatal(err, "unable to create route endpoint")
@@ -95,7 +95,7 @@ func Example_basicTransfer() {
 	}, make(<-chan struct{}))
 
 	// create an stunnel transport to carry the data over the route
-	s := stunnel.NewTransport(meta.NewNamespacedPair(
+	s := stunnel.NewTransport(statetransfermeta.NewNamespacedPair(
 		types.NamespacedName{
 			Name: pvc.Name, Namespace: pvc.Namespace},
 		types.NamespacedName{
@@ -184,7 +184,7 @@ func Example_getFromCreatedObjects() {
 		types.NamespacedName{Namespace: srcNamespace, Name: srcPVC},
 		types.NamespacedName{Namespace: srcNamespace, Name: srcPVC},
 	)
-	s, err := stunnel.GetTransferFromKubeObjects(srcClient, destClient, nnPair, e)
+	s, err := stunnel.GetTransportFromKubeObjects(srcClient, destClient, nnPair, e)
 	if err != nil {
 		log.Fatal(err, "error getting stunnel transport")
 	}
