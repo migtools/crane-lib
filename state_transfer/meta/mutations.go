@@ -66,6 +66,13 @@ func (c *containermutation) SecurityContext() *corev1.SecurityContext {
 	return c.c.SecurityContext
 }
 
+func (c *containermutation) Resources() *corev1.ResourceRequirements {
+	if c.c == nil {
+		return nil
+	}
+	return &c.c.Resources
+}
+
 func (c *containermutation) Name() *string {
 	if c.c == nil {
 		return nil

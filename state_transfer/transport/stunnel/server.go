@@ -90,7 +90,7 @@ func createStunnelServerConfig(c client.Client, s *StunnelTransport, e endpoint.
 	if err != nil && !k8serrors.IsAlreadyExists(err) {
 		return err
 	}
-	return err
+	return nil
 }
 
 func getServerConfig(c client.Client, obj types.NamespacedName) (*corev1.ConfigMap, error) {

@@ -36,7 +36,8 @@ type ContainerMutation interface {
 	Name() *string
 	// SecurityContext returns mutated security context for the target container
 	SecurityContext() *corev1.SecurityContext
-	//
+	// Resources returns mutated resources on the container
+	Resources() *corev1.ResourceRequirements
 }
 
 // ObjectMetaMutation knows how to mutate fields of a metav1.ObjectMeta resource

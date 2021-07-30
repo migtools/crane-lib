@@ -123,6 +123,9 @@ func applyContainerMutations(container *v1.Container, ms []meta.ContainerMutatio
 			if m.SecurityContext() != nil {
 				container.SecurityContext = m.SecurityContext()
 			}
+			if m.Resources() != nil {
+				container.Resources = *m.Resources()
+			}
 		}
 	}
 }
