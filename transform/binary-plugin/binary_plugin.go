@@ -47,8 +47,22 @@ func NewBinaryPlugin(path string) (transform.Plugin, error) {
 		return nil, fmt.Errorf("unable to decode metadata sent by the plugin: %s, err: %v", string(out), err)
 	}
 
+	// Validate version return error
+	if !contain(transform.RequestVersion, metadata.RequestVersion) || !contain(transform.ResponseVersion, metadata.ResponseVersion) {
+		return nil, fmt.Errorf("invalid versions supported by plugin defined by caller responseVersions: %v, requestVersions: %v", metadata.ResponseVersion, metadata.RequestVersion)
+	}
+
 	// TODO: Validate Versions contain the versions that this wrapper can use.
 	return &BinaryPlugin{commandRunner: commandRunner, pluginMetadata: metadata, log: log}, nil
+}
+
+func contain(validVersion transform.Version, versions []transform.Version) bool {
+	for _, v := range versions {
+		if validVersion == v {
+			return true
+		}
+	}
+	return false
 }
 
 func (b *BinaryPlugin) Run(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {

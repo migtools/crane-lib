@@ -46,6 +46,11 @@ const (
 )
 
 const (
+	RequestVersion  = V1
+	ResponseVersion = V1
+)
+
+const (
 	// Metadata string is the constant string that will be used by the binary-pluigin helper and the cli helpers
 	// To notice that
 	MetadataString string = "METADATA"

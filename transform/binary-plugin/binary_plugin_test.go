@@ -85,8 +85,8 @@ func TestShellMetadataSuccessOptionalField(t *testing.T) {
 		Version:         "v1",
 		RequestVersion:  []transform.Version{transform.V1},
 		ResponseVersion: []transform.Version{transform.V1},
-		OptionalFields:  []transform.OptionalFields{
-			{FlagName:"testFlag",Help:"Test help.", Example:"test"},
+		OptionalFields: []transform.OptionalFields{
+			{FlagName: "testFlag", Help: "Test help.", Example: "test"},
 		},
 	})
 
@@ -104,6 +104,50 @@ func TestShellMetadataFailure(t *testing.T) {
 		return
 	}
 	os.Exit(1)
+}
+
+func TestShellMetadataSuccessInvalidVersion(t *testing.T) {
+	if os.Getenv("GO_TEST_PROCESS") != "1" {
+		return
+	}
+
+	var s string
+	_, err := fmt.Scanln(&s)
+	if err != nil {
+		os.Exit(1)
+	}
+
+	if s != `{}` {
+		os.Exit(1)
+	}
+
+	//TODO: Validate stdin is correct.
+	metadata := transform.PluginMetadata{
+		Name:            "fakeShellMetadata",
+		Version:         "v1",
+		RequestVersion:  []transform.Version{transform.V1},
+		ResponseVersion: []transform.Version{transform.V1},
+		OptionalFields: []transform.OptionalFields{
+			{FlagName: "testFlag", Help: "Test help.", Example: "test"},
+		},
+	}
+	if os.Getenv("VERSION_TYPE") == "RESPONSE" {
+		metadata.ResponseVersion = []transform.Version{transform.Version("versionBad")}
+
+	}
+	if os.Getenv("VERSION_TYPE") == "REQUEST" {
+		metadata.RequestVersion = []transform.Version{transform.Version("versionBad")}
+
+	}
+
+	res, err := json.Marshal(metadata)
+	if err != nil {
+		fmt.Fprint(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+
+	fmt.Fprint(os.Stdout, string(res))
+	os.Exit(0)
 }
 
 func TestShellMetadataPluginFailure(t *testing.T) {
@@ -153,8 +197,8 @@ func TestNewBinaryPlugin(t *testing.T) {
 				Version:         "v1",
 				RequestVersion:  []transform.Version{transform.V1},
 				ResponseVersion: []transform.Version{transform.V1},
-				OptionalFields:  []transform.OptionalFields{
-					{FlagName:"testFlag",Help:"Test help.", Example:"test"},
+				OptionalFields: []transform.OptionalFields{
+					{FlagName: "testFlag", Help: "Test help.", Example: "test"},
 				},
 			},
 			cliContext: func(name string, args ...string) *exec.Cmd {
@@ -195,6 +239,30 @@ func TestNewBinaryPlugin(t *testing.T) {
 				cs = append(cs, args...)
 				cmd := exec.Command(os.Args[0], cs...)
 				cmd.Env = []string{"GO_TEST_PROCESS=1"}
+				return cmd
+			},
+			wantErr: true,
+		},
+		{
+			name: "InvalidMetadataVersionResponse",
+			cliContext: func(name string, args ...string) *exec.Cmd {
+				cs := []string{"-test.run=TestShellMetadataSuccessInvalidVersion", "--", name}
+				cs = append(cs, args...)
+				cmd := exec.Command(os.Args[0], cs...)
+				cmd.Env = []string{"GO_TEST_PROCESS=1"}
+				cmd.Env = []string{"VERSION_TYPE=REQUEST"}
+				return cmd
+			},
+			wantErr: true,
+		},
+		{
+			name: "InvalidMetadataVersionRequest",
+			cliContext: func(name string, args ...string) *exec.Cmd {
+				cs := []string{"-test.run=TestShellMetadataSuccessInvalidVersion", "--", name}
+				cs = append(cs, args...)
+				cmd := exec.Command(os.Args[0], cs...)
+				cmd.Env = []string{"GO_TEST_PROCESS=1"}
+				cmd.Env = []string{"VERSION_TYPE=RESPONSE"}
 				return cmd
 			},
 			wantErr: true,
