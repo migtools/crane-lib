@@ -10,17 +10,21 @@ import (
 
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	errorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
-	stunnelClientConfTemplate = `foreground = yes
+	stunnelClientConfTemplate = `
  pid =
  sslVersion = TLSv1.2
  client = yes
  syslog = no
+ output = /dev/stdout
  [rsync]
+ debug = 7
  accept = {{ .stunnelPort }}
  cert = /etc/stunnel/certs/tls.crt
  key = /etc/stunnel/certs/tls.key
@@ -49,32 +53,27 @@ func (s *StunnelTransport) CreateClient(c client.Client, e endpoint.Endpoint) er
 }
 
 func createClientResources(c client.Client, s *StunnelTransport, e endpoint.Endpoint) error {
-	s.port = stunnelPort
+	errs := []error{}
 
 	// assuming the name of the endpoint is the same as the name of the PVC
-
 	err := createClientConfig(c, s, e)
-	if err != nil {
-		return err
-	}
+	errs = append(errs, err)
 
 	err = createClientSecret(c, s, e)
-	if err != nil {
-		return err
-	}
+	errs = append(errs, err)
 
-	setClientContainers(s, e.NamespacedName())
+	setClientContainers(s, e)
 
-	createClientVolumes(s, e.NamespacedName())
+	createClientVolumes(s)
 
-	return nil
+	return errorsutil.NewAggregate(errs)
 }
 
 func getClientConfig(c client.Client, obj types.NamespacedName) (*corev1.ConfigMap, error) {
 	cm := &corev1.ConfigMap{}
 	err := c.Get(context.Background(), types.NamespacedName{
 		Namespace: obj.Namespace,
-		Name:      stunnelConfigPrefix + obj.Name,
+		Name:      stunnelConfig,
 	}, cm)
 	return cm, err
 }
@@ -89,9 +88,9 @@ func createClientConfig(c client.Client, s *StunnelTransport, e endpoint.Endpoin
 	}
 
 	connections := map[string]string{
-		"stunnelPort":   strconv.Itoa(int(stunnelPort)),
+		"stunnelPort":   strconv.Itoa(int(e.Port())),
 		"hostname":      e.Hostname(),
-		"port":          strconv.Itoa(int(e.Port())),
+		"port":          strconv.Itoa(int(e.ExposedPort())),
 		"proxyHost":     s.Options().ProxyURL,
 		"proxyUsername": s.Options().ProxyUsername,
 		"proxyPassword": s.Options().ProxyPassword,
@@ -112,24 +111,26 @@ func createClientConfig(c client.Client, s *StunnelTransport, e endpoint.Endpoin
 
 	stunnelConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: e.NamespacedName().Namespace,
-			Name:      stunnelConfigPrefix + e.NamespacedName().Name,
+			Namespace: s.nsNamePair.Source().Namespace,
+			Name:      stunnelConfig,
 			Labels:    e.Labels(),
 		},
 		Data: map[string]string{
-			"stunnel.conf": string(stunnelConf.Bytes()),
+			"stunnel.conf": stunnelConf.String(),
 		},
 	}
-
-	return c.Create(context.TODO(), stunnelConfigMap, &client.CreateOptions{})
-
+	err = c.Create(context.TODO(), stunnelConfigMap, &client.CreateOptions{})
+	if err != nil && !k8serrors.IsAlreadyExists(err) {
+		return err
+	}
+	return nil
 }
 
 func getClientSecret(c client.Client, obj types.NamespacedName) (*corev1.Secret, error) {
 	secret := &corev1.Secret{}
 	err := c.Get(context.Background(), types.NamespacedName{
 		Namespace: obj.Namespace,
-		Name:      stunnelSecretPrefix + obj.Name,
+		Name:      stunnelSecret,
 	}, secret)
 	return secret, err
 }
@@ -137,8 +138,8 @@ func getClientSecret(c client.Client, obj types.NamespacedName) (*corev1.Secret,
 func createClientSecret(c client.Client, s *StunnelTransport, e endpoint.Endpoint) error {
 	stunnelSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: e.NamespacedName().Namespace,
-			Name:      stunnelSecretPrefix + e.NamespacedName().Name,
+			Namespace: s.nsNamePair.Source().Namespace,
+			Name:      stunnelSecret,
 			Labels:    e.Labels(),
 		},
 		Data: map[string][]byte{
@@ -147,13 +148,17 @@ func createClientSecret(c client.Client, s *StunnelTransport, e endpoint.Endpoin
 		},
 	}
 
-	return c.Create(context.TODO(), stunnelSecret, &client.CreateOptions{})
+	err := c.Create(context.TODO(), stunnelSecret, &client.CreateOptions{})
+	if err != nil && !k8serrors.IsAlreadyExists(err) {
+		return err
+	}
+	return nil
 }
 
-func setClientContainers(s *StunnelTransport, obj types.NamespacedName) {
+func setClientContainers(s *StunnelTransport, e endpoint.Endpoint) {
 	s.clientContainers = []corev1.Container{
 		{
-			Name:  "stunnel",
+			Name:  StunnelContainer,
 			Image: stunnelImage,
 			Command: []string{
 				"/bin/stunnel",
@@ -163,17 +168,17 @@ func setClientContainers(s *StunnelTransport, obj types.NamespacedName) {
 				{
 					Name:          "stunnel",
 					Protocol:      corev1.ProtocolTCP,
-					ContainerPort: stunnelPort,
+					ContainerPort: e.Port(),
 				},
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{
-					Name:      stunnelConfigPrefix + obj.Name,
+					Name:      stunnelConfig,
 					MountPath: "/etc/stunnel/stunnel.conf",
 					SubPath:   "stunnel.conf",
 				},
 				{
-					Name:      stunnelSecretPrefix + obj.Name,
+					Name:      stunnelSecret,
 					MountPath: "/etc/stunnel/certs",
 				},
 			},
@@ -181,23 +186,23 @@ func setClientContainers(s *StunnelTransport, obj types.NamespacedName) {
 	}
 }
 
-func createClientVolumes(s *StunnelTransport, obj types.NamespacedName) {
+func createClientVolumes(s *StunnelTransport) {
 	s.clientVolumes = []corev1.Volume{
 		{
-			Name: stunnelConfigPrefix + obj.Name,
+			Name: stunnelConfig,
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: stunnelConfigPrefix + obj.Name,
+						Name: stunnelConfig,
 					},
 				},
 			},
 		},
 		{
-			Name: stunnelSecretPrefix + obj.Name,
+			Name: stunnelSecret,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: stunnelSecretPrefix + obj.Name,
+					SecretName: stunnelSecret,
 					Items: []corev1.KeyToPath{
 						{
 							Key:  "tls.crt",

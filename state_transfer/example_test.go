@@ -10,7 +10,8 @@ import (
 	"github.com/konveyor/crane-lib/state_transfer"
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 	"github.com/konveyor/crane-lib/state_transfer/endpoint/route"
-	"github.com/konveyor/crane-lib/state_transfer/labels"
+	"github.com/konveyor/crane-lib/state_transfer/meta"
+	statetransfermeta "github.com/konveyor/crane-lib/state_transfer/meta"
 	"github.com/konveyor/crane-lib/state_transfer/transfer"
 	"github.com/konveyor/crane-lib/state_transfer/transfer/rclone"
 	"github.com/konveyor/crane-lib/state_transfer/transfer/rsync"
@@ -73,13 +74,12 @@ func Example_basicTransfer() {
 		log.Fatal(err, "invalid pvc list")
 	}
 
-	endpointPort := int32(2222)
 	// create a route for data transfer
 	r := route.NewEndpoint(
 		types.NamespacedName{
-			Namespace: pvc.Namespace,
-			Name:      pvc.Name,
-		}, endpointPort, route.EndpointTypePassthrough, labels.Labels)
+			Namespace: pvc.Name,
+			Name:      pvc.Namespace,
+		}, route.EndpointTypePassthrough, statetransfermeta.Labels)
 	e, err := endpoint.Create(r, destClient)
 	if err != nil {
 		log.Fatal(err, "unable to create route endpoint")
@@ -95,7 +95,12 @@ func Example_basicTransfer() {
 	}, make(<-chan struct{}))
 
 	// create an stunnel transport to carry the data over the route
-	s := stunnel.NewTransport(&transport.Options{})
+	s := stunnel.NewTransport(statetransfermeta.NewNamespacedPair(
+		types.NamespacedName{
+			Name: pvc.Name, Namespace: pvc.Namespace},
+		types.NamespacedName{
+			Name: destPVC.Name, Namespace: destPVC.Namespace},
+	), &transport.Options{})
 	_, err = transport.CreateServer(s, destClient, e)
 	if err != nil {
 		log.Fatal(err, "error creating stunnel server")
@@ -118,18 +123,18 @@ func Example_basicTransfer() {
 	}
 
 	// Rsync Example
-	rsyncTransferOptions := []rsync.TransferOption{
-		rsync.StandardProgress(true),
-		rsync.ArchiveFiles(true),
-		rsync.WithSourcePodLabels(map[string]string{}),
-		rsync.WithDestinationPodLabels(map[string]string{}),
+	rsyncTransferOptions := rsync.GetRsyncCommandDefaultOptions()
+	customTransferOptions := []rsync.TransferOption{
+		rsync.Username("username"),
+		rsync.Password("password"),
 	}
+	rsyncTransferOptions = append(rsyncTransferOptions, customTransferOptions...)
 
 	rsyncTransfer, err := rsync.NewTransfer(s, r, srcCfg, destCfg, pvcList, rsyncTransferOptions...)
 	if err != nil {
 		log.Fatal(err, "error creating rsync transfer")
 	} else {
-		log.Printf("rsync transfer created for user %s\n", rsyncTransfer.Username())
+		log.Printf("rsync transfer created for pvc %s\n", rsyncTransfer.PVCs()[0].Source().Claim().Name)
 	}
 
 	// Create Rclone Client Pod
@@ -175,9 +180,20 @@ func Example_getFromCreatedObjects() {
 		log.Fatal(err, "error getting route endpoint")
 	}
 
-	s, err := stunnel.GetTransportFromKubeObjects(srcClient, destClient, types.NamespacedName{Namespace: srcNamespace, Name: srcPVC})
+	nnPair := meta.NewNamespacedPair(
+		types.NamespacedName{Namespace: srcNamespace, Name: srcPVC},
+		types.NamespacedName{Namespace: srcNamespace, Name: srcPVC},
+	)
+	s, err := stunnel.GetTransportFromKubeObjects(srcClient, destClient, nnPair, e)
 	if err != nil {
 		log.Fatal(err, "error getting stunnel transport")
+	}
+
+	pvcList, err = transfer.NewPVCPairList(
+		transfer.NewPVCPair(pvc, nil),
+	)
+	if err != nil {
+		log.Fatal(err, "invalid pvc list")
 	}
 
 	// Create Rclone Transfer Pod

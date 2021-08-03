@@ -53,6 +53,10 @@ func (l *LoadBalancerEndpoint) Labels() map[string]string {
 	return l.labels
 }
 
+func (l *LoadBalancerEndpoint) ExposedPort() int32 {
+	return l.port
+}
+
 func (l *LoadBalancerEndpoint) IsHealthy(c client.Client) (bool, error) {
 	service := corev1.Service{}
 	err := c.Get(context.TODO(), types.NamespacedName{Name: l.NamespacedName().Name, Namespace: l.NamespacedName().Namespace}, &service)

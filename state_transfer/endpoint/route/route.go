@@ -7,8 +7,10 @@ import (
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	errorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -29,7 +31,7 @@ type RouteEndpoint struct {
 	namespacedName types.NamespacedName
 }
 
-func NewEndpoint(namespacedName types.NamespacedName, port int32, eType RouteEndpointType, labels map[string]string) endpoint.Endpoint {
+func NewEndpoint(namespacedName types.NamespacedName, eType RouteEndpointType, labels map[string]string) endpoint.Endpoint {
 	if eType != EndpointTypePassthrough && eType != EndpointTypeInsecureEdge {
 		panic("unsupported endpoint type for routes")
 	}
@@ -37,22 +39,19 @@ func NewEndpoint(namespacedName types.NamespacedName, port int32, eType RouteEnd
 		namespacedName: namespacedName,
 		labels:         labels,
 		endpointType:   eType,
-		port:           port,
 	}
 }
 
 func (r *RouteEndpoint) Create(c client.Client) error {
-	err := r.createRouteService(c)
-	if err != nil {
-		return err
-	}
+	errs := []error{}
 
-	err = r.createRoute(c)
-	if err != nil {
-		return err
-	}
+	err := r.createRoute(c)
+	errs = append(errs, err)
 
-	return nil
+	err = r.createRouteService(c)
+	errs = append(errs, err)
+
+	return errorsutil.NewAggregate(errs)
 }
 
 func (r *RouteEndpoint) setHostname(hostname string) {
@@ -75,9 +74,13 @@ func (r *RouteEndpoint) Labels() map[string]string {
 	return r.labels
 }
 
+func (r *RouteEndpoint) ExposedPort() int32 {
+	return 443
+}
+
 func (r *RouteEndpoint) IsHealthy(c client.Client) (bool, error) {
 	route := &routev1.Route{}
-	err := c.Get(context.TODO(), types.NamespacedName{Name: r.NamespacedName().Name, Namespace: r.NamespacedName().Namespace}, route)
+	err := c.Get(context.TODO(), r.NamespacedName(), route)
 	if err != nil {
 		return false, err
 	}
@@ -98,23 +101,8 @@ func (r *RouteEndpoint) IsHealthy(c client.Client) (bool, error) {
 	return false, fmt.Errorf("route status is not in valid state: %s", route.Status)
 }
 
-func (r *RouteEndpoint) createRouteResources(c client.Client) error {
-	err := r.createRouteService(c)
-	if err != nil {
-		return err
-	}
-
-	err = r.createRoute(c)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func (r *RouteEndpoint) createRouteService(c client.Client) error {
 	serviceSelector := r.Labels()
-	serviceSelector["pvc"] = r.NamespacedName().Name
 
 	service := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -125,18 +113,25 @@ func (r *RouteEndpoint) createRouteService(c client.Client) error {
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
 				{
-					Name:       r.NamespacedName().Name,
-					Protocol:   corev1.ProtocolTCP,
-					Port:       r.Port(),
-					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: r.Port()},
+					Name:     r.NamespacedName().Name,
+					Protocol: corev1.ProtocolTCP,
+					Port:     r.Port(),
+					TargetPort: intstr.IntOrString{
+						Type:   intstr.Int,
+						IntVal: r.Port()},
 				},
 			},
 			Selector: serviceSelector,
 			Type:     corev1.ServiceTypeClusterIP,
 		},
 	}
+	// TODO: consider patching an existing object if it already exists
+	err := c.Create(context.TODO(), &service, &client.CreateOptions{})
+	if err != nil && !k8serrors.IsAlreadyExists(err) {
+		return err
+	}
 
-	return c.Create(context.TODO(), &service, &client.CreateOptions{})
+	return nil
 }
 
 func (r *RouteEndpoint) createRoute(c client.Client) error {
@@ -147,12 +142,12 @@ func (r *RouteEndpoint) createRoute(c client.Client) error {
 			Termination:                   routev1.TLSTerminationEdge,
 			InsecureEdgeTerminationPolicy: "Allow",
 		}
-		r.port = int32(80)
+		r.port = int32(8080)
 	case EndpointTypePassthrough:
 		termination = &routev1.TLSConfig{
 			Termination: routev1.TLSTerminationPassthrough,
 		}
-		r.port = int32(443)
+		r.port = int32(6443)
 	}
 
 	route := routev1.Route{
@@ -162,19 +157,19 @@ func (r *RouteEndpoint) createRoute(c client.Client) error {
 			Labels:    r.Labels(),
 		},
 		Spec: routev1.RouteSpec{
+			Port: &routev1.RoutePort{
+				TargetPort: intstr.FromInt(int(r.Port())),
+			},
 			To: routev1.RouteTargetReference{
 				Kind: "Service",
 				Name: r.NamespacedName().Name,
-			},
-			Port: &routev1.RoutePort{
-				TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: r.Port()},
 			},
 			TLS: termination,
 		},
 	}
 
 	err := c.Create(context.TODO(), &route, &client.CreateOptions{})
-	if err != nil {
+	if err != nil && !k8serrors.IsAlreadyExists(err) {
 		return err
 	}
 
@@ -186,10 +181,6 @@ func (r *RouteEndpoint) createRoute(c client.Client) error {
 	r.setHostname(route.Spec.Host)
 
 	return nil
-}
-
-func (r *RouteEndpoint) setPort(port int32) {
-	r.port = port
 }
 
 func (r *RouteEndpoint) getRoute(c client.Client) (*routev1.Route, error) {

@@ -5,8 +5,10 @@ import (
 	"regexp"
 	"strings"
 
-	labels "github.com/konveyor/crane-lib/state_transfer/labels"
+	"github.com/konveyor/crane-lib/state_transfer/meta"
+	metadata "github.com/konveyor/crane-lib/state_transfer/meta"
 	transfer "github.com/konveyor/crane-lib/state_transfer/transfer"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	errorsutil "k8s.io/apimachinery/pkg/util/errors"
 )
@@ -36,11 +38,17 @@ const (
 // TransferOptions defines customizeable options for Rsync Transfer
 type TransferOptions struct {
 	CommandOptions
-	SourcePodMeta      transfer.ResourceMetadata
-	DestinationPodMeta transfer.ResourceMetadata
+	SourcePodMeta            transfer.ResourceMetadata
+	DestinationPodMeta       transfer.ResourceMetadata
+	SourcePodMutations       []meta.PodSpecMutation
+	DestinationPodMutations  []meta.PodSpecMutation
+	SourceContainerMutations []meta.ContainerMutation
+	DestContainerMutations   []meta.ContainerMutation
+	username                 string
+	password                 string
 }
 
-// TransferOption
+// TransferOption knows how to apply a user provided option to a given TransferOptions
 type TransferOption interface {
 	ApplyTo(*TransferOptions) error
 }
@@ -68,7 +76,7 @@ type CommandOptions struct {
 	HardLinks     bool
 	Delete        bool
 	Partial       bool
-	BwLimit       int
+	BwLimit       *int
 	HumanReadable bool
 	LogFile       string
 	Info          []string
@@ -112,11 +120,13 @@ func (c *CommandOptions) AsRsyncCommandOptions() ([]string, error) {
 	if c.Partial {
 		opts = append(opts, optPartial)
 	}
-	if c.BwLimit > 0 {
-		opts = append(opts,
-			fmt.Sprintf(optBwLimit, c.BwLimit))
-	} else {
-		errs = append(errs, fmt.Errorf("rsync bwlimit value must be a positive integer"))
+	if c.BwLimit != nil {
+		if *c.BwLimit > 0 {
+			opts = append(opts,
+				fmt.Sprintf(optBwLimit, *c.BwLimit))
+		} else {
+			errs = append(errs, fmt.Errorf("rsync bwlimit value must be a positive integer"))
+		}
 	}
 	if c.HumanReadable {
 		opts = append(opts, optHumanReadable)
@@ -215,7 +225,7 @@ func (d DeleteDestination) ApplyTo(opts *TransferOptions) error {
 type WithSourcePodLabels map[string]string
 
 func (w WithSourcePodLabels) ApplyTo(opts *TransferOptions) error {
-	err := labels.ValidateLabels(w)
+	err := metadata.ValidateLabels(w)
 	if err != nil {
 		return err
 	}
@@ -226,7 +236,7 @@ func (w WithSourcePodLabels) ApplyTo(opts *TransferOptions) error {
 type WithDestinationPodLabels map[string]string
 
 func (w WithDestinationPodLabels) ApplyTo(opts *TransferOptions) error {
-	err := labels.ValidateLabels(w)
+	err := metadata.ValidateLabels(w)
 	if err != nil {
 		return err
 	}
@@ -244,5 +254,59 @@ func (w WithOwnerReferences) ApplyTo(opts *TransferOptions) error {
 	}
 	opts.SourcePodMeta.OwnerReferences = w
 	opts.DestinationPodMeta.OwnerReferences = w
+	return nil
+}
+
+type SourcePodSpecMutation struct {
+	Spec *v1.PodSpec
+}
+
+func (s *SourcePodSpecMutation) ApplyTo(opts *TransferOptions) error {
+	opts.SourcePodMutations = append(opts.SourcePodMutations,
+		meta.NewPodSpecMutation(s.Spec, meta.MutationTypeReplace))
+	return nil
+}
+
+type DestinationPodSpecMutation struct {
+	Spec *v1.PodSpec
+}
+
+func (s *DestinationPodSpecMutation) ApplyTo(opts *TransferOptions) error {
+	opts.DestinationPodMutations = append(opts.SourcePodMutations,
+		meta.NewPodSpecMutation(s.Spec, meta.MutationTypeReplace))
+	return nil
+}
+
+type SourceContainerMutation struct {
+	C *v1.Container
+}
+
+func (s SourceContainerMutation) ApplyTo(opts *TransferOptions) error {
+	opts.SourceContainerMutations = append(opts.SourceContainerMutations,
+		meta.NewContainerMutation(s.C, meta.MutationTypeReplace))
+	return nil
+}
+
+type DestinationContainerMutation struct {
+	C *v1.Container
+}
+
+func (s DestinationContainerMutation) ApplyTo(opts *TransferOptions) error {
+	opts.DestContainerMutations = append(opts.SourceContainerMutations,
+		meta.NewContainerMutation(s.C, meta.MutationTypeReplace))
+	return nil
+}
+
+type Username string
+
+func (u Username) ApplyTo(opts *TransferOptions) error {
+	opts.username = string(u)
+	return nil
+}
+
+type Password string
+
+func (p Password) ApplyTo(opts *TransferOptions) error {
+	opts.password = string(p)
 	return nil
 }
