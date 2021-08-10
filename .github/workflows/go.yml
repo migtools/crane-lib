@@ -16,6 +16,11 @@ jobs:
         path: main
         ref: ${{ github.event.pull_request.head.sha }}
 
+    - name: Tidy
+      env:
+        GOPROXY: "https://proxy.golang.org"
+      run: cd main && go mod tidy && git diff --quiet HEAD
+
     - name: Build
       env:
         GOPROXY: "https://proxy.golang.org"

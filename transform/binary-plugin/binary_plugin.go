@@ -67,7 +67,6 @@ func contain(validVersion transform.Version, versions []transform.Version) bool 
 
 func (b *BinaryPlugin) Run(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
 	p := transform.PluginResponse{}
-	logs := []string{}
 
 	out, errBytes, err := b.commandRunner.Run(u, extras, b.log)
 	if err != nil {
@@ -76,7 +75,7 @@ func (b *BinaryPlugin) Run(u *unstructured.Unstructured, extras map[string]strin
 	}
 
 	if len(errBytes) != 0 {
-		logs = strings.Split(string(errBytes), "\n")
+		logs := strings.Split(string(errBytes), "\n")
 		for _, line := range logs {
 			b.log.Debug("Plugin Log line: ", line)
 		}
