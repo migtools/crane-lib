@@ -17,10 +17,10 @@ func TestRun(t *testing.T) {
 	cases := []struct {
 		Name                string
 		Object              *unstructured.Unstructured
-		AddedAnnotations    map[string]string
+		AddAnnotations      map[string]string
 		RegistryReplacement map[string]string
 		NewNamespace        string
-		RemoveAnnotation    []string
+		RemoveAnnotations   []string
 		ShouldError         bool
 		Response            transform.PluginResponse
 		PatchResponseJson   string
@@ -57,6 +57,68 @@ func TestRun(t *testing.T) {
 				Object: map[string]interface{}{
 					"kind":       "PersistentVolumeClaim",
 					"apiVersion": "v1",
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: true,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "OwnedPodWhiteOut",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Pod",
+					"apiVersion": "v1",
+					"metadata": map[string]interface{}{
+						"ownerReferences": []interface{}{
+							map[string]interface{}{
+								"apiVersion": "apps/v1",
+								"kind":       "ReplicaSet",
+								"ame":       "PodOwner",
+								"uid":        "1de6b4d2-ea5b-11eb-b902-021bddcaf6e4",
+							},
+						},
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: true,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "OwnedPodSpecableWhiteOut",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "InvalidGVK",
+					"apiVersion": "v1",
+					"metadata": map[string]interface{}{
+						"ownerReferences": []interface{}{
+							map[string]interface{}{
+								"apiVersion": "apps/v1",
+								"kind":       "ReplicaSet",
+								"ame":       "PodOwner",
+								"uid":        "1de6b4d2-ea5b-11eb-b902-021bddcaf6e4",
+							},
+						},
+					},
+					"spec": map[string]interface{}{
+						"template": v1.PodTemplateSpec{
+							Spec: v1.PodSpec{
+								InitContainers: []v1.Container{
+									{
+										Image: "quay.io/shawn_hurley/testing-image",
+									},
+								},
+								Containers: []v1.Container{
+									{
+										Image: "quay.io/shawn_hurley/testing-image-real",
+									},
+								},
+							},
+						},
+					},
 				},
 			},
 			Response: transform.PluginResponse{
@@ -142,9 +204,27 @@ func TestRun(t *testing.T) {
 				Version:    "v1",
 			},
 			PatchResponseJson: `[{"op": "add", "path": "/metadata/annotations/multiple-testing", "value": "two-new-anno"},{"op": "add", "path": "/metadata/annotations/testing.io", "value": "adding-new-thing"}]`,
-			AddedAnnotations: map[string]string{
+			AddAnnotations: map[string]string{
 				"testing.io":       "adding-new-thing",
 				"multiple-testing": "two-new-anno",
+			},
+		},
+		{
+			Name: "RemoveAnnotations",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "InvalidGVK",
+					"apiVersion": "v1",
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+			PatchResponseJson: `[{"op": "remove", "path": "/metadata/annotations/multiple-testing"},{"op": "remove", "path": "/metadata/annotations/testing.io"}]`,
+			RemoveAnnotations: []string{
+				"testing.io",
+				"multiple-testing",
 			},
 		},
 		{
@@ -171,10 +251,10 @@ func TestRun(t *testing.T) {
 				IsWhiteOut: false,
 				Version:    "v1",
 			},
-			PatchResponseJson: `[{"op": "remove", "path": "/spec/nodeName"}]`,
+			PatchResponseJson: `[{"op": "remove", "path": "/spec/nodeName"},{"op": "remove", "path": "/spec/nodeSelector"},{"op": "remove", "path": "/spec/priority"}]`,
 		},
 		{
-			Name: "HandleService",
+			Name: "HandleBaseService",
 			Object: &unstructured.Unstructured{
 				Object: map[string]interface{}{
 					"kind":       "Service",
@@ -185,17 +265,52 @@ func TestRun(t *testing.T) {
 				IsWhiteOut: false,
 				Version:    "v1",
 			},
-			PatchResponseJson: `[{"op": "remove", "path": "/spec/clusterIP"}]`,
+			PatchResponseJson: ``,
+		},
+		{
+			Name: "HandleLoadBalancerService",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Service",
+					"apiVersion": "v1",
+					"spec": map[string]interface{}{
+						"type": "LoadBalancer",
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+			PatchResponseJson: `[{"op": "remove", "path": "/spec/clusterIP"},{"op": "remove", "path": "/spec/externalIPs"}]`,
+		},
+		{
+			Name: "HandleLoadBalancerServiceWithClusterIPNone",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Service",
+					"apiVersion": "v1",
+					"spec": map[string]interface{}{
+						"type": "LoadBalancer",
+						"clusterIP": "None",
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+			PatchResponseJson: `[{"op": "remove", "path": "/spec/externalIPs"}]`,
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
 			var p transform.Plugin = &kubernetes.KubernetesTransformPlugin{
-				AddedAnnotations:    c.AddedAnnotations,
+				AddAnnotations:      c.AddAnnotations,
 				RegistryReplacement: c.RegistryReplacement,
 				NewNamespace:        c.NewNamespace,
-				RemoveAnnotation:    c.RemoveAnnotation,
+				RemoveAnnotations:   c.RemoveAnnotations,
 			}
 			resp, err := p.Run(c.Object, nil)
 			if err != nil && !c.ShouldError {

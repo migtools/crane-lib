@@ -1,6 +1,8 @@
 package transform
 
 import (
+	"strings"
+
 	jsonpatch "github.com/evanphx/json-patch"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -55,3 +57,21 @@ const (
 	// To notice that
 	MetadataString string = "METADATA"
 )
+
+func ParseOptionalFieldSliceVal(sliceVal string) []string {
+	return strings.Split(sliceVal,",")
+}
+
+func ParseOptionalFieldMapVal(sliceVal string) map[string]string {
+	mapVal := make(map[string]string)
+	kvPairs := strings.Split(sliceVal,",")
+	for _, kvPair := range kvPairs {
+		kvSlice := strings.Split(kvPair,"=")
+		if len(kvSlice) == 1 {
+			mapVal[kvSlice[0]] = ""
+		} else {
+			mapVal[kvSlice[0]] = kvSlice[1]
+		}
+	}
+	return mapVal
+}
