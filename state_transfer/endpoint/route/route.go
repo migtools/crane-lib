@@ -198,6 +198,8 @@ func (r *RouteEndpoint) setFields(c client.Client) error {
 		return err
 	}
 
+	r.labels = route.Labels
+
 	if route.Spec.Host == "" {
 		return fmt.Errorf("route %s has empty spec.host field", r.NamespacedName())
 	}
