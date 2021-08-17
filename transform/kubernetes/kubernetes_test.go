@@ -282,7 +282,45 @@ func TestRun(t *testing.T) {
 				IsWhiteOut: false,
 				Version:    "v1",
 			},
+			PatchResponseJson: `[{"op": "remove", "path": "/spec/externalIPs"}]`,
+		},
+		{
+			Name: "HandleLoadBalancerServiceWithClusterIP",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Service",
+					"apiVersion": "v1",
+					"spec": map[string]interface{}{
+						"type": "LoadBalancer",
+						"clusterIP": "1.2.3.4",
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
 			PatchResponseJson: `[{"op": "remove", "path": "/spec/clusterIP"},{"op": "remove", "path": "/spec/externalIPs"}]`,
+		},
+		{
+			Name: "HandleLoadBalancerServiceWithClusterIPs",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Service",
+					"apiVersion": "v1",
+					"spec": map[string]interface{}{
+						"type": "LoadBalancer",
+						"clusterIPs": []interface{}{
+							"1.2.3.4",
+						},
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+			PatchResponseJson: `[{"op": "remove", "path": "/spec/clusterIPs"},{"op": "remove", "path": "/spec/externalIPs"}]`,
 		},
 		{
 			Name: "HandleLoadBalancerServiceWithClusterIPNone",
@@ -301,6 +339,105 @@ func TestRun(t *testing.T) {
 				Version:    "v1",
 			},
 			PatchResponseJson: `[{"op": "remove", "path": "/spec/externalIPs"}]`,
+		},
+		{
+			Name: "HandleLoadBalancerNodePort",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Service",
+					"apiVersion": "v1",
+					"spec": map[string]interface{}{
+						"type": "CustomType",
+						"ports": []interface{}{
+							map[string]interface{}{
+								"port":     31000,
+								"nodePort": 31000,
+							},
+							map[string]interface{}{
+								"port":     31001,
+								"nodePort": 31001,
+							},
+						},
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+			PatchResponseJson: `[{"op": "remove", "path": "/spec/ports/0/nodePort"},{"op": "remove", "path": "/spec/ports/1/nodePort"}]`,
+		},
+		{
+			Name: "HandleNodePortUnnamedAnnotation",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Service",
+					"apiVersion": "v1",
+					"metadata": map[string]interface{}{
+						"name": "svc-1",
+						"annotations": map[string]interface{}{
+							"kubectl.kubernetes.io/last-applied-configuration": `
+      {"apiVersion":"v1","kind":"Service","metadata":{"name":"svc-1","namespace":"foo"},"spec":{"ports":[{"nodePort":31001}]}}`,
+						},
+					},
+
+					"spec": map[string]interface{}{
+						"type": "CustomType",
+						"ports": []interface{}{
+							map[string]interface{}{
+								"port":     31000,
+								"nodePort": 31000,
+							},
+							map[string]interface{}{
+								"port":     31001,
+								"nodePort": 31001,
+							},
+						},
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+			PatchResponseJson: `[{"op": "remove", "path": "/spec/ports/0/nodePort"}]`,
+		},
+		{
+			Name: "HandleNodePortNamedAnnotation",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Service",
+					"apiVersion": "v1",
+					"metadata": map[string]interface{}{
+						"name": "svc-1",
+						"annotations": map[string]interface{}{
+							"kubectl.kubernetes.io/last-applied-configuration": `
+      {"apiVersion":"v1","kind":"Service","metadata":{"name":"svc-1","namespace":"foo"},"spec":{"ports":[{"name": "foo","nodePort":31000}]}}`,
+						},
+					},
+
+					"spec": map[string]interface{}{
+						"type": "CustomType",
+						"ports": []interface{}{
+							map[string]interface{}{
+								"name":     "foo",
+								"port":     31000,
+								"nodePort": 31000,
+							},
+							map[string]interface{}{
+								"name":     "bar",
+								"port":     31001,
+								"nodePort": 31001,
+							},
+						},
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+			PatchResponseJson: `[{"op": "remove", "path": "/spec/ports/1/nodePort"}]`,
 		},
 	}
 
@@ -324,14 +461,18 @@ func TestRun(t *testing.T) {
 			if resp.IsWhiteOut != c.Response.IsWhiteOut {
 				t.Error(fmt.Sprintf("Invalid whiteout. Actual: %v, Expected: %v", resp.IsWhiteOut, c.Response.IsWhiteOut))
 			}
-			if len(c.PatchResponseJson) != 0 && len(resp.Patches) != 0 {
+			if len(c.PatchResponseJson) != 0 {
 				expectPatch, err := jsonpatch.DecodePatch([]byte(c.PatchResponseJson))
 				if err != nil {
 					t.Error(err)
 				}
-				ok, err := internaljsonpatch.Equal(resp.Patches, expectPatch)
-				if !ok || err != nil {
-					t.Error(fmt.Sprintf("Invalid patches. Actual: %#v, Expected: %#v", resp.Patches, expectPatch))
+				if len(resp.Patches) != 0 {
+					ok, err := internaljsonpatch.Equal(resp.Patches, expectPatch)
+					if !ok || err != nil {
+						t.Error(fmt.Sprintf("Invalid patches. Actual: %#v, Expected: %#v", resp.Patches, expectPatch))
+					}
+				} else {
+					t.Error(fmt.Sprintf("Patches Expected: %#v, none found", expectPatch))
 				}
 			}
 		})
