@@ -23,7 +23,6 @@ list = yes
 log file = /dev/stdout
 max verbosity = 4
 auth users = {{ $.Username }}
-hosts allow = ::1, 127.0.0.1, localhost
 uid = root
 gid = root
 {{ range $i, $pvc := .PVCPairList }}

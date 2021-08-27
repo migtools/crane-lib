@@ -54,8 +54,7 @@ func createRsyncClient(c client.Client, r *RsyncTransfer, ns string) error {
 				transferOptions.username, transfer.ConnectionHostname(r),
 				pvc.Destination().LabelSafeName(), r.Transport().Port()))
 		rsyncCommandBashScript := fmt.Sprintf(
-			"trap \"touch /usr/share/rsync/rsync-client-container-done\" EXIT SIGINT SIGTERM; timeout=120; SECONDS=0; while [ $SECONDS -lt $timeout ]; do nc -z localhost %d; rc=$?; if [ $rc -eq 0 ]; then %s; rc=$?; break; fi; done; exit $rc;",
-			r.Transport().Port(),
+			"trap \"touch /usr/share/rsync/rsync-client-container-done\" EXIT SIGINT SIGTERM; timeout=120; SECONDS=0; while [ $SECONDS -lt $timeout ]; do %s; rc=$?; done; exit $rc;",
 			strings.Join(rsyncCommand, " "))
 		rsyncContainerCommand := []string{
 			"/bin/bash",

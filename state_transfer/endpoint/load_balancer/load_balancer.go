@@ -21,10 +21,11 @@ type LoadBalancerEndpoint struct {
 	port   int32
 }
 
-func NewEndpoint(namespacedName types.NamespacedName, labels map[string]string) endpoint.Endpoint {
+func NewEndpoint(namespacedName types.NamespacedName, labels map[string]string, port int32) endpoint.Endpoint {
 	return &LoadBalancerEndpoint{
 		namespacedName: namespacedName,
 		labels:         labels,
+		port:           port,
 	}
 }
 
@@ -111,10 +112,6 @@ func (l *LoadBalancerEndpoint) createLoadBalancerService(c client.Client) error 
 	l.setHostname(service.Status.LoadBalancer.Ingress[0].Hostname)
 	return nil
 
-}
-
-func (l *LoadBalancerEndpoint) setPort(port int32) {
-	l.port = port
 }
 
 func (l *LoadBalancerEndpoint) setHostname(hostname string) {

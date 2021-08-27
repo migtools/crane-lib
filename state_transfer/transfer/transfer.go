@@ -109,10 +109,7 @@ func IsPodHealthy(c client.Client, pod client.ObjectKey) (bool, error) {
 }
 
 func areContainersReady(pod *corev1.Pod) (bool, error) {
-	if len(pod.Status.ContainerStatuses) != 2 {
-		return false, fmt.Errorf("expected two contaier statuses found %d, for pod %s", len(pod.Status.ContainerStatuses), client.ObjectKey{Namespace: pod.Namespace, Name: pod.Name})
-	}
-
+	//TODO: We should consider delegating some of this to either the endpoint or transfer as well, if they are providing containers.
 	for _, containerStatus := range pod.Status.ContainerStatuses {
 		if !containerStatus.Ready {
 			return false, fmt.Errorf("container %s in pod %s is not ready", containerStatus.Name, client.ObjectKey{Namespace: pod.Namespace, Name: pod.Name})

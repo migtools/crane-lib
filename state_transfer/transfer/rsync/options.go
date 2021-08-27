@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/konveyor/crane-lib/state_transfer/meta"
-	metadata "github.com/konveyor/crane-lib/state_transfer/meta"
 	transfer "github.com/konveyor/crane-lib/state_transfer/transfer"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -225,7 +224,7 @@ func (d DeleteDestination) ApplyTo(opts *TransferOptions) error {
 type WithSourcePodLabels map[string]string
 
 func (w WithSourcePodLabels) ApplyTo(opts *TransferOptions) error {
-	err := metadata.ValidateLabels(w)
+	err := meta.ValidateLabels(w)
 	if err != nil {
 		return err
 	}
@@ -236,7 +235,7 @@ func (w WithSourcePodLabels) ApplyTo(opts *TransferOptions) error {
 type WithDestinationPodLabels map[string]string
 
 func (w WithDestinationPodLabels) ApplyTo(opts *TransferOptions) error {
-	err := metadata.ValidateLabels(w)
+	err := meta.ValidateLabels(w)
 	if err != nil {
 		return err
 	}

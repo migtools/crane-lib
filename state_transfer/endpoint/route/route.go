@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	errorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -29,6 +30,13 @@ type RouteEndpoint struct {
 	port           int32
 	endpointType   RouteEndpointType
 	namespacedName types.NamespacedName
+}
+
+func init() {
+	err := routev1.Install(scheme.Scheme)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func NewEndpoint(namespacedName types.NamespacedName, eType RouteEndpointType, labels map[string]string) endpoint.Endpoint {
