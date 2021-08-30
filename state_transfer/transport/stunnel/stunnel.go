@@ -14,9 +14,11 @@ import (
 )
 
 const (
-	stunnelImage  = "quay.io/konveyor/rsync-transfer:latest"
-	stunnelConfig = "crane2-stunnel-config"
-	stunnelSecret = "crane2-stunnel-secret"
+	defaultStunnelImage        = "quay.io/konveyor/rsync-transfer:latest"
+	defaultStunnelServerConfig = "crane2-stunnel-server-config"
+	defaultStunnelServerSecret = "crane2-stunnel-server-secret"
+	defaultStunnelClientConfig = "crane2-stunnel-client-config"
+	defaultStunnelClientSecret = "crane2-stunnel-client-secret"
 )
 
 const (
@@ -93,6 +95,22 @@ func (s *StunnelTransport) NamespacedNamePair() meta.NamespacedNamePair {
 
 func (s *StunnelTransport) Type() transport.TransportType {
 	return transport.TransportType(TransportTypeStunnel)
+}
+
+func (s *StunnelTransport) getStunnelServerImage() string {
+	if s.options != nil && s.options.StunnelServerImage != "" {
+		return s.options.StunnelServerImage
+	} else {
+		return defaultStunnelImage
+	}
+}
+
+func (s *StunnelTransport) getStunnelClientImage() string {
+	if s.options != nil && s.options.StunnelClientImage != "" {
+		return s.options.StunnelClientImage
+	} else {
+		return defaultStunnelImage
+	}
 }
 
 // GetTransportFromKubeObjects checks if the required configmaps and secretes are created for the transport

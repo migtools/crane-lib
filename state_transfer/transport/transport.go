@@ -47,11 +47,13 @@ type Transport interface {
 }
 
 type Options struct {
-	ProxyURL      string
-	ProxyUsername string
-	ProxyPassword string
-	NoVerifyCA    bool
-	CAVerifyLevel string
+	ProxyURL           string
+	ProxyUsername      string
+	ProxyPassword      string
+	NoVerifyCA         bool
+	CAVerifyLevel      string
+	StunnelClientImage string
+	StunnelServerImage string
 }
 
 type TransportType string

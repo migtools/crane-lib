@@ -46,6 +46,8 @@ type TransferOptions struct {
 	DestContainerMutations   []meta.ContainerMutation
 	username                 string
 	password                 string
+	rsyncServerImage         string
+	rsyncClientImage         string
 }
 
 // TransferOption knows how to apply a user provided option to a given TransferOptions
@@ -308,5 +310,19 @@ type Password string
 
 func (p Password) ApplyTo(opts *TransferOptions) error {
 	opts.password = string(p)
+	return nil
+}
+
+type RsyncServerImage string
+
+func (r RsyncServerImage) ApplyTo(opts *TransferOptions) error {
+	opts.rsyncServerImage = string(r)
+	return nil
+}
+
+type RsyncClientImage string
+
+func (r RsyncClientImage) ApplyTo(opts *TransferOptions) error {
+	opts.rsyncClientImage = string(r)
 	return nil
 }

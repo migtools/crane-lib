@@ -78,7 +78,7 @@ func createStunnelServerConfig(c client.Client, s *StunnelTransport, e endpoint.
 	stunnelConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: s.nsNamePair.Destination().Namespace,
-			Name:      stunnelConfig,
+			Name:      defaultStunnelServerConfig,
 			Labels:    e.Labels(),
 		},
 		Data: map[string]string{
@@ -97,7 +97,7 @@ func getServerConfig(c client.Client, obj types.NamespacedName) (*corev1.ConfigM
 	cm := &corev1.ConfigMap{}
 	err := c.Get(context.Background(), types.NamespacedName{
 		Namespace: obj.Namespace,
-		Name:      stunnelConfig,
+		Name:      defaultStunnelServerConfig,
 	}, cm)
 	return cm, err
 }
@@ -113,7 +113,7 @@ func createStunnelServerSecret(c client.Client, s *StunnelTransport, e endpoint.
 	stunnelSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: s.nsNamePair.Destination().Namespace,
-			Name:      stunnelSecret,
+			Name:      defaultStunnelServerSecret,
 			Labels:    e.Labels(),
 		},
 		Data: map[string][]byte{
@@ -133,7 +133,7 @@ func getServerSecret(c client.Client, obj types.NamespacedName) (*corev1.Secret,
 	secret := &corev1.Secret{}
 	err := c.Get(context.Background(), types.NamespacedName{
 		Namespace: obj.Namespace,
-		Name:      stunnelSecret,
+		Name:      defaultStunnelServerSecret,
 	}, secret)
 	return secret, err
 }
@@ -142,7 +142,7 @@ func createStunnelServerContainers(s *StunnelTransport, e endpoint.Endpoint) {
 	s.serverContainers = []corev1.Container{
 		{
 			Name:  StunnelContainer,
-			Image: stunnelImage,
+			Image: s.getStunnelServerImage(),
 			Command: []string{
 				"/bin/stunnel",
 				"/etc/stunnel/stunnel.conf",
@@ -156,12 +156,12 @@ func createStunnelServerContainers(s *StunnelTransport, e endpoint.Endpoint) {
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{
-					Name:      stunnelConfig,
+					Name:      defaultStunnelServerConfig,
 					MountPath: "/etc/stunnel/stunnel.conf",
 					SubPath:   "stunnel.conf",
 				},
 				{
-					Name:      stunnelSecret,
+					Name:      defaultStunnelServerSecret,
 					MountPath: "/etc/stunnel/certs",
 				},
 			},
@@ -172,20 +172,20 @@ func createStunnelServerContainers(s *StunnelTransport, e endpoint.Endpoint) {
 func createStunnelServerVolumes(s *StunnelTransport) {
 	s.serverVolumes = []corev1.Volume{
 		{
-			Name: stunnelConfig,
+			Name: defaultStunnelServerConfig,
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: stunnelConfig,
+						Name: defaultStunnelServerConfig,
 					},
 				},
 			},
 		},
 		{
-			Name: stunnelSecret,
+			Name: defaultStunnelServerSecret,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: stunnelSecret,
+					SecretName: defaultStunnelServerSecret,
 					Items: []corev1.KeyToPath{
 						{
 							Key:  "tls.crt",
