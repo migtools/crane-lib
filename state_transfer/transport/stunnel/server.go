@@ -37,6 +37,7 @@ TIMEOUTclose = 0
 
 func (s *StunnelTransport) CreateServer(c client.Client, e endpoint.Endpoint) error {
 	err := createStunnelServerResources(c, s, e)
+	s.port = e.Port()
 	return err
 }
 

@@ -164,3 +164,63 @@ func GetTransportFromKubeObjects(srcClient client.Client, destClient client.Clie
 func (s *StunnelTransport) Options() *transport.Options {
 	return s.options
 }
+
+func (s *StunnelTransport) IsHealthy(destClient, srcClient client.Client, e endpoint.Endpoint) (bool, error) {
+	_, err := getClientConfig(srcClient, s.nsNamePair.Source())
+	switch {
+	case errors.IsNotFound(err):
+		fmt.Printf("transport: %s Client Config is not created", s.nsNamePair.Source())
+		return false, err
+	case err != nil:
+		return false, err
+	}
+
+	_, err = getServerConfig(destClient, s.nsNamePair.Destination())
+	switch {
+	case errors.IsNotFound(err):
+		fmt.Printf("transport: %s Server Config is not created", s.nsNamePair.Destination())
+		return false, err
+	case err != nil:
+		return false, err
+	}
+
+	clientSecretCreated, err := getClientSecret(srcClient, s.nsNamePair.Source())
+	switch {
+	case errors.IsNotFound(err):
+		fmt.Printf("transport: %s Client secret is not created", s.nsNamePair.Source())
+		return false, err
+	case err != nil:
+		return false, err
+	}
+
+	_, err = getServerSecret(destClient, s.nsNamePair.Destination())
+	switch {
+	case errors.IsNotFound(err):
+		fmt.Printf("transport: %s Server secret is not created", s.nsNamePair.Destination())
+		return false, err
+	case err != nil:
+		return false, err
+	}
+
+	key, ok := clientSecretCreated.Data["tls.key"]
+	if !ok {
+		fmt.Printf("invalid secret for transport %s, tls.key key not found", s.nsNamePair.Source())
+		return false, fmt.Errorf("invalid secret for transport %s, tls.key key not found", s.nsNamePair.Source())
+	}
+
+	crt, ok := clientSecretCreated.Data["tls.crt"]
+	if !ok {
+		fmt.Printf("invalid secret for transport %s, tls.crt key not found", s.nsNamePair.Source())
+		return false, fmt.Errorf("invalid secret for transport %s, tls.crt key not found", s.nsNamePair.Source())
+	}
+
+	s.key = bytes.NewBuffer(key)
+	s.crt = bytes.NewBuffer(crt)
+
+	createStunnelServerVolumes(s)
+	createClientVolumes(s)
+	setClientContainers(s, e)
+	createStunnelServerContainers(s, e)
+	return true, nil
+
+}

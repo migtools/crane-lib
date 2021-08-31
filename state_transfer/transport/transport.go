@@ -44,6 +44,7 @@ type Transport interface {
 	Options() *Options
 	// Type
 	Type() TransportType
+	IsHealthy(dstCluster client.Client, srcCluster client.Client, e endpoint.Endpoint) (bool, error)
 }
 
 type Options struct {

@@ -43,6 +43,7 @@ func NewEndpoint(namespacedName types.NamespacedName, eType RouteEndpointType, l
 	if eType != EndpointTypePassthrough && eType != EndpointTypeInsecureEdge {
 		panic("unsupported endpoint type for routes")
 	}
+
 	return &RouteEndpoint{
 		namespacedName: namespacedName,
 		labels:         labels,
@@ -55,9 +56,9 @@ func (r *RouteEndpoint) Create(c client.Client) error {
 
 	err := r.createRoute(c)
 	errs = append(errs, err)
-
 	err = r.createRouteService(c)
 	errs = append(errs, err)
+	fmt.Printf("%d\n", r.Port())
 
 	return errorsutil.NewAggregate(errs)
 }
@@ -101,6 +102,10 @@ func (r *RouteEndpoint) IsHealthy(c client.Client) (bool, error) {
 			if c.Type == routev1.RouteAdmitted && c.Status == corev1.ConditionTrue {
 				// TODO: remove setHostname and configure the hostname after this condition has been satisfied,
 				//  this is the implementation detail that we dont need the users of the interface work with
+				err = r.setFields(route)
+				if err != nil {
+					return false, err
+				}
 				return true, nil
 			}
 		}
@@ -180,32 +185,10 @@ func (r *RouteEndpoint) createRoute(c client.Client) error {
 	if err != nil && !k8serrors.IsAlreadyExists(err) {
 		return err
 	}
-
-	err = c.Get(context.TODO(), types.NamespacedName{Name: r.NamespacedName().Name, Namespace: r.NamespacedName().Namespace}, &route)
-	if err != nil {
-		return err
-	}
-
-	r.setHostname(route.Spec.Host)
-
 	return nil
 }
 
-func (r *RouteEndpoint) getRoute(c client.Client) (*routev1.Route, error) {
-	route := &routev1.Route{}
-	err := c.Get(context.TODO(), types.NamespacedName{Name: r.NamespacedName().Name, Namespace: r.NamespacedName().Namespace}, route)
-	if err != nil {
-		return nil, err
-	}
-	return route, err
-}
-
-func (r *RouteEndpoint) setFields(c client.Client) error {
-	route, err := r.getRoute(c)
-	if err != nil {
-		return err
-	}
-
+func (r *RouteEndpoint) setFields(route *routev1.Route) error {
 	r.labels = route.Labels
 
 	if route.Spec.Host == "" {
@@ -222,8 +205,14 @@ func (r *RouteEndpoint) setFields(c client.Client) error {
 	switch route.Spec.TLS.Termination {
 	case routev1.TLSTerminationEdge:
 		r.endpointType = EndpointTypeInsecureEdge
+		if r.port != int32(8080) {
+			return fmt.Errorf("route has invalid port specificed for type of route")
+		}
 	case routev1.TLSTerminationPassthrough:
 		r.endpointType = EndpointTypePassthrough
+		if r.port != int32(6443) {
+			return fmt.Errorf("route has invalid port specificed for type of route")
+		}
 	default:
 		return fmt.Errorf("route %s has unsupported spec.spec.tls.termination value", r.NamespacedName())
 	}
@@ -243,11 +232,5 @@ func GetEndpointFromKubeObjects(c client.Client, obj types.NamespacedName) (endp
 	if !healthy {
 		return nil, fmt.Errorf("route %s not healthy", obj)
 	}
-
-	err = r.setFields(c)
-	if err != nil {
-		return nil, err
-	}
-
 	return r, nil
 }

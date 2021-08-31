@@ -3,8 +3,10 @@ package null
 import (
 	"bytes"
 
+	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 	"github.com/konveyor/crane-lib/state_transfer/meta"
 	"github.com/konveyor/crane-lib/state_transfer/transport"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "k8s.io/api/core/v1"
 )
@@ -81,4 +83,8 @@ func (s *NullTransport) NamespacedNamePair() meta.NamespacedNamePair {
 
 func (s *NullTransport) Type() transport.TransportType {
 	return transport.TransportType(TransportTypeNull)
+}
+
+func (s *NullTransport) IsHealthy(_, _ client.Client, _ endpoint.Endpoint) (bool, error) {
+	return true, nil
 }
