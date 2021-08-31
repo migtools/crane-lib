@@ -66,7 +66,7 @@ func createRsyncClient(c client.Client, r *RsyncTransfer, ns string) error {
 		containers := []v1.Container{
 			{
 				Name:    RsyncContainer,
-				Image:   rsyncImage,
+				Image:   r.getRsyncClientImage(),
 				Command: rsyncContainerCommand,
 				Env: []v1.EnvVar{
 					{

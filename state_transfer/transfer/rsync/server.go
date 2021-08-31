@@ -73,7 +73,7 @@ func (r *RsyncTransfer) IsServerHealthy(c client.Client) (bool, error) {
 }
 
 func createRsyncServerResources(c client.Client, r *RsyncTransfer, ns string) error {
-	r.username = rsyncUser
+	r.username = defaultRsyncUser
 	r.port = rsyncPort
 
 	err := createRsyncServerConfig(c, r, ns)
@@ -109,7 +109,7 @@ func createRsyncServerConfig(c client.Client, r *RsyncTransfer, ns string) error
 	rsyncConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: ns,
-			Name:      rsyncConfig,
+			Name:      defaultRsyncServerConfig,
 			Labels:    r.transferOptions().DestinationPodMeta.Labels,
 		},
 		Data: map[string]string{
@@ -135,7 +135,7 @@ func createRsyncServerSecret(c client.Client, r *RsyncTransfer, ns string) error
 	rsyncSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: ns,
-			Name:      rsyncSecretPrefix,
+			Name:      defaultRsyncServerSecret,
 			Labels:    r.transferOptions().DestinationPodMeta.Labels,
 		},
 		Data: map[string][]byte{
@@ -153,16 +153,15 @@ func createRsyncServerSecret(c client.Client, r *RsyncTransfer, ns string) error
 func createRsyncServer(c client.Client, r *RsyncTransfer, ns string) error {
 	transferOptions := r.transferOptions()
 	podLabels := transferOptions.DestinationPodMeta.Labels
-
 	volumeMounts := []corev1.VolumeMount{}
 	configVolumeMounts := []corev1.VolumeMount{
 		{
-			Name:      rsyncConfig,
+			Name:      defaultRsyncServerConfig,
 			MountPath: "/etc/rsyncd.conf",
 			SubPath:   "rsyncd.conf",
 		},
 		{
-			Name:      rsyncSecretPrefix,
+			Name:      defaultRsyncServerSecret,
 			MountPath: "/etc/rsync-secret",
 		},
 	}
@@ -180,7 +179,7 @@ func createRsyncServer(c client.Client, r *RsyncTransfer, ns string) error {
 	containers := []corev1.Container{
 		{
 			Name:  RsyncContainer,
-			Image: rsyncImage,
+			Image: r.getRsyncServerImage(),
 			Command: []string{
 				"/usr/bin/rsync",
 				"--daemon",
@@ -210,20 +209,20 @@ func createRsyncServer(c client.Client, r *RsyncTransfer, ns string) error {
 
 	configVolumes := []corev1.Volume{
 		{
-			Name: rsyncConfig,
+			Name: defaultRsyncServerConfig,
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: rsyncConfig,
+						Name: defaultRsyncServerConfig,
 					},
 				},
 			},
 		},
 		{
-			Name: rsyncSecretPrefix,
+			Name: defaultRsyncServerSecret,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName:  rsyncSecretPrefix,
+					SecretName:  defaultRsyncServerSecret,
 					DefaultMode: &mode,
 					Items: []corev1.KeyToPath{
 						{

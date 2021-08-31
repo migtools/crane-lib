@@ -16,11 +16,12 @@ const (
 )
 
 const (
-	rsyncUser         = "crane2"
-	rsyncImage        = "quay.io/konveyor/rsync-transfer:latest"
-	rsyncPort         = int32(1873)
-	rsyncConfig       = "crane2-rsync-config"
-	rsyncSecretPrefix = "crane2-rsync-secret"
+	defaultRsyncUser         = "crane2"
+	defaultRsyncImage        = "quay.io/konveyor/rsync-transfer:latest"
+	rsyncPort                = int32(1873)
+	defaultRsyncClientSecret = "crane2-rsync-client-secret"
+	defaultRsyncServerConfig = "crane2-rsync-server-config"
+	defaultRsyncServerSecret = "crane2-rsync-server-secret"
 )
 
 type RsyncTransfer struct {
@@ -92,6 +93,22 @@ func (r *RsyncTransfer) transferOptions() TransferOptions {
 // getMountPathForPVC given a PVC, returns a path where PVC can be mounted within a transfer Pod
 func getMountPathForPVC(p transfer.PVC) string {
 	return fmt.Sprintf("/mnt/%s/%s", p.Claim().Namespace, p.LabelSafeName())
+}
+
+func (r *RsyncTransfer) getRsyncServerImage() string {
+	if r.transferOptions().rsyncServerImage == "" {
+		return defaultRsyncImage
+	} else {
+		return r.transferOptions().rsyncServerImage
+	}
+}
+
+func (r *RsyncTransfer) getRsyncClientImage() string {
+	if r.transferOptions().rsyncClientImage == "" {
+		return defaultRsyncImage
+	} else {
+		return r.transferOptions().rsyncClientImage
+	}
 }
 
 // applyPodMutations given a pod spec and a list of podSpecMutation, applies
