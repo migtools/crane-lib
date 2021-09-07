@@ -115,7 +115,9 @@ func (s *StunnelTransport) getStunnelClientImage() string {
 
 // GetTransportFromKubeObjects checks if the required configmaps and secretes are created for the transport
 //. It populates the fields for the Transport needed for transfer object.
-func GetTransportFromKubeObjects(srcClient client.Client, destClient client.Client, nnPair meta.NamespacedNamePair, e endpoint.Endpoint) (transport.Transport, error) {
+// NOTE: this method will be removed in the future interfaces. 'options' are not persisted in the system
+// therefore, they require to be passed from outside by the consumers every time a transport is fetched
+func GetTransportFromKubeObjects(srcClient client.Client, destClient client.Client, nnPair meta.NamespacedNamePair, e endpoint.Endpoint, options *transport.Options) (transport.Transport, error) {
 	_, err := getClientConfig(srcClient, nnPair.Source())
 	switch {
 	case errors.IsNotFound(err):
@@ -153,7 +155,8 @@ func GetTransportFromKubeObjects(srcClient client.Client, destClient client.Clie
 	}
 
 	s := &StunnelTransport{
-		port: e.Port(),
+		port:    e.Port(),
+		options: options,
 	}
 
 	key, ok := clientSecretCreated.Data["tls.key"]
