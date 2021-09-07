@@ -184,7 +184,7 @@ func Example_getFromCreatedObjects() {
 		types.NamespacedName{Namespace: srcNamespace, Name: srcPVC},
 		types.NamespacedName{Namespace: srcNamespace, Name: srcPVC},
 	)
-	s, err := stunnel.GetTransportFromKubeObjects(srcClient, destClient, nnPair, e)
+	s, err := stunnel.GetTransportFromKubeObjects(srcClient, destClient, nnPair, e, &transport.Options{})
 	if err != nil {
 		log.Fatal(err, "error getting stunnel transport")
 	}
