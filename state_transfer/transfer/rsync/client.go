@@ -156,7 +156,9 @@ while true
 do test -f /usr/share/rsync/rsync-client-container-done
 if [ $? -eq 0 ]
 then
-break
+	break
+else
+	sleep 1
 fi
 done
 exit 0`,
