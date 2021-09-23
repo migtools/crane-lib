@@ -17,29 +17,36 @@ import (
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane-lib/transform/cli"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 func main() {
-	u, err := cli.Unstructured(cli.ObjectReaderOrDie())
-	if err != nil {
-		cli.WriterErrorAndExit(fmt.Errorf("error getting unstructured object: %#v", err))
+	fields := []transform.OptionalFields{
+		{
+			FlagName: "MyFlag",
+			Help:     "What the flag does",
+			Example:  "true",
+		},
 	}
-
-	cli.RunAndExit(cli.NewCustomPlugin("OpenshiftCustomPlugin", Run), u)
+	cli.RunAndExit(cli.NewCustomPlugin("MyCustomPlugin", "v1", fields, Run))
 }
 
-func Run(u *unstructured.Unstructured) (transform.PluginResponse, error) {
+func Run(request transform.PluginRequest) (transform.PluginResponse, error) {
 	// plugin writers need to write custome code here.
-    resp := transform.PluginResponse{}
-    // prepare the response
-    return resp, nil
+	resp := transform.PluginResponse{}
+	// prepare the response
+	return resp, nil
 }
 ```
 
 All it does is read an input from stdin, calls the Run function with the
 input object passed as unstructured and prints the return value of `Run`
-function on stdout.   
+function on stdout.
+
+The json passed in via stdin is a `transform.PluginRequest` which consists of an
+inline unstructured object and an optional `Extras` map containing additional
+flags. Without any `Extras` the format is identical to the json output from
+a `kubectl get -o json` call. When adding extra params, a map field "extras"
+is added at the top level (parallel to "apiVersion", "kind", etc.).
 
 During the development of the plugin, one can iterate by passing in the JSON
 object on stdin manually. For example, if the above code is compiled and
@@ -120,7 +127,6 @@ object on stdin manually. For example, if the above code is compiled and
       ]
    }
 }
-{}
 ```
 
 Note: the json object was entered from console, and the response was `{}` 

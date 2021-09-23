@@ -111,17 +111,17 @@ func (k KubernetesTransformPlugin) setOptionalFields(extras map[string]string) {
 	}
 }
 
-func (k KubernetesTransformPlugin) Run(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
-	k.setOptionalFields(extras)
+func (k KubernetesTransformPlugin) Run(request transform.PluginRequest) (transform.PluginResponse, error) {
+	k.setOptionalFields(request.Extras)
 	resp := transform.PluginResponse{}
 	// Set version in the future
 	resp.Version = string(transform.V1)
 	var err error
-	resp.IsWhiteOut = k.getWhiteOuts(*u)
+	resp.IsWhiteOut = k.getWhiteOuts(request.Unstructured)
 	if resp.IsWhiteOut {
 		return resp, err
 	}
-	resp.Patches, err = k.getKubernetesTransforms(*u)
+	resp.Patches, err = k.getKubernetesTransforms(request.Unstructured)
 	return resp, err
 
 }

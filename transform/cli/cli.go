@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
-	goerrors "errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane-lib/transform/errors"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 var (
@@ -36,21 +34,21 @@ func init() {
 type customPlugin struct {
 	// TODO: figure out a way to include the name of the plugin in the error messages.
 	metadata transform.PluginMetadata
-	runFunc  func(*unstructured.Unstructured, map[string]string) (transform.PluginResponse, error)
+	runFunc  func(transform.PluginRequest) (transform.PluginResponse, error)
 }
 
-func (c *customPlugin) Run(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
+func (c *customPlugin) Run(request transform.PluginRequest) (transform.PluginResponse, error) {
 	if c.runFunc == nil {
 		return transform.PluginResponse{}, nil
 	}
-	return c.runFunc(u, extras)
+	return c.runFunc(request)
 }
 
 func (c *customPlugin) Metadata() transform.PluginMetadata {
 	return c.metadata
 }
 
-func NewCustomPlugin(name, version string, optionalFields []transform.OptionalFields, runFunc func(*unstructured.Unstructured, map[string]string) (transform.PluginResponse, error)) transform.Plugin {
+func NewCustomPlugin(name, version string, optionalFields []transform.OptionalFields, runFunc func(transform.PluginRequest) (transform.PluginResponse, error)) transform.Plugin {
 	return &customPlugin{
 		metadata: transform.PluginMetadata{
 			Name:            name,
@@ -102,8 +100,8 @@ func RunAndExit(plugin transform.Plugin) {
 
 	// Ignoring this error as anthing wrong here will be caught in the unmarshalJSON below
 	b, _ := json.Marshal(m)
-	u := unstructured.Unstructured{}
-	err = u.UnmarshalJSON(b)
+	req := transform.PluginRequest{}
+	err = json.Unmarshal(b, &req)
 	if err != nil {
 		WriterErrorAndExit(&errors.PluginError{
 			Type:         errors.PluginInvalidInputError,
@@ -111,32 +109,29 @@ func RunAndExit(plugin transform.Plugin) {
 			ErrorMessage: err.Error(),
 		})
 	}
-
-	extrasIn := map[string]interface{}{}
-
-	err = decoder.Decode(&extrasIn)
-	if err != nil && !goerrors.Is(err, io.EOF) {
-		WriterErrorAndExit(&errors.PluginError{
-			Type:         errors.PluginInvalidIOError,
-			Message:      "error reading extras input",
-			ErrorMessage: err.Error(),
-		})
+	extrasIn, ok := m["extras"]
+	var extrasInMap map[string]interface{}
+	if ok {
+		extrasInMap, ok = extrasIn.(map[string]interface{})
 	}
-	extras := map[string]string{}
-	for key, value := range extrasIn {
-		switch value.(type) {
-		case string:
-			extras[key] = value.(string)
-		default:
-			WriterErrorAndExit(&errors.PluginError{
-				Type:         errors.PluginInvalidIOError,
-				Message:      "error getting extras value string",
-				ErrorMessage: fmt.Sprintf("value %v for param %v is not a string", value, key),
-			})
+	if ok {
+		extras := map[string]string{}
+		for key, value := range extrasInMap {
+			switch value.(type) {
+			case string:
+				extras[key] = value.(string)
+			default:
+				WriterErrorAndExit(&errors.PluginError{
+					Type:         errors.PluginInvalidIOError,
+					Message:      "error getting extras value string",
+					ErrorMessage: fmt.Sprintf("value %v for param %v is not a string", value, key),
+				})
+			}
 		}
+		req.Extras = extras
 	}
 
-	resp, err := plugin.Run(&u, extras)
+	resp, err := plugin.Run(req)
 	if err != nil {
 		WriterErrorAndExit(&errors.PluginError{
 			Type:         errors.PluginRunError,

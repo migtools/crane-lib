@@ -63,7 +63,7 @@ func TestRunAndExit(t *testing.T) {
 		metadata       *transform.PluginMetadata
 		wantErr        bool
 		wantedErr      errors.PluginError
-		fakeFunc       func(*unstructured.Unstructured, map[string]string) (transform.PluginResponse, error)
+		fakeFunc       func(transform.PluginRequest) (transform.PluginResponse, error)
 		version        string
 		errCapture     bytes.Buffer
 		outCapture     bytes.Buffer
@@ -90,7 +90,7 @@ func TestRunAndExit(t *testing.T) {
 				IsWhiteOut: false,
 				Patches:    []jsonpatch.Operation{},
 			},
-			fakeFunc: func(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
+			fakeFunc: func(request transform.PluginRequest) (transform.PluginResponse, error) {
 				return transform.PluginResponse{
 					Version:    "v1",
 					IsWhiteOut: false,
@@ -152,7 +152,7 @@ func TestRunAndExit(t *testing.T) {
 				}},
 				err: nil,
 			},
-			fakeFunc: func(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
+			fakeFunc: func(request transform.PluginRequest) (transform.PluginResponse, error) {
 				return transform.PluginResponse{}, fmt.Errorf("invalid run")
 			},
 			errCapture: bytes.Buffer{},

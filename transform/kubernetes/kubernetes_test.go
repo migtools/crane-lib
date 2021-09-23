@@ -538,7 +538,7 @@ func TestRun(t *testing.T) {
 				RemoveAnnotations:    c.RemoveAnnotations,
 				DisableWhiteoutOwned: c.DisableWhiteoutOwned,
 			}
-			resp, err := p.Run(c.Object, nil)
+			resp, err := p.Run(transform.PluginRequest{Unstructured:*c.Object})
 			if err != nil && !c.ShouldError {
 				t.Error(err)
 			}

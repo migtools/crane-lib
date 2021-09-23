@@ -68,7 +68,7 @@ func (r *Runner) Run(object unstructured.Unstructured, plugins []Plugin) (Runner
 		// We want to keep the original while we run each plugin.
 		c := object.DeepCopy()
 		// TODO: Handle Version things here
-		resp, err := plugin.Run(c, r.OptionalFlags)
+		resp, err := plugin.Run(PluginRequest{Unstructured:*c, Extras:r.OptionalFlags})
 		if err != nil {
 			//TODO: add debug level logging here
 			errs = append(errs, err)

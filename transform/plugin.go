@@ -9,7 +9,7 @@ import (
 
 type PluginRun interface {
 	// Determine for a given resources what the plugin is deciding to do with this
-	Run(*unstructured.Unstructured, map[string]string) (PluginResponse, error)
+	Run(PluginRequest) (PluginResponse, error)
 }
 
 type Metadata interface {
@@ -19,6 +19,11 @@ type Metadata interface {
 type Plugin interface {
 	PluginRun
 	Metadata
+}
+
+type PluginRequest struct {
+	unstructured.Unstructured `json:",inline"`
+	Extras map[string]string  `json:"extras,omitempty"`
 }
 
 type PluginResponse struct {
