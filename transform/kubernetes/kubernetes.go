@@ -3,10 +3,10 @@ package kubernetes
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch"
 	transform "github.com/konveyor/crane-lib/transform"
+	"github.com/konveyor/crane-lib/transform/internal/image"
 	"github.com/konveyor/crane-lib/transform/types"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -26,9 +26,6 @@ const (
 {"op": "remove", "path": "/metadata/annotations/%v"}`
 	removeAnnotationNext = `%v,
 {"op": "remove", "path": "/metadata/annotations/%v"}`
-	updateImageString = `[
-{"op": "replace", "path": "%v", "value": "%v"}
-]`
 	podNodeName = `[
 {"op": "remove", "path": "/spec/nodeName"}
 ]`
@@ -217,9 +214,9 @@ func (k KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Unst
 			}
 			jps := jsonpatch.Patch{}
 			for i, container := range pod.Spec.Containers {
-				updatedImage, update := updateImageRegistry(k.RegistryReplacement, container.Image)
+				updatedImage, update := image.UpdateImageRegistry(k.RegistryReplacement, container.Image)
 				if update {
-					jp, err := updateImage(fmt.Sprintf(podContainerImageUpdate, i), updatedImage)
+					jp, err := image.UpdateImage(fmt.Sprintf(podContainerImageUpdate, i), updatedImage)
 					if err != nil {
 						return nil, err
 					}
@@ -227,9 +224,9 @@ func (k KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Unst
 				}
 			}
 			for i, container := range pod.Spec.InitContainers {
-				updatedImage, update := updateImageRegistry(k.RegistryReplacement, container.Image)
+				updatedImage, update := image.UpdateImageRegistry(k.RegistryReplacement, container.Image)
 				if update {
-					jp, err := updateImage(fmt.Sprintf(podInitContainerImageUpdate, i), updatedImage)
+					jp, err := image.UpdateImage(fmt.Sprintf(podInitContainerImageUpdate, i), updatedImage)
 					if err != nil {
 						return nil, err
 					}
@@ -240,9 +237,9 @@ func (k KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Unst
 		} else if template, ok := types.IsPodSpecable(obj); ok {
 			jps := jsonpatch.Patch{}
 			for i, container := range template.Spec.Containers {
-				updatedImage, update := updateImageRegistry(k.RegistryReplacement, container.Image)
+				updatedImage, update := image.UpdateImageRegistry(k.RegistryReplacement, container.Image)
 				if update {
-					jp, err := updateImage(fmt.Sprintf(containerImageUpdate, i), updatedImage)
+					jp, err := image.UpdateImage(fmt.Sprintf(containerImageUpdate, i), updatedImage)
 					if err != nil {
 						return nil, err
 					}
@@ -250,9 +247,9 @@ func (k KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Unst
 				}
 			}
 			for i, container := range template.Spec.InitContainers {
-				updatedImage, update := updateImageRegistry(k.RegistryReplacement, container.Image)
+				updatedImage, update := image.UpdateImageRegistry(k.RegistryReplacement, container.Image)
 				if update {
-					jp, err := updateImage(fmt.Sprintf(initContainerImageUpdate, i), updatedImage)
+					jp, err := image.UpdateImage(fmt.Sprintf(initContainerImageUpdate, i), updatedImage)
 					if err != nil {
 						return nil, err
 					}
@@ -271,20 +268,6 @@ func (k KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Unst
 	}
 
 	return jsonPatch, nil
-}
-
-func updateImageRegistry(registryReplacements map[string]string, oldImageName string) (string, bool) {
-	// Break up oldImage to get the registry URL. Assume all manifests are using fully qualified image paths, if not ignore.
-	imageParts := strings.Split(oldImageName, "/")
-	for i := len(imageParts); i > 0; i-- {
-		if replacedImageParts, ok := registryReplacements[strings.Join(imageParts[:i], "/")]; ok {
-			if i == len(imageParts) {
-				return replacedImageParts, true
-			}
-			return fmt.Sprintf("%s/%s", replacedImageParts, strings.Join(imageParts[i:], "/")), true
-		}
-	}
-	return "", false
 }
 
 func addAnnotations(addAnnotations map[string]string) (jsonpatch.Patch, error) {
@@ -324,16 +307,6 @@ func removeAnnotations(removeAnnotations []string) (jsonpatch.Patch, error) {
 	patch, err := jsonpatch.DecodePatch([]byte(patchJSON))
 	if err != nil {
 		fmt.Printf("%v", patchJSON)
-		return nil, err
-	}
-	return patch, nil
-}
-
-func updateImage(containerImagePath, updatedImagePath string) (jsonpatch.Patch, error) {
-	patchJSON := fmt.Sprintf(updateImageString, containerImagePath, updatedImagePath)
-
-	patch, err := jsonpatch.DecodePatch([]byte(patchJSON))
-	if err != nil {
 		return nil, err
 	}
 	return patch, nil
