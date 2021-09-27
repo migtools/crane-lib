@@ -23,10 +23,10 @@ type BinaryPlugin struct {
 }
 
 // NewBinaryPlugin -
-func NewBinaryPlugin(path string) (transform.Plugin, error) {
+func NewBinaryPlugin(path string, logger *logrus.Logger) (transform.Plugin, error) {
 
 	commandRunner := &binaryRunner{pluginPath: path}
-	log := logrus.New().WithField("pluginPath", path)
+	log := logger.WithField("pluginPath", path)
 
 	out, errBytes, err := commandRunner.Metadata(log)
 	// TODO: Create specific error for command not being run.
@@ -166,6 +166,5 @@ func (b *binaryRunner) Run(u *unstructured.Unstructured, extras map[string]strin
 		log.Errorf("unable to run the plugin binary")
 		return nil, nil, fmt.Errorf("unable to run the plugin binary, err: %v", err)
 	}
-
 	return out.Bytes(), errorBytes.Bytes(), nil
 }

@@ -271,7 +271,7 @@ func TestNewBinaryPlugin(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cliContext = tt.cliContext
-			b, err := NewBinaryPlugin(tt.name)
+			b, err := NewBinaryPlugin(tt.name, logrus.New())
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Run() error = %v, wantErr %v", err, tt.wantErr)
 				return

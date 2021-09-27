@@ -20,6 +20,7 @@ var (
 	stdOut io.Writer
 	reader io.Reader
 	exiter func(int)
+	logger *logrus.Logger
 )
 
 func init() {
@@ -28,6 +29,8 @@ func init() {
 	reader = os.Stdin
 
 	exiter = os.Exit
+	logger = logrus.New()
+	logger.SetOutput(stdErr)
 }
 
 type customPlugin struct {
@@ -66,8 +69,8 @@ func WriterErrorAndExit(err error) {
 	exiter(1)
 }
 
-func Logger() logrus.FieldLogger {
-	return &logrus.Logger{}
+func Logger() *logrus.Logger {
+	return logger
 }
 
 func RunAndExit(plugin transform.Plugin) {
