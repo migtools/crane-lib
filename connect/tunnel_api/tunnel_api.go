@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net"
 	"strconv"
@@ -108,7 +109,7 @@ func Openvpn(tunnel Tunnel) error {
 		tunnel.Options.ServerPort = int32(1194)
 	}
 	if tunnel.Options.CACrt == nil {
-		ca, serverCrt, serverKey, clientCrt, clientKey, dh, err := GenSSLCrts()
+		ca, serverCrt, serverKey, clientCrt, clientKey, dh, err := GenOpenvpnSSLCrts()
 		if err != nil {
 			return err
 		}
@@ -231,48 +232,6 @@ func createOpenVPNServer(tunnel *Tunnel) error {
 		},
 	}
 
-	serviceAccount := &v1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceName,
-			Namespace: *&tunnel.Options.Namespace,
-		},
-	}
-
-	role := &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceName,
-			Namespace: *&tunnel.Options.Namespace,
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				Verbs:           []string{"use"},
-				APIGroups:       []string{"security.openshift.io"},
-				Resources:       []string{"securitycontextconstraints"},
-				ResourceNames:   []string{"privileged"},
-				NonResourceURLs: []string{},
-			},
-		},
-	}
-
-	roleBinding := &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceName,
-			Namespace: *&tunnel.Options.Namespace,
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      serviceName,
-				Namespace: *&tunnel.Options.Namespace,
-			},
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
-			Name:     serviceName,
-		},
-	}
-
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceName,
@@ -284,35 +243,6 @@ func createOpenVPNServer(tunnel *Tunnel) error {
 			"server.crt": tunnel.Options.ServerCrt.Bytes(),
 			"server.key": tunnel.Options.ServerKey.Bytes(),
 		},
-	}
-
-	scc := &securityv1.SecurityContextConstraints{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: tunnel.Options.Namespace,
-		},
-		AllowPrivilegedContainer: true,
-		AllowedCapabilities:      []corev1.Capability{"*"},
-		AllowHostDirVolumePlugin: true,
-		Volumes:                  []securityv1.FSType{"*"},
-		AllowHostNetwork:         true,
-		AllowHostPorts:           true,
-		AllowHostPID:             true,
-		AllowHostIPC:             true,
-		SELinuxContext: securityv1.SELinuxContextStrategyOptions{
-			Type: "RunAsAny",
-		},
-		RunAsUser: securityv1.RunAsUserStrategyOptions{
-			Type: "RunAsAny",
-		},
-		SupplementalGroups: securityv1.SupplementalGroupsStrategyOptions{
-			Type: "RunAsAny",
-		},
-		FSGroup: securityv1.FSGroupStrategyOptions{
-			Type: "RunAsAny",
-		},
-		ReadOnlyRootFilesystem: false,
-		Users:                  []string{"system:serviceaccount:" + tunnel.Options.Namespace + ":openvpn"},
-		SeccompProfiles:        []string{"*"},
 	}
 
 	mode := int32(0400)
@@ -400,19 +330,6 @@ func createOpenVPNServer(tunnel *Tunnel) error {
 		},
 	}
 
-	dapiClient, err := dapi.NewDiscoveryClientForConfig(tunnel.DstConfig)
-	if err != nil {
-		return err
-	}
-	version, err := dapiClient.ServerVersion()
-	if err != nil {
-		return err
-	}
-	minor, err := strconv.Atoi(strings.Trim(version.Minor, "+"))
-	if err != nil {
-		return err
-	}
-
 	err = tunnel.DstClient.Create(context.TODO(), namespace, &client.CreateOptions{})
 	if err != nil {
 		return err
@@ -429,24 +346,9 @@ func createOpenVPNServer(tunnel *Tunnel) error {
 	if err != nil {
 		return err
 	}
-	err = tunnel.DstClient.Create(context.TODO(), serviceAccount, &client.CreateOptions{})
+	err = createRBAC(tunnel, "dst")
 	if err != nil {
 		return err
-	}
-	if minor <= 11 {
-		err = tunnel.DstClient.Create(context.TODO(), scc, &client.CreateOptions{})
-		if err != nil && !k8serrors.IsAlreadyExists(err) {
-			return err
-		}
-	} else {
-		err = tunnel.DstClient.Create(context.TODO(), role, &client.CreateOptions{})
-		if err != nil {
-			return err
-		}
-		err = tunnel.DstClient.Create(context.TODO(), roleBinding, &client.CreateOptions{})
-		if err != nil {
-			return err
-		}
 	}
 	err = tunnel.DstClient.Create(context.TODO(), secret, &client.CreateOptions{})
 	if err != nil {
@@ -508,77 +410,6 @@ func createOpenVPNClient(tunnel *Tunnel) error {
 		},
 		Data: map[string][]byte{
 			"openvpn.conf": openvpnConf.Bytes(),
-		},
-	}
-
-	scc := &securityv1.SecurityContextConstraints{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: tunnel.Options.Namespace,
-		},
-		AllowPrivilegedContainer: true,
-		AllowedCapabilities:      []corev1.Capability{"*"},
-		AllowHostDirVolumePlugin: true,
-		Volumes:                  []securityv1.FSType{"*"},
-		AllowHostNetwork:         true,
-		AllowHostPorts:           true,
-		AllowHostPID:             true,
-		AllowHostIPC:             true,
-		SELinuxContext: securityv1.SELinuxContextStrategyOptions{
-			Type: "RunAsAny",
-		},
-		RunAsUser: securityv1.RunAsUserStrategyOptions{
-			Type: "RunAsAny",
-		},
-		SupplementalGroups: securityv1.SupplementalGroupsStrategyOptions{
-			Type: "RunAsAny",
-		},
-		FSGroup: securityv1.FSGroupStrategyOptions{
-			Type: "RunAsAny",
-		},
-		ReadOnlyRootFilesystem: false,
-		Users:                  []string{"system:serviceaccount:" + tunnel.Options.Namespace + ":openvpn"},
-		SeccompProfiles:        []string{"*"},
-	}
-
-	serviceAccount := &v1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceName,
-			Namespace: *&tunnel.Options.Namespace,
-		},
-	}
-
-	role := &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceName,
-			Namespace: *&tunnel.Options.Namespace,
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				Verbs:           []string{"use"},
-				APIGroups:       []string{"security.openshift.io"},
-				Resources:       []string{"securitycontextconstraints"},
-				ResourceNames:   []string{"privileged"},
-				NonResourceURLs: []string{},
-			},
-		},
-	}
-
-	roleBinding := &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceName,
-			Namespace: *&tunnel.Options.Namespace,
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      serviceName,
-				Namespace: *&tunnel.Options.Namespace,
-			},
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
-			Name:     serviceName,
 		},
 	}
 
@@ -653,41 +484,13 @@ func createOpenVPNClient(tunnel *Tunnel) error {
 		},
 	}
 
-	dapiClient, err := dapi.NewDiscoveryClientForConfig(tunnel.SrcConfig)
-	if err != nil {
-		return err
-	}
-	version, err := dapiClient.ServerVersion()
-	if err != nil {
-		return err
-	}
-	minor, err := strconv.Atoi(strings.Trim(version.Minor, "+"))
-	if err != nil {
-		return err
-	}
-
 	err = tunnel.SrcClient.Create(context.TODO(), namespace, &client.CreateOptions{})
 	if err != nil {
 		return err
 	}
-	err = tunnel.SrcClient.Create(context.TODO(), serviceAccount, &client.CreateOptions{})
+	err = createRBAC(tunnel, "src")
 	if err != nil {
 		return err
-	}
-	if minor <= 11 {
-		err = tunnel.SrcClient.Create(context.TODO(), scc, &client.CreateOptions{})
-		if err != nil && !k8serrors.IsAlreadyExists(err) {
-			return err
-		}
-	} else {
-		err = tunnel.SrcClient.Create(context.TODO(), role, &client.CreateOptions{})
-		if err != nil {
-			return err
-		}
-		err = tunnel.SrcClient.Create(context.TODO(), roleBinding, &client.CreateOptions{})
-		if err != nil {
-			return err
-		}
 	}
 	err = tunnel.SrcClient.Create(context.TODO(), secret, &client.CreateOptions{})
 	if err != nil {
@@ -700,7 +503,130 @@ func createOpenVPNClient(tunnel *Tunnel) error {
 	return nil
 }
 
-func GenSSLCrts() (*bytes.Buffer, *bytes.Buffer, *bytes.Buffer, *bytes.Buffer, *bytes.Buffer, *bytes.Buffer, error) {
+func createRBAC(tunnel *Tunnel, cluster string) error {
+	var c client.Client
+	var config *rest.Config
+
+	switch cluster {
+	case "src":
+		c = tunnel.SrcClient
+		config = tunnel.SrcConfig
+	case "dst":
+		c = tunnel.DstClient
+		config = tunnel.DstConfig
+	default:
+		return fmt.Errorf("Cannot create RBAC rules for unknown cluster %s", cluster)
+	}
+
+	dapiClient, err := dapi.NewDiscoveryClientForConfig(config)
+	if err != nil {
+		return err
+	}
+	version, err := dapiClient.ServerVersion()
+	if err != nil {
+		return err
+	}
+	minor, err := strconv.Atoi(strings.Trim(version.Minor, "+"))
+	if err != nil {
+		return err
+	}
+
+	serviceAccount := &v1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      serviceName,
+			Namespace: *&tunnel.Options.Namespace,
+		},
+	}
+	err = c.Create(context.TODO(), serviceAccount, &client.CreateOptions{})
+	if err != nil {
+		return err
+	}
+
+	if minor <= 11 {
+		scc := &securityv1.SecurityContextConstraints{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: tunnel.Options.Namespace,
+			},
+			AllowPrivilegedContainer: true,
+			AllowedCapabilities:      []corev1.Capability{"*"},
+			AllowHostDirVolumePlugin: true,
+			Volumes:                  []securityv1.FSType{"*"},
+			AllowHostNetwork:         true,
+			AllowHostPorts:           true,
+			AllowHostPID:             true,
+			AllowHostIPC:             true,
+			SELinuxContext: securityv1.SELinuxContextStrategyOptions{
+				Type: "RunAsAny",
+			},
+			RunAsUser: securityv1.RunAsUserStrategyOptions{
+				Type: "RunAsAny",
+			},
+			SupplementalGroups: securityv1.SupplementalGroupsStrategyOptions{
+				Type: "RunAsAny",
+			},
+			FSGroup: securityv1.FSGroupStrategyOptions{
+				Type: "RunAsAny",
+			},
+			ReadOnlyRootFilesystem: false,
+			Users:                  []string{"system:serviceaccount:" + tunnel.Options.Namespace + ":openvpn"},
+			SeccompProfiles:        []string{"*"},
+		}
+
+		err = c.Create(context.TODO(), scc, &client.CreateOptions{})
+		if err != nil && !k8serrors.IsAlreadyExists(err) {
+			return err
+		}
+
+	} else {
+		role := &rbacv1.Role{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      serviceName,
+				Namespace: *&tunnel.Options.Namespace,
+			},
+			Rules: []rbacv1.PolicyRule{
+				{
+					Verbs:           []string{"use"},
+					APIGroups:       []string{"security.openshift.io"},
+					Resources:       []string{"securitycontextconstraints"},
+					ResourceNames:   []string{"privileged"},
+					NonResourceURLs: []string{},
+				},
+			},
+		}
+
+		roleBinding := &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      serviceName,
+				Namespace: *&tunnel.Options.Namespace,
+			},
+			Subjects: []rbacv1.Subject{
+				{
+					Kind:      "ServiceAccount",
+					Name:      serviceName,
+					Namespace: *&tunnel.Options.Namespace,
+				},
+			},
+			RoleRef: rbacv1.RoleRef{
+				APIGroup: "rbac.authorization.k8s.io",
+				Kind:     "Role",
+				Name:     serviceName,
+			},
+		}
+
+		err = c.Create(context.TODO(), role, &client.CreateOptions{})
+		if err != nil {
+			return err
+		}
+		err = c.Create(context.TODO(), roleBinding, &client.CreateOptions{})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func GenOpenvpnSSLCrts() (*bytes.Buffer, *bytes.Buffer, *bytes.Buffer, *bytes.Buffer, *bytes.Buffer, *bytes.Buffer, error) {
 	caPrivKey, err := rsa.GenerateKey(rand.Reader, keySize)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
