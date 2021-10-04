@@ -33,9 +33,10 @@ import (
 
 const (
 	openvpnClientConfTemplate = `client
+cipher AES-256-GCM
 dev tun
+proto tcp4
 remote {{ $.Endpoint }} {{ $.Port }} tcp-client
-cipher AES-256-CBC
 <ca>
 {{ .CA }}
 </ca>
@@ -48,7 +49,7 @@ cipher AES-256-CBC
 verify-x509-name "C=US, ST=NC, L=RDU, O=Engineering, OU=Crane, CN=Server"
 `
 	openvpnServerConfTemplate = `dh /certs/dh.pem
-cipher AES-256-CBC
+cipher AES-256-GCM
 ca /certs/ca.crt
 server 192.168.123.0 255.255.255.0
 dev tun0
@@ -627,13 +628,8 @@ func createRBAC(tunnel *Tunnel, cluster string) error {
 }
 
 func GenOpenvpnSSLCrts() (*bytes.Buffer, *bytes.Buffer, *bytes.Buffer, *bytes.Buffer, *bytes.Buffer, *bytes.Buffer, error) {
-	caPrivKey, err := rsa.GenerateKey(rand.Reader, keySize)
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
-	}
 
 	subj := pkix.Name{
-		CommonName:         "CA",
 		Country:            []string{"US"},
 		Province:           []string{"NC"},
 		Locality:           []string{"RDU"},
@@ -641,9 +637,11 @@ func GenOpenvpnSSLCrts() (*bytes.Buffer, *bytes.Buffer, *bytes.Buffer, *bytes.Bu
 		OrganizationalUnit: []string{"Crane"},
 	}
 
-	caTemp := x509.Certificate{
-		SerialNumber:          big.NewInt(2020),
-		Subject:               subj,
+	caSubj := subj
+	caSubj.CommonName = "CA"
+	caCrtTemp := x509.Certificate{
+		SerialNumber:          big.NewInt(2021),
+		Subject:               caSubj,
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().AddDate(10, 0, 0),
 		IsCA:                  true,
@@ -652,44 +650,16 @@ func GenOpenvpnSSLCrts() (*bytes.Buffer, *bytes.Buffer, *bytes.Buffer, *bytes.Bu
 		BasicConstraintsValid: true,
 	}
 
-	caBytes, err := x509.CreateCertificate(
-		rand.Reader,
-		&caTemp,
-		&caTemp,
-		&caPrivKey.PublicKey,
-		caPrivKey,
-	)
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
-	}
-	ca := new(bytes.Buffer)
-	err = pem.Encode(ca, &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: caBytes,
-	})
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
-	}
-	caKey := new(bytes.Buffer)
-	err = pem.Encode(caKey, &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(caPrivKey),
-	})
+	ca, caKeyBytes, err := createCACrtKeyPair(caCrtTemp)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
 
-	serverSubj := pkix.Name{
-		CommonName:         "Server",
-		Country:            []string{"US"},
-		Province:           []string{"NC"},
-		Locality:           []string{"RDU"},
-		Organization:       []string{"Engineering"},
-		OrganizationalUnit: []string{"Crane"},
-	}
+	serverSubj := subj
+	serverSubj.CommonName = "Server"
 
 	serverCrtTemp := x509.Certificate{
-		SerialNumber: big.NewInt(1658),
+		SerialNumber: big.NewInt(2022),
 		Subject:      serverSubj,
 		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
 		NotBefore:    time.Now(),
@@ -699,39 +669,16 @@ func GenOpenvpnSSLCrts() (*bytes.Buffer, *bytes.Buffer, *bytes.Buffer, *bytes.Bu
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 	}
 
-	serverKeyBytes, err := rsa.GenerateKey(rand.Reader, keySize)
+	serverCrt, serverKey, err := createCrtKeyPair(serverCrtTemp, caCrtTemp, caKeyBytes)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
 
-	serverCrtBytes, err := x509.CreateCertificate(rand.Reader, &serverCrtTemp, &caTemp, &serverKeyBytes.PublicKey, caPrivKey)
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
-	}
-
-	serverCrt := new(bytes.Buffer)
-	pem.Encode(serverCrt, &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: serverCrtBytes,
-	})
-
-	serverKey := new(bytes.Buffer)
-	pem.Encode(serverKey, &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(serverKeyBytes),
-	})
-
-	clientSubj := pkix.Name{
-		CommonName:         "Client",
-		Country:            []string{"US"},
-		Province:           []string{"NC"},
-		Locality:           []string{"RDU"},
-		Organization:       []string{"Engineering"},
-		OrganizationalUnit: []string{"Crane"},
-	}
+	clientSubj := subj
+	clientSubj.CommonName = "Client"
 
 	clientCrtTemp := x509.Certificate{
-		SerialNumber: big.NewInt(1659),
+		SerialNumber: big.NewInt(2023),
 		Subject:      clientSubj,
 		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
 		NotBefore:    time.Now(),
@@ -741,27 +688,10 @@ func GenOpenvpnSSLCrts() (*bytes.Buffer, *bytes.Buffer, *bytes.Buffer, *bytes.Bu
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 	}
 
-	clientKeyBytes, err := rsa.GenerateKey(rand.Reader, keySize)
+	clientCrt, clientKey, err := createCrtKeyPair(clientCrtTemp, caCrtTemp, caKeyBytes)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
-
-	clientCrtBytes, err := x509.CreateCertificate(rand.Reader, &clientCrtTemp, &caTemp, &clientKeyBytes.PublicKey, caPrivKey)
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
-	}
-
-	clientCrt := new(bytes.Buffer)
-	pem.Encode(clientCrt, &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: clientCrtBytes,
-	})
-
-	clientKey := new(bytes.Buffer)
-	pem.Encode(clientKey, &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(clientKeyBytes),
-	})
 
 	var cb dhparam.GeneratorCallback
 
@@ -778,4 +708,78 @@ func GenOpenvpnSSLCrts() (*bytes.Buffer, *bytes.Buffer, *bytes.Buffer, *bytes.Bu
 	dhCrt := bytes.NewBuffer(dhBytes)
 
 	return ca, serverCrt, serverKey, clientCrt, clientKey, dhCrt, nil
+}
+
+func createCACrtKeyPair(crtTemp x509.Certificate) (*bytes.Buffer, *rsa.PrivateKey, error) {
+	keyBytes, err := rsa.GenerateKey(rand.Reader, keySize)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	crtBytes, err := x509.CreateCertificate(
+		rand.Reader,
+		&crtTemp,
+		&crtTemp,
+		&keyBytes.PublicKey,
+		keyBytes,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	crt := new(bytes.Buffer)
+	err = pem.Encode(crt, &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: crtBytes,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	key := new(bytes.Buffer)
+	err = pem.Encode(key, &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(keyBytes),
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return crt, keyBytes, nil
+}
+
+func createCrtKeyPair(crtTemp x509.Certificate, caCrtTemp x509.Certificate, caKeyBytes *rsa.PrivateKey) (*bytes.Buffer, *bytes.Buffer, error) {
+	keyBytes, err := rsa.GenerateKey(rand.Reader, keySize)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	crtBytes, err := x509.CreateCertificate(
+		rand.Reader,
+		&crtTemp,
+		&caCrtTemp,
+		&keyBytes.PublicKey,
+		caKeyBytes,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	crt := new(bytes.Buffer)
+	err = pem.Encode(crt, &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: crtBytes,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	key := new(bytes.Buffer)
+	err = pem.Encode(key, &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(keyBytes),
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return crt, key, nil
 }
