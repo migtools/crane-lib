@@ -1,6 +1,7 @@
 package kubernetes_test
 
 import (
+        "encoding/json"
 	"fmt"
 	"testing"
 
@@ -190,6 +191,28 @@ func TestRun(t *testing.T) {
 			RegistryReplacement: map[string]string{
 				"quay.io": "dockerhub.io",
 			},
+		},
+		{
+			Name: "RemoveMetadataAndStatus",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "InvalidGVK",
+					"apiVersion": "v1",
+					"metadata": map[string]interface{}{
+						"uid":             "1de6b4d2-ea5b-11eb-b902-021bddcaf6e4",
+						"resourceVersion": "19281149",
+					},
+					"status": map[string]interface{}{
+						"something":      "12345",
+						"something-else": "abcde",
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+			PatchResponseJson: `[{"op": "remove", "path": "/metadata/uid"},{"op": "remove", "path": "/metadata/resourceVersion"},{"op": "remove", "path": "/status"}]`,
 		},
 		{
 			Name: "AddAnnotations",
@@ -469,7 +492,8 @@ func TestRun(t *testing.T) {
 				if len(resp.Patches) != 0 {
 					ok, err := internaljsonpatch.Equal(resp.Patches, expectPatch)
 					if !ok || err != nil {
-						t.Error(fmt.Sprintf("Invalid patches. Actual: %#v, Expected: %#v", resp.Patches, expectPatch))
+						actual, _ := json.Marshal(resp.Patches)
+						t.Error(fmt.Sprintf("Invalid patches. Actual: %s, Expected: %v", actual, c.PatchResponseJson))
 					}
 				} else {
 					t.Error(fmt.Sprintf("Patches Expected: %#v, none found", expectPatch))
