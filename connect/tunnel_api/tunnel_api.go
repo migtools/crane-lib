@@ -19,6 +19,7 @@ import (
 	dhparam "github.com/Luzifer/go-dhparam"
 	securityv1 "github.com/openshift/api/security/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	appsv1beta1 "k8s.io/api/apps/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -66,11 +67,13 @@ key /certs/server.key
 )
 
 type Tunnel struct {
-	DstClient client.Client
-	DstConfig *rest.Config
-	SrcClient client.Client
-	SrcConfig *rest.Config
-	Options   Options
+	DstClient       client.Client
+	DstConfig       *rest.Config
+	DstVersionMinor int
+	SrcClient       client.Client
+	SrcConfig       *rest.Config
+	SrcVersionMinor int
+	Options         Options
 }
 
 type Options struct {
@@ -107,7 +110,7 @@ func Openvpn(tunnel Tunnel) error {
 		tunnel.Options.ServerImage = "quay.io/konveyor/openvpn:latest"
 	}
 	if tunnel.Options.ServerPort == 0 {
-		tunnel.Options.ServerPort = int32(1194)
+		tunnel.Options.ServerPort = int32(443)
 	}
 	if tunnel.Options.CACrt == nil {
 		ca, serverCrt, serverKey, clientCrt, clientKey, dh, err := GenOpenvpnSSLCrts()
@@ -129,6 +132,9 @@ func Openvpn(tunnel Tunnel) error {
 	if err := appsv1.AddToScheme(scheme); err != nil {
 		return err
 	}
+	if err := appsv1beta1.AddToScheme(scheme); err != nil {
+		return err
+	}
 	if err := corev1.AddToScheme(scheme); err != nil {
 		return err
 	}
@@ -143,8 +149,38 @@ func Openvpn(tunnel Tunnel) error {
 	if err != nil {
 		return err
 	}
+
 	tunnel.DstClient = dstClient
 	tunnel.SrcClient = srcClient
+
+	srcDiscoveryClient, err := dapi.NewDiscoveryClientForConfig(tunnel.SrcConfig)
+	if err != nil {
+		return err
+	}
+	srcVersion, err := srcDiscoveryClient.ServerVersion()
+	if err != nil {
+		return err
+	}
+	srcMinor, err := strconv.Atoi(strings.Trim(srcVersion.Minor, "+"))
+	if err != nil {
+		return err
+	}
+
+	dstDiscoveryClient, err := dapi.NewDiscoveryClientForConfig(tunnel.DstConfig)
+	if err != nil {
+		return err
+	}
+	dstVersion, err := dstDiscoveryClient.ServerVersion()
+	if err != nil {
+		return err
+	}
+	dstMinor, err := strconv.Atoi(strings.Trim(dstVersion.Minor, "+"))
+	if err != nil {
+		return err
+	}
+
+	tunnel.DstVersionMinor = dstMinor
+	tunnel.SrcVersionMinor = srcMinor
 
 	err = createOpenVPNServer(&tunnel)
 	if err != nil {
@@ -224,8 +260,8 @@ func createOpenVPNServer(tunnel *Tunnel) error {
 				{
 					Name:       "proxy",
 					Protocol:   corev1.ProtocolTCP,
-					Port:       int32(443),
-					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: 443},
+					Port:       int32(8443),
+					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: 8443},
 				},
 			},
 			Selector: deploymentLabels,
@@ -300,7 +336,7 @@ func createOpenVPNServer(tunnel *Tunnel) error {
 			Command: []string{
 				"bash",
 				"-c",
-				"socat TCP-LISTEN:443,fork,reuseaddr TCP:192.168.123.6:443",
+				"socat TCP-LISTEN:8443,fork,reuseaddr TCP:192.168.123.6:8443",
 			},
 		},
 	}
@@ -313,22 +349,20 @@ func createOpenVPNServer(tunnel *Tunnel) error {
 		Volumes:            volumes,
 	}
 
-	deployment := &appsv1.Deployment{
+	deploymentMeta := metav1.ObjectMeta{
+		Name:      serviceName,
+		Namespace: *&tunnel.Options.Namespace,
+	}
+
+	deploymentSelector := &metav1.LabelSelector{
+		MatchLabels: deploymentLabels,
+	}
+
+	podTemplateSpec := v1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceName,
-			Namespace: *&tunnel.Options.Namespace,
+			Labels: deploymentLabels,
 		},
-		Spec: appsv1.DeploymentSpec{
-			Selector: &metav1.LabelSelector{
-				MatchLabels: deploymentLabels,
-			},
-			Template: v1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: deploymentLabels,
-				},
-				Spec: podSpec,
-			},
-		},
+		Spec: podSpec,
 	}
 
 	err = tunnel.DstClient.Create(context.TODO(), namespace, &client.CreateOptions{})
@@ -355,9 +389,33 @@ func createOpenVPNServer(tunnel *Tunnel) error {
 	if err != nil {
 		return err
 	}
-	err = tunnel.DstClient.Create(context.TODO(), deployment, &client.CreateOptions{})
-	if err != nil {
-		return err
+
+	if tunnel.DstVersionMinor < 9 {
+		deploymentBeta := &appsv1beta1.Deployment{
+			ObjectMeta: deploymentMeta,
+			Spec: appsv1beta1.DeploymentSpec{
+				Selector: deploymentSelector,
+				Template: podTemplateSpec,
+			},
+		}
+
+		err = tunnel.DstClient.Create(context.TODO(), deploymentBeta, &client.CreateOptions{})
+		if err != nil {
+			return err
+		}
+	} else {
+		deployment := &appsv1.Deployment{
+			ObjectMeta: deploymentMeta,
+			Spec: appsv1.DeploymentSpec{
+				Selector: deploymentSelector,
+				Template: podTemplateSpec,
+			},
+		}
+
+		err = tunnel.DstClient.Create(context.TODO(), deployment, &client.CreateOptions{})
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -454,7 +512,7 @@ func createOpenVPNClient(tunnel *Tunnel) error {
 			Command: []string{
 				"bash",
 				"-c",
-				"socat TCP-LISTEN:443,fork,reuseaddr TCP:${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT_HTTPS}",
+				"socat TCP-LISTEN:8443,fork,reuseaddr TCP:${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT_HTTPS}",
 			},
 		},
 	}
@@ -467,22 +525,20 @@ func createOpenVPNClient(tunnel *Tunnel) error {
 		Volumes:            volumes,
 	}
 
-	deployment := &appsv1.Deployment{
+	deploymentMeta := metav1.ObjectMeta{
+		Name:      serviceName,
+		Namespace: *&tunnel.Options.Namespace,
+	}
+
+	deploymentSelector := &metav1.LabelSelector{
+		MatchLabels: deploymentLabels,
+	}
+
+	podTemplateSpec := v1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceName,
-			Namespace: *&tunnel.Options.Namespace,
+			Labels: deploymentLabels,
 		},
-		Spec: appsv1.DeploymentSpec{
-			Selector: &metav1.LabelSelector{
-				MatchLabels: deploymentLabels,
-			},
-			Template: v1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: deploymentLabels,
-				},
-				Spec: podSpec,
-			},
-		},
+		Spec: podSpec,
 	}
 
 	err = tunnel.SrcClient.Create(context.TODO(), namespace, &client.CreateOptions{})
@@ -497,39 +553,51 @@ func createOpenVPNClient(tunnel *Tunnel) error {
 	if err != nil {
 		return err
 	}
-	err = tunnel.SrcClient.Create(context.TODO(), deployment, &client.CreateOptions{})
-	if err != nil {
-		return err
+
+	if tunnel.SrcVersionMinor < 9 {
+		deploymentBeta := &appsv1beta1.Deployment{
+			ObjectMeta: deploymentMeta,
+			Spec: appsv1beta1.DeploymentSpec{
+				Selector: deploymentSelector,
+				Template: podTemplateSpec,
+			},
+		}
+
+		err = tunnel.SrcClient.Create(context.TODO(), deploymentBeta, &client.CreateOptions{})
+		if err != nil {
+			return err
+		}
+	} else {
+		deployment := &appsv1.Deployment{
+			ObjectMeta: deploymentMeta,
+			Spec: appsv1.DeploymentSpec{
+				Selector: deploymentSelector,
+				Template: podTemplateSpec,
+			},
+		}
+
+		err = tunnel.SrcClient.Create(context.TODO(), deployment, &client.CreateOptions{})
+		if err != nil {
+			return err
+		}
 	}
+
 	return nil
 }
 
 func createRBAC(tunnel *Tunnel, cluster string) error {
 	var c client.Client
-	var config *rest.Config
+	var minor int
 
 	switch cluster {
 	case "src":
 		c = tunnel.SrcClient
-		config = tunnel.SrcConfig
+		minor = tunnel.SrcVersionMinor
 	case "dst":
 		c = tunnel.DstClient
-		config = tunnel.DstConfig
+		minor = tunnel.DstVersionMinor
 	default:
 		return fmt.Errorf("Cannot create RBAC rules for unknown cluster %s", cluster)
-	}
-
-	dapiClient, err := dapi.NewDiscoveryClientForConfig(config)
-	if err != nil {
-		return err
-	}
-	version, err := dapiClient.ServerVersion()
-	if err != nil {
-		return err
-	}
-	minor, err := strconv.Atoi(strings.Trim(version.Minor, "+"))
-	if err != nil {
-		return err
 	}
 
 	serviceAccount := &v1.ServiceAccount{
@@ -538,7 +606,7 @@ func createRBAC(tunnel *Tunnel, cluster string) error {
 			Namespace: *&tunnel.Options.Namespace,
 		},
 	}
-	err = c.Create(context.TODO(), serviceAccount, &client.CreateOptions{})
+	err := c.Create(context.TODO(), serviceAccount, &client.CreateOptions{})
 	if err != nil {
 		return err
 	}
