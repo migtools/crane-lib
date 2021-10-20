@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch"
 	transform "github.com/konveyor/crane-lib/transform"
@@ -28,17 +29,6 @@ const (
 {"op": "remove", "path": "/metadata/annotations/%v"}`
 	removeAnnotationNext = `%v,
 {"op": "remove", "path": "/metadata/annotations/%v"}`
-	podNodeName = `[
-{"op": "remove", "path": "/spec/nodeName"}
-]`
-
-	podNodeSelector = `[
-{"op": "remove", "path": "/spec/nodeSelector"}
-]`
-
-	podPriority = `[
-{"op": "remove", "path": "/spec/priority"}
-]`
 
 	updateNamespaceString = `[
 {"op": "replace", "path": "/metadata/namespace", "value": "%v"}
@@ -47,19 +37,26 @@ const (
 	updateRoleBindingSVCACCTNamspacestring = `%v
 {"op": "replace", "path": "/subjects/%v/namespace", "value": "%v"}`
 
-	updateClusterIP = `[
-{"op": "remove", "path": "/spec/clusterIP"}
+	opRemove = `[
+{"op": "remove", "path": "%v"}
 ]`
-	updateClusterIPs = `[
-{"op": "remove", "path": "/spec/clusterIPs"}
-]`
-	updateExternalIPs = `[
-{"op": "remove", "path": "/spec/externalIPs"}
-]`
-	updateNodePortString = `[
-{"op": "remove", "path": "/spec/ports/%v/nodePort"}
-]`
+	metadata             = "metadata"
+	podNodeName          = "/spec/nodeName"
+	podNodeSelector      = "/spec/nodeSelector"
+	podPriority          = "/spec/priority"
+	updateClusterIP      = "/spec/clusterIP"
+	updateClusterIPs     = "/spec/clusterIPs"
+	updateExternalIPs    = "/spec/externalIPs"
+	updateNodePortString = "/spec/ports/%v/nodePort"
 )
+var fieldsToStrip = [...][]string{
+		[]string{metadata, "uid"},
+		[]string{metadata, "selfLink"},
+		[]string{metadata, "resourceVersion"},
+		[]string{metadata, "creationTimestamp"},
+		[]string{metadata, "generation"},
+		[]string{"status"},
+	}
 
 var endpointGK = schema.GroupKind{
 	Group: "",
@@ -196,6 +193,11 @@ func (k KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Unst
 
 	// Always attempt to add annotations for each thing.
 	jsonPatch := jsonpatch.Patch{}
+	patches, err := stripFields(obj)
+	if err != nil {
+		return nil, err
+	}
+	jsonPatch = append(jsonPatch, patches...)
 	if k.AddAnnotations != nil && len(k.AddAnnotations) > 0 {
 		patches, err := addAnnotations(k.AddAnnotations)
 		if err != nil {
@@ -293,6 +295,31 @@ func (k KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Unst
 	return jsonPatch, nil
 }
 
+func interfaceSlice(inStrings []string) []interface{} {
+	var outSlice []interface{}
+	for _, str := range inStrings {
+		outSlice = append(outSlice, str)
+	}
+	return outSlice
+}
+func stripFields(obj unstructured.Unstructured) (jsonpatch.Patch, error) {
+	var patches jsonpatch.Patch
+	for _, field := range fieldsToStrip {
+		_, found, err := unstructured.NestedFieldNoCopy(obj.Object, field...)
+		if err != nil {
+			return patches, err
+		}
+		if found {
+			patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opRemove, fmt.Sprintf(strings.Repeat("/%v", len(field)), interfaceSlice(field)...))))
+			if err != nil {
+				return nil, err
+			}
+			patches = append(patches, patch...)
+		}
+	}
+	return patches, nil
+}
+
 func addAnnotations(addAnnotations map[string]string) (jsonpatch.Patch, error) {
 	patchJSON := `[`
 	i := 0
@@ -337,16 +364,16 @@ func removeAnnotations(removeAnnotations []string) (jsonpatch.Patch, error) {
 
 func removePodFields() (jsonpatch.Patch, error) {
 	var patches jsonpatch.Patch
-	patches, err := jsonpatch.DecodePatch([]byte(podNodeName))
+	patches, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opRemove, podNodeName)))
 	if err != nil {
 		return nil, err
 	}
-	patch, err := jsonpatch.DecodePatch([]byte(podNodeSelector))
+	patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opRemove, podNodeSelector)))
 	if err != nil {
 		return nil, err
 	}
 	patches = append(patches, patch...)
-	patch, err = jsonpatch.DecodePatch([]byte(podPriority))
+	patch, err = jsonpatch.DecodePatch([]byte(fmt.Sprintf(opRemove, podPriority)))
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +410,7 @@ func updateRoleBindingSVCACCTNamespace(newNamespace string, numberOfSubjects int
 func removeServiceFields(obj unstructured.Unstructured) (jsonpatch.Patch, error) {
 	var patches jsonpatch.Patch
 	if isLoadBalancerService(obj) {
-		patch, err := jsonpatch.DecodePatch([]byte(updateExternalIPs))
+		patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opRemove, updateExternalIPs)))
 		if err != nil {
 			return nil, err
 		}
@@ -391,14 +418,14 @@ func removeServiceFields(obj unstructured.Unstructured) (jsonpatch.Patch, error)
 	}
 
 	if shouldRemoveServiceClusterIP(obj) {
-		patch, err := jsonpatch.DecodePatch([]byte(updateClusterIP))
+		patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opRemove, updateClusterIP)))
 		if err != nil {
 			return nil, err
 		}
 		patches = append(patches, patch...)
 	}
 	if shouldRemoveServiceClusterIPs(obj) {
-		patch, err := jsonpatch.DecodePatch([]byte(updateClusterIPs))
+		patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opRemove, updateClusterIPs)))
 		if err != nil {
 			return nil, err
 		}
@@ -581,7 +608,7 @@ func getNodePortPatch(u unstructured.Unstructured) (jsonpatch.Patch, error) {
 			}
 		}
 		if removeNodePort {
-			patchJSON := fmt.Sprintf(updateNodePortString, i)
+			patchJSON := fmt.Sprintf(opRemove, fmt.Sprintf(updateNodePortString, i))
 			intPatch, err := jsonpatch.DecodePatch([]byte(patchJSON))
 			if err != nil {
 				return patch, err
