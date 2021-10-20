@@ -15,15 +15,16 @@ import (
 func TestRun(t *testing.T) {
 
 	cases := []struct {
-		Name                string
-		Object              *unstructured.Unstructured
-		AddAnnotations      map[string]string
-		RegistryReplacement map[string]string
-		NewNamespace        string
-		RemoveAnnotations   []string
-		ShouldError         bool
-		Response            transform.PluginResponse
-		PatchResponseJson   string
+		Name                 string
+		Object               *unstructured.Unstructured
+		AddAnnotations       map[string]string
+		RegistryReplacement  map[string]string
+		NewNamespace         string
+		DisableWhiteoutOwned bool
+		RemoveAnnotations    []string
+		ShouldError          bool
+		Response             transform.PluginResponse
+		PatchResponseJson    string
 	}{
 		{
 			Name: "EnpointWhiteOut",
@@ -123,6 +124,70 @@ func TestRun(t *testing.T) {
 			},
 			Response: transform.PluginResponse{
 				IsWhiteOut: true,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "OwnedPodWhiteOutDisabled",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Pod",
+					"apiVersion": "v1",
+					"metadata": map[string]interface{}{
+						"ownerReferences": []interface{}{
+							map[string]interface{}{
+								"apiVersion": "apps/v1",
+								"kind":       "ReplicaSet",
+								"ame":       "PodOwner",
+								"uid":        "1de6b4d2-ea5b-11eb-b902-021bddcaf6e4",
+							},
+						},
+					},
+				},
+			},
+			DisableWhiteoutOwned: true,
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "OwnedPodSpecableWhiteOutDisabled",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "InvalidGVK",
+					"apiVersion": "v1",
+					"metadata": map[string]interface{}{
+						"ownerReferences": []interface{}{
+							map[string]interface{}{
+								"apiVersion": "apps/v1",
+								"kind":       "ReplicaSet",
+								"ame":       "PodOwner",
+								"uid":        "1de6b4d2-ea5b-11eb-b902-021bddcaf6e4",
+							},
+						},
+					},
+					"spec": map[string]interface{}{
+						"template": v1.PodTemplateSpec{
+							Spec: v1.PodSpec{
+								InitContainers: []v1.Container{
+									{
+										Image: "quay.io/shawn_hurley/testing-image",
+									},
+								},
+								Containers: []v1.Container{
+									{
+										Image: "quay.io/shawn_hurley/testing-image-real",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			DisableWhiteoutOwned: true,
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
 				Version:    "v1",
 			},
 		},
@@ -444,10 +509,11 @@ func TestRun(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
 			var p transform.Plugin = &kubernetes.KubernetesTransformPlugin{
-				AddAnnotations:      c.AddAnnotations,
-				RegistryReplacement: c.RegistryReplacement,
-				NewNamespace:        c.NewNamespace,
-				RemoveAnnotations:   c.RemoveAnnotations,
+				AddAnnotations:       c.AddAnnotations,
+				RegistryReplacement:  c.RegistryReplacement,
+				NewNamespace:         c.NewNamespace,
+				RemoveAnnotations:    c.RemoveAnnotations,
+				DisableWhiteoutOwned: c.DisableWhiteoutOwned,
 			}
 			resp, err := p.Run(c.Object, nil)
 			if err != nil && !c.ShouldError {

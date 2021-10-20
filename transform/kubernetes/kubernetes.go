@@ -87,10 +87,11 @@ var serviceGK = schema.GroupKind{
 }
 
 type KubernetesTransformPlugin struct {
-	AddAnnotations      map[string]string
-	RemoveAnnotations   []string
-	RegistryReplacement map[string]string
-	NewNamespace        string
+	AddAnnotations       map[string]string
+	RemoveAnnotations    []string
+	RegistryReplacement  map[string]string
+	NewNamespace         string
+	DisableWhiteoutOwned bool
 }
 
 func (k KubernetesTransformPlugin) setOptionalFields(extras map[string]string) {
@@ -103,6 +104,13 @@ func (k KubernetesTransformPlugin) setOptionalFields(extras map[string]string) {
 	}
 	if len(extras["RegistryReplacement"]) > 0 {
 		k.RegistryReplacement = transform.ParseOptionalFieldMapVal(extras["RegistryReplacement"])
+	}
+	if len(extras["DisableWhiteoutOwned"]) > 0 {
+		var err error
+		k.DisableWhiteoutOwned, err = strconv.ParseBool(extras["DisableWhiteoutOwned"])
+		if err != nil {
+			k.DisableWhiteoutOwned = false
+		}
 	}
 }
 
@@ -148,6 +156,11 @@ func (k KubernetesTransformPlugin) Metadata() transform.PluginMetadata {
 				Help:     "Annotations to remove",
 				Example:  "annotation1,annotation2",
 			},
+			{
+				FlagName: "DisableWhiteoutOwned",
+				Help:     "Disable whiting out owned pods and pod template resources",
+				Example:  "true",
+			},
 		},
 	}
 }
@@ -168,6 +181,9 @@ func (k KubernetesTransformPlugin) getWhiteOuts(obj unstructured.Unstructured) b
 	// of the tool chain.
 	if groupKind == pvcGK {
 		return true
+	}
+	if k.DisableWhiteoutOwned {
+		return false
 	}
 	_, isPodSpecable := types.IsPodSpecable(obj)
 	if (groupKind == podGK || isPodSpecable) && len(obj.GetOwnerReferences()) > 0 {
