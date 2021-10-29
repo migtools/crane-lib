@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch"
-	"github.com/konveyor/crane-lib/transform/internal/image"
+	"github.com/konveyor/crane-lib/transform/util"
 	buildv1API "github.com/openshift/api/build/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -55,9 +55,9 @@ func updateBuildConfigImageReference(
 	if fields.RegistryReplacement == nil || len(fields.RegistryReplacement) == 0 {
 		return patch, nil
 	}
-	updatedImageRef, update := image.UpdateImageRegistry(fields.RegistryReplacement, imgRef.Name)
+	updatedImageRef, update := util.UpdateImageRegistry(fields.RegistryReplacement, imgRef.Name)
 	if update {
-		patch, err = image.UpdateImage(imgPath, updatedImageRef)
+		patch, err = util.UpdateImage(imgPath, updatedImageRef)
 		if err != nil {
 			return nil, err
 		}
