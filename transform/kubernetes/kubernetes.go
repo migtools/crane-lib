@@ -8,7 +8,7 @@ import (
 
 	jsonpatch "github.com/evanphx/json-patch"
 	transform "github.com/konveyor/crane-lib/transform"
-	"github.com/konveyor/crane-lib/transform/internal/image"
+	"github.com/konveyor/crane-lib/transform/util"
 	"github.com/konveyor/crane-lib/transform/types"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -239,9 +239,9 @@ func (k KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Unst
 			}
 			jps := jsonpatch.Patch{}
 			for i, container := range pod.Spec.Containers {
-				updatedImage, update := image.UpdateImageRegistry(k.RegistryReplacement, container.Image)
+				updatedImage, update := util.UpdateImageRegistry(k.RegistryReplacement, container.Image)
 				if update {
-					jp, err := image.UpdateImage(fmt.Sprintf(podContainerImageUpdate, i), updatedImage)
+					jp, err := util.UpdateImage(fmt.Sprintf(podContainerImageUpdate, i), updatedImage)
 					if err != nil {
 						return nil, err
 					}
@@ -249,9 +249,9 @@ func (k KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Unst
 				}
 			}
 			for i, container := range pod.Spec.InitContainers {
-				updatedImage, update := image.UpdateImageRegistry(k.RegistryReplacement, container.Image)
+				updatedImage, update := util.UpdateImageRegistry(k.RegistryReplacement, container.Image)
 				if update {
-					jp, err := image.UpdateImage(fmt.Sprintf(podInitContainerImageUpdate, i), updatedImage)
+					jp, err := util.UpdateImage(fmt.Sprintf(podInitContainerImageUpdate, i), updatedImage)
 					if err != nil {
 						return nil, err
 					}
@@ -262,9 +262,9 @@ func (k KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Unst
 		} else if template, ok := types.IsPodSpecable(obj); ok {
 			jps := jsonpatch.Patch{}
 			for i, container := range template.Spec.Containers {
-				updatedImage, update := image.UpdateImageRegistry(k.RegistryReplacement, container.Image)
+				updatedImage, update := util.UpdateImageRegistry(k.RegistryReplacement, container.Image)
 				if update {
-					jp, err := image.UpdateImage(fmt.Sprintf(containerImageUpdate, i), updatedImage)
+					jp, err := util.UpdateImage(fmt.Sprintf(containerImageUpdate, i), updatedImage)
 					if err != nil {
 						return nil, err
 					}
@@ -272,9 +272,9 @@ func (k KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Unst
 				}
 			}
 			for i, container := range template.Spec.InitContainers {
-				updatedImage, update := image.UpdateImageRegistry(k.RegistryReplacement, container.Image)
+				updatedImage, update := util.UpdateImageRegistry(k.RegistryReplacement, container.Image)
 				if update {
-					jp, err := image.UpdateImage(fmt.Sprintf(initContainerImageUpdate, i), updatedImage)
+					jp, err := util.UpdateImage(fmt.Sprintf(initContainerImageUpdate, i), updatedImage)
 					if err != nil {
 						return nil, err
 					}
