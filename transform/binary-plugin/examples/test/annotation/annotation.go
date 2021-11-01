@@ -6,7 +6,6 @@ import (
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane-lib/transform/cli"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 func main() {
@@ -20,9 +19,9 @@ func main() {
 	cli.RunAndExit(cli.NewCustomPlugin("AnnotationPlugin", "v1", fields, Run))
 }
 
-func Run(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
+func Run(request transform.PluginRequest) (transform.PluginResponse, error) {
 	// plugin writers need to write custome code here.
-	patch, err := AddAnnotation(*u, extras)
+	patch, err := AddAnnotation(request)
 
 	if err != nil {
 		return transform.PluginResponse{}, err
@@ -34,8 +33,8 @@ func Run(u *unstructured.Unstructured, extras map[string]string) (transform.Plug
 	}, nil
 }
 
-func AddAnnotation(u unstructured.Unstructured, extras map[string]string) (jsonpatch.Patch, error) {
-	val, ok := extras["annotation-value"]
+func AddAnnotation(request transform.PluginRequest) (jsonpatch.Patch, error) {
+	val, ok := request.Extras["annotation-value"]
 	if !ok {
 		val = "crane"
 	}

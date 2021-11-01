@@ -19,7 +19,7 @@ type fakeCommandRunner struct {
 	metadataStdout, metadataStderr            []byte
 }
 
-func (f *fakeCommandRunner) Run(_ *unstructured.Unstructured, _ map[string]string, _ logrus.FieldLogger) ([]byte, []byte, error) {
+func (f *fakeCommandRunner) Run(_ transform.PluginRequest, _ logrus.FieldLogger) ([]byte, []byte, error) {
 	return f.stdout, f.stderr, f.errorRunningCommand
 }
 
@@ -342,7 +342,7 @@ func TestBinaryPlugin_Run(t *testing.T) {
 				},
 				log: logrus.New().WithField("test", tt.name),
 			}
-			got, err := b.Run(&unstructured.Unstructured{}, nil)
+			got, err := b.Run(transform.PluginRequest{Unstructured:unstructured.Unstructured{}})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Run() error = %v, wantErr %v", err, tt.wantErr)
 				return

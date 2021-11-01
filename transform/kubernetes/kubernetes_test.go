@@ -594,7 +594,7 @@ func TestRun(t *testing.T) {
 				ExtraWhiteouts:       c.ExtraWhiteouts,
 				IncludeOnly:          c.IncludeOnly,
 			}
-			resp, err := p.Run(c.Object, nil)
+			resp, err := p.Run(transform.PluginRequest{Unstructured:*c.Object})
 			if err != nil && !c.ShouldError {
 				t.Error(err)
 			}

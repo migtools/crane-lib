@@ -7,7 +7,6 @@ import (
 	"github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane-lib/transform/cli"
 	"github.com/sirupsen/logrus"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 var logger logrus.FieldLogger
@@ -59,10 +58,11 @@ func getOptionalFields(extras map[string]string) (openshiftOptionalFields, error
 	return fields, nil
 }
 
-func Run(u *unstructured.Unstructured, extras map[string]string) (transform.PluginResponse, error) {
+func Run(request transform.PluginRequest) (transform.PluginResponse, error) {
+	u := request.Unstructured
 	var patch jsonpatch.Patch
 	whiteOut := false
-	inputFields, err := getOptionalFields(extras)
+	inputFields, err := getOptionalFields(request.Extras)
 	if err != nil {
 		return transform.PluginResponse{}, err
 	}
@@ -73,16 +73,16 @@ func Run(u *unstructured.Unstructured, extras map[string]string) (transform.Plug
 		whiteOut = true
 	case "BuildConfig":
 		logger.Info("found build config, processing")
-		patch, err = UpdateBuildConfig(*u, inputFields)
+		patch, err = UpdateBuildConfig(u, inputFields)
 	case "Pod":
 		logger.Info("found pod, processing update default pull secret")
-		patch, err = UpdateDefaultPullSecrets(*u, inputFields)
+		patch, err = UpdateDefaultPullSecrets(u, inputFields)
 	case "Route":
 		logger.Info("found route, processing")
-		patch, err = UpdateRoute(*u)
+		patch, err = UpdateRoute(u)
 	case "ServiceAccount":
 		logger.Info("found service account, processing")
-		patch, err = UpdateServiceAccount(*u)
+		patch, err = UpdateServiceAccount(u)
 	}
 	if err != nil {
 		return transform.PluginResponse{}, err
