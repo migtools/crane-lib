@@ -11,6 +11,7 @@ import (
 	"github.com/konveyor/crane-lib/transform/kubernetes"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func TestRun(t *testing.T) {
@@ -23,6 +24,8 @@ func TestRun(t *testing.T) {
 		NewNamespace         string
 		DisableWhiteoutOwned bool
 		RemoveAnnotations    []string
+		ExtraWhiteouts       []schema.GroupKind
+		IncludeOnly          []schema.GroupKind
 		ShouldError          bool
 		Response             transform.PluginResponse
 		PatchResponseJson    string
@@ -59,6 +62,57 @@ func TestRun(t *testing.T) {
 				Object: map[string]interface{}{
 					"kind":       "PersistentVolumeClaim",
 					"apiVersion": "v1",
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: true,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "NoDeploymentWhiteoutByDefault",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Deployment",
+					"apiVersion": "apps/v1",
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "DeploymentAdditionalWhiteout",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Deployment",
+					"apiVersion": "apps/v1",
+				},
+			},
+			ExtraWhiteouts: []schema.GroupKind {
+				{
+					Group: "apps",
+					Kind:  "Deployment",
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: true,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "DeploymentWhiteoutWithIncludeOnly",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Deployment",
+					"apiVersion": "apps/v1",
+				},
+			},
+			IncludeOnly: []schema.GroupKind {
+				{
+					Group: "",
+					Kind:  "Pod",
 				},
 			},
 			Response: transform.PluginResponse{
@@ -537,6 +591,8 @@ func TestRun(t *testing.T) {
 				NewNamespace:         c.NewNamespace,
 				RemoveAnnotations:    c.RemoveAnnotations,
 				DisableWhiteoutOwned: c.DisableWhiteoutOwned,
+				ExtraWhiteouts:       c.ExtraWhiteouts,
+				IncludeOnly:          c.IncludeOnly,
 			}
 			resp, err := p.Run(c.Object, nil)
 			if err != nil && !c.ShouldError {

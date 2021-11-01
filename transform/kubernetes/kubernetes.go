@@ -83,12 +83,20 @@ var serviceGK = schema.GroupKind{
 	Kind:  "Service",
 }
 
+var gksToWhiteout = []schema.GroupKind{
+	endpointGK,
+	endpointSliceGK,
+	pvcGK,
+}
+
 type KubernetesTransformPlugin struct {
 	AddAnnotations       map[string]string
 	RemoveAnnotations    []string
 	RegistryReplacement  map[string]string
 	NewNamespace         string
 	DisableWhiteoutOwned bool
+	ExtraWhiteouts       []schema.GroupKind
+	IncludeOnly          []schema.GroupKind
 }
 
 func (k KubernetesTransformPlugin) setOptionalFields(extras map[string]string) {
@@ -101,6 +109,12 @@ func (k KubernetesTransformPlugin) setOptionalFields(extras map[string]string) {
 	}
 	if len(extras["RegistryReplacement"]) > 0 {
 		k.RegistryReplacement = transform.ParseOptionalFieldMapVal(extras["RegistryReplacement"])
+	}
+	if len(extras["ExtraWhiteouts"]) > 0 {
+		k.ExtraWhiteouts = parseGroupKindSlice(transform.ParseOptionalFieldSliceVal(extras["ExtraWhiteouts"]))
+	}
+	if len(extras["IncludeOnly"]) > 0 {
+		k.IncludeOnly = parseGroupKindSlice(transform.ParseOptionalFieldSliceVal(extras["IncludeOnly"]))
 	}
 	if len(extras["DisableWhiteoutOwned"]) > 0 {
 		var err error
@@ -158,6 +172,16 @@ func (k KubernetesTransformPlugin) Metadata() transform.PluginMetadata {
 				Help:     "Disable whiting out owned pods and pod template resources",
 				Example:  "true",
 			},
+			{
+				FlagName: "ExtraWhiteouts",
+				Help:     "Additional resources to whiteout specified as a comma-separatedlist of GroupKind strings.",
+				Example:  "Deployment.apps,Service,Route.route.openshift.io",
+			},
+			{
+				FlagName: "IncludeOnly",
+				Help:     "If specified, every resource not listed here will be a whiteout. ExtraWhiteouts is ignored when IncludeONly is specified. Specified as a comma-separatedlist of GroupKind strings.",
+				Example:  "Deployment.apps,Service,Route.route.openshift.io",
+			},
 		},
 	}
 }
@@ -166,18 +190,17 @@ var _ transform.Plugin = &KubernetesTransformPlugin{}
 
 func (k KubernetesTransformPlugin) getWhiteOuts(obj unstructured.Unstructured) bool {
 	groupKind := obj.GroupVersionKind().GroupKind()
-	if groupKind == endpointGK {
-		return true
-	}
-
-	if groupKind == endpointSliceGK {
-		return true
-	}
-
-	// For right now we assume PVC's are handled by a different part
-	// of the tool chain.
-	if groupKind == pvcGK {
-		return true
+	if len(k.IncludeOnly) > 0 {
+		if !groupKindInList(groupKind, k.IncludeOnly) {
+			return true
+		}
+	} else {
+		if groupKindInList(groupKind, gksToWhiteout) {
+			return true
+		}
+		if groupKindInList(groupKind, k.ExtraWhiteouts) {
+			return true
+		}
 	}
 	if k.DisableWhiteoutOwned {
 		return false
@@ -185,6 +208,23 @@ func (k KubernetesTransformPlugin) getWhiteOuts(obj unstructured.Unstructured) b
 	_, isPodSpecable := types.IsPodSpecable(obj)
 	if (groupKind == podGK || isPodSpecable) && len(obj.GetOwnerReferences()) > 0 {
 		return true
+	}
+	return false
+}
+
+func parseGroupKindSlice(gkStrings []string) []schema.GroupKind {
+	gks := []schema.GroupKind{}
+	for _, gk := range gkStrings {
+		gks = append(gks, schema.ParseGroupKind(gk))
+	}
+	return gks
+}
+
+func groupKindInList(gk schema.GroupKind, list []schema.GroupKind) bool {
+	for _, thisGK := range list {
+		if gk == thisGK {
+			return true
+		}
 	}
 	return false
 }
