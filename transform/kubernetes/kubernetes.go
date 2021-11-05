@@ -10,13 +10,26 @@ import (
 	transform "github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane-lib/transform/util"
 	"github.com/konveyor/crane-lib/transform/types"
+	"github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+var logger logrus.FieldLogger
+
 const (
+
+	// flags
+	NewNamespace                = "new-namespace"
+	AddAnnotations              = "add-annotations"
+	RemoveAnnotations           = "remove-annotations"
+	RegistryReplacement         = "registry-replacement"
+	ExtraWhiteouts              = "extra-whiteouts"
+	IncludeOnly                 = "include-only"
+	DisableWhiteoutOwned        = "disable-whiteout-owned"
+
 	containerImageUpdate        = "/spec/template/spec/containers/%v/image"
 	initContainerImageUpdate    = "/spec/template/spec/initContainers/%v/image"
 	podContainerImageUpdate     = "/spec/containers/%v/image"
@@ -99,33 +112,34 @@ type KubernetesTransformPlugin struct {
 	IncludeOnly          []schema.GroupKind
 }
 
-func (k KubernetesTransformPlugin) setOptionalFields(extras map[string]string) {
-	k.NewNamespace = extras["NewNamespace"]
-	if len(extras["AddAnnotations"]) > 0 {
-		k.AddAnnotations = transform.ParseOptionalFieldMapVal(extras["AddAnnotations"])
+func (k *KubernetesTransformPlugin) setOptionalFields(extras map[string]string) {
+	k.NewNamespace = extras[NewNamespace]
+	if len(extras[AddAnnotations]) > 0 {
+		k.AddAnnotations = transform.ParseOptionalFieldMapVal(extras[AddAnnotations])
 	}
-	if len(extras["RemoveAnnotations"]) > 0 {
-		k.RemoveAnnotations = transform.ParseOptionalFieldSliceVal(extras["RemoveAnnotations"])
+	if len(extras[RemoveAnnotations]) > 0 {
+		k.RemoveAnnotations = transform.ParseOptionalFieldSliceVal(extras[RemoveAnnotations])
 	}
-	if len(extras["RegistryReplacement"]) > 0 {
-		k.RegistryReplacement = transform.ParseOptionalFieldMapVal(extras["RegistryReplacement"])
+	if len(extras[RegistryReplacement]) > 0 {
+		k.RegistryReplacement = transform.ParseOptionalFieldMapVal(extras[RegistryReplacement])
 	}
-	if len(extras["ExtraWhiteouts"]) > 0 {
-		k.ExtraWhiteouts = parseGroupKindSlice(transform.ParseOptionalFieldSliceVal(extras["ExtraWhiteouts"]))
+	if len(extras[ExtraWhiteouts]) > 0 {
+		k.ExtraWhiteouts = parseGroupKindSlice(transform.ParseOptionalFieldSliceVal(extras[ExtraWhiteouts]))
 	}
-	if len(extras["IncludeOnly"]) > 0 {
-		k.IncludeOnly = parseGroupKindSlice(transform.ParseOptionalFieldSliceVal(extras["IncludeOnly"]))
+	if len(extras[IncludeOnly]) > 0 {
+		k.IncludeOnly = parseGroupKindSlice(transform.ParseOptionalFieldSliceVal(extras[IncludeOnly]))
 	}
-	if len(extras["DisableWhiteoutOwned"]) > 0 {
+	if len(extras[DisableWhiteoutOwned]) > 0 {
 		var err error
-		k.DisableWhiteoutOwned, err = strconv.ParseBool(extras["DisableWhiteoutOwned"])
+		k.DisableWhiteoutOwned, err = strconv.ParseBool(extras[DisableWhiteoutOwned])
 		if err != nil {
 			k.DisableWhiteoutOwned = false
 		}
 	}
 }
 
-func (k KubernetesTransformPlugin) Run(request transform.PluginRequest) (transform.PluginResponse, error) {
+func (k *KubernetesTransformPlugin) Run(request transform.PluginRequest) (transform.PluginResponse, error) {
+	logger = logrus.New()
 	k.setOptionalFields(request.Extras)
 	resp := transform.PluginResponse{}
 	// Set version in the future
@@ -140,7 +154,7 @@ func (k KubernetesTransformPlugin) Run(request transform.PluginRequest) (transfo
 
 }
 
-func (k KubernetesTransformPlugin) Metadata() transform.PluginMetadata {
+func (k *KubernetesTransformPlugin) Metadata() transform.PluginMetadata {
 	return transform.PluginMetadata{
 		Name:            "KubernetesPlugin",
 		Version:         "v1",
@@ -148,38 +162,38 @@ func (k KubernetesTransformPlugin) Metadata() transform.PluginMetadata {
 		ResponseVersion: []transform.Version{transform.V1},
 		OptionalFields:  []transform.OptionalFields{
 			{
-				FlagName: "AddAnnotations",
+				FlagName: AddAnnotations,
 				Help:     "Annotations to add to each resource",
 				Example:  "annotation1=value1,annotation2=value2",
 			},
 			{
-				FlagName: "RegistryReplacement",
+				FlagName: RegistryReplacement,
 				Help:     "Map of image registry paths to swap on transform, in the format original-registry1=target-registry1,original-registry2=target-registry2...",
 				Example:  "docker-registry.default.svc:5000=image-registry.openshift-image-registry.svc:5000,docker.io/foo=quay.io/bar",
 			},
 			{
-				FlagName: "NewNamespace",
-				Help:     "Change the resource namespace to NewNamespace",
+				FlagName: NewNamespace,
+				Help:     "Change the resource namespace to " + NewNamespace,
 				Example:  "destination-namespace",
 			},
 			{
-				FlagName: "RemoveAnnotations",
+				FlagName: RemoveAnnotations,
 				Help:     "Annotations to remove",
 				Example:  "annotation1,annotation2",
 			},
 			{
-				FlagName: "DisableWhiteoutOwned",
+				FlagName: DisableWhiteoutOwned,
 				Help:     "Disable whiting out owned pods and pod template resources",
 				Example:  "true",
 			},
 			{
-				FlagName: "ExtraWhiteouts",
-				Help:     "Additional resources to whiteout specified as a comma-separatedlist of GroupKind strings.",
+				FlagName: ExtraWhiteouts,
+				Help:     "Additional resources to whiteout specified as a comma-separated list of GroupKind strings.",
 				Example:  "Deployment.apps,Service,Route.route.openshift.io",
 			},
 			{
-				FlagName: "IncludeOnly",
-				Help:     "If specified, every resource not listed here will be a whiteout. ExtraWhiteouts is ignored when IncludeONly is specified. Specified as a comma-separatedlist of GroupKind strings.",
+				FlagName: IncludeOnly,
+				Help:     "If specified, every resource not listed here will be a whiteout. extra-whiteouts is ignored when include-only is specified. Specified as a comma-separated list of GroupKind strings.",
 				Example:  "Deployment.apps,Service,Route.route.openshift.io",
 			},
 		},
@@ -188,7 +202,7 @@ func (k KubernetesTransformPlugin) Metadata() transform.PluginMetadata {
 
 var _ transform.Plugin = &KubernetesTransformPlugin{}
 
-func (k KubernetesTransformPlugin) getWhiteOuts(obj unstructured.Unstructured) bool {
+func (k *KubernetesTransformPlugin) getWhiteOuts(obj unstructured.Unstructured) bool {
 	groupKind := obj.GroupVersionKind().GroupKind()
 	if len(k.IncludeOnly) > 0 {
 		if !groupKindInList(groupKind, k.IncludeOnly) {
@@ -229,7 +243,7 @@ func groupKindInList(gk schema.GroupKind, list []schema.GroupKind) bool {
 	return false
 }
 
-func (k KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Unstructured) (jsonpatch.Patch, error) {
+func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Unstructured) (jsonpatch.Patch, error) {
 
 	// Always attempt to add annotations for each thing.
 	jsonPatch := jsonpatch.Patch{}
