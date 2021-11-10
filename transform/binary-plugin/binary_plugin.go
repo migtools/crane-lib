@@ -68,17 +68,17 @@ func (b *BinaryPlugin) Run(request transform.PluginRequest) (transform.PluginRes
 	p := transform.PluginResponse{}
 
 	out, errBytes, err := b.commandRunner.Run(request, b.log)
-	if err != nil {
-		b.log.Errorf("error running the plugin command")
-		return p, fmt.Errorf("error running the plugin command: %v", err)
-	}
-
 	if len(errBytes) != 0 {
 		logs := strings.Split(string(errBytes), "\n")
 		for _, line := range logs {
 			b.log.Debug("Plugin Log line: ", line)
 		}
 	}
+	if err != nil {
+		b.log.Errorf("error running the plugin command")
+		return p, fmt.Errorf("error running the plugin command: %v", err)
+	}
+
 
 	err = json.Unmarshal(out, &p)
 	if err != nil {
@@ -136,12 +136,15 @@ func (b *binaryRunner) Metadata(log logrus.FieldLogger) ([]byte, []byte, error) 
 }
 
 func (b *binaryRunner) Run(request transform.PluginRequest, log logrus.FieldLogger) ([]byte, []byte, error) {
-	objJson, err := request.MarshalJSON()
+	unstructuredJson, err := request.MarshalJSON()
+	objMap := map[string]interface{}{}
+	json.Unmarshal(unstructuredJson, &objMap)
+	objMap["extras"] = request.Extras
+	objJson, err := json.Marshal(objMap)
 	if err != nil {
 		log.Errorf("unable to marshal unstructured Object")
 		return nil, nil, fmt.Errorf("unable to marshal unstructured Object: %s, err: %v", request, err)
 	}
-
 	command := cliContext.getCommand(b.pluginPath)
 
 	// set var to get the output
@@ -155,7 +158,7 @@ func (b *binaryRunner) Run(request transform.PluginRequest, log logrus.FieldLogg
 	err = command.Run()
 	if err != nil {
 		log.Errorf("unable to run the plugin binary")
-		return nil, nil, fmt.Errorf("unable to run the plugin binary, err: %v", err)
+		return nil, errorBytes.Bytes(), fmt.Errorf("unable to run the plugin binary, err: %v", err)
 	}
 	return out.Bytes(), errorBytes.Bytes(), nil
 }
