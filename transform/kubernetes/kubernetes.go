@@ -10,6 +10,7 @@ import (
 	transform "github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane-lib/transform/util"
 	"github.com/konveyor/crane-lib/transform/types"
+	"github.com/konveyor/crane-lib/version"
 	"github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -157,7 +158,7 @@ func (k *KubernetesTransformPlugin) Run(request transform.PluginRequest) (transf
 func (k *KubernetesTransformPlugin) Metadata() transform.PluginMetadata {
 	return transform.PluginMetadata{
 		Name:            "KubernetesPlugin",
-		Version:         "v1",
+		Version:         version.Version,
 		RequestVersion:  []transform.Version{transform.V1},
 		ResponseVersion: []transform.Version{transform.V1},
 		OptionalFields:  []transform.OptionalFields{
