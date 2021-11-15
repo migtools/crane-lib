@@ -3,6 +3,7 @@ module github.com/konveyor/crane-lib
 go 1.16
 
 require (
+	github.com/Luzifer/go-dhparam v1.1.0
 	github.com/evanphx/json-patch v4.11.0+incompatible
 	github.com/evanphx/json-patch/v5 v5.5.0
 	github.com/openshift/api v0.0.0-20210625082935-ad54d363d274
