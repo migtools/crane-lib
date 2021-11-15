@@ -2,6 +2,8 @@ package route
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
@@ -23,7 +25,8 @@ const (
 type RouteEndpointType string
 
 type RouteEndpoint struct {
-	hostname string
+	hostname  string
+	subdomain string
 
 	labels         map[string]string
 	port           int32
@@ -31,12 +34,13 @@ type RouteEndpoint struct {
 	namespacedName types.NamespacedName
 }
 
-func NewEndpoint(namespacedName types.NamespacedName, eType RouteEndpointType, labels map[string]string) endpoint.Endpoint {
+func NewEndpoint(namespacedName types.NamespacedName, eType RouteEndpointType, labels map[string]string, subdomain string) endpoint.Endpoint {
 	if eType != EndpointTypePassthrough && eType != EndpointTypeInsecureEdge {
 		panic("unsupported endpoint type for routes")
 	}
 	return &RouteEndpoint{
 		namespacedName: namespacedName,
+		subdomain:      subdomain,
 		labels:         labels,
 		endpointType:   eType,
 	}
@@ -157,6 +161,7 @@ func (r *RouteEndpoint) createRoute(c client.Client) error {
 			Labels:    r.Labels(),
 		},
 		Spec: routev1.RouteSpec{
+			Subdomain: r.subdomain,
 			Port: &routev1.RoutePort{
 				TargetPort: intstr.FromInt(int(r.Port())),
 			},
@@ -166,6 +171,20 @@ func (r *RouteEndpoint) createRoute(c client.Client) error {
 			},
 			TLS: termination,
 		},
+	}
+
+	// Ensure route prefix will not exceed 63 characters.
+	routePrefix := fmt.Sprintf("%s-%s", r.NamespacedName().Name, r.NamespacedName().Namespace)
+	if len(routePrefix) > 62 {
+		if r.subdomain == "" {
+			return fmt.Errorf("no subdomain specified and route hostname \"%s\" is more than 63 characters", routePrefix)
+		}
+
+		routePrefix := r.NamespacedName().Name + "-" + getMD5Hash(r.NamespacedName().Namespace)
+		if len(routePrefix) > 62 {
+			routePrefix = routePrefix[0:62]
+		}
+		route.Spec.Host = routePrefix + "." + r.subdomain
 	}
 
 	err := c.Create(context.TODO(), &route, &client.CreateOptions{})
@@ -242,4 +261,9 @@ func GetEndpointFromKubeObjects(c client.Client, obj types.NamespacedName) (endp
 	}
 
 	return r, nil
+}
+
+func getMD5Hash(s string) string {
+	hash := md5.Sum([]byte(s))
+	return hex.EncodeToString(hash[:])
 }

@@ -79,7 +79,7 @@ func Example_basicTransfer() {
 		types.NamespacedName{
 			Namespace: pvc.Name,
 			Name:      pvc.Namespace,
-		}, route.EndpointTypePassthrough, statetransfermeta.Labels)
+		}, route.EndpointTypePassthrough, statetransfermeta.Labels, "")
 	e, err := endpoint.Create(r, destClient)
 	if err != nil {
 		log.Fatal(err, "unable to create route endpoint")
