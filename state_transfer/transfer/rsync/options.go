@@ -166,7 +166,7 @@ func filterRsyncInfoOptions(options []string) (validatedOptions []string, err er
 
 func filterRsyncExtraOptions(options []string) (validatedOptions []string, err error) {
 	var errs []error
-	r := regexp.MustCompile(`^\-{1,2}([a-z]+\-)?[a-z]+$`)
+	r := regexp.MustCompile(`^\-{1,2}([a-z0-9]+\-){0,}?[a-z0-9]+$`)
 	for _, opt := range options {
 		if r.MatchString(opt) {
 			validatedOptions = append(validatedOptions, opt)
