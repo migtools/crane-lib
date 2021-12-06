@@ -150,15 +150,26 @@ func NewEndpoint(namespacedName types.NamespacedName, labels map[string]string) 
 	i := &IngressEndpoint{
 		namespacedName: namespacedName,
 		labels:         labels,
+		port:           6443,
+		// TODO: bring the subdomain as a param
+		hostname: namespacedName.Name + ".crane.dev",
 	}
-	i.setFields()
 	return i
 }
 
-func (i *IngressEndpoint) setFields() {
+func (i *IngressEndpoint) setFields(c client.Client) error {
 	i.port = 6443
 	// TODO: bring the subdomain from the caller of New
 	i.hostname = i.namespacedName.Name + ".crane.dev"
+
+	ing := &networkingv1.Ingress{}
+	err := c.Get(context.TODO(), i.NamespacedName(), ing)
+	if err != nil {
+		return err
+	}
+
+	i.labels = ing.Labels
+	return nil
 }
 
 // GetEndpointFromKubeObjects check if the required Ingress is created and healthy. It populates the fields
@@ -174,10 +185,7 @@ func GetEndpointFromKubeObjects(c client.Client, obj types.NamespacedName) (endp
 		return nil, fmt.Errorf("ingress %s not healthy", obj)
 	}
 
-	i.setFields()
-	if err != nil {
-		return nil, err
-	}
+	err = i.setFields(c)
 
 	return i, nil
 }
