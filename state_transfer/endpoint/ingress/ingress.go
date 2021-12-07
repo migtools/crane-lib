@@ -2,6 +2,8 @@ package ingress
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
@@ -16,8 +18,7 @@ import (
 )
 
 type IngressEndpoint struct {
-	hostname  string
-	subdomain string
+	hostname string
 
 	labels         map[string]string
 	port           int32
@@ -146,21 +147,28 @@ func (i *IngressEndpoint) createIngress(c client.Client) error {
 	return nil
 }
 
-func NewEndpoint(namespacedName types.NamespacedName, labels map[string]string) endpoint.Endpoint {
+func getMD5Hash(s string) string {
+	hash := md5.Sum([]byte(s))
+	return hex.EncodeToString(hash[:])
+}
+
+func NewEndpoint(namespacedName types.NamespacedName, labels map[string]string, subdomain string) endpoint.Endpoint {
+	ingressPrefix := fmt.Sprintf("%s-%s", namespacedName.Name, namespacedName.Namespace)
+	if len(ingressPrefix) > 62 {
+		ingressPrefix = fmt.Sprintf("%s-%s", namespacedName.Name, getMD5Hash(namespacedName.Namespace))
+	}
+
 	i := &IngressEndpoint{
 		namespacedName: namespacedName,
 		labels:         labels,
 		port:           6443,
-		// TODO: bring the subdomain as a param
-		hostname: namespacedName.Name + ".crane.dev",
+		hostname:       ingressPrefix + "." + subdomain,
 	}
 	return i
 }
 
 func (i *IngressEndpoint) setFields(c client.Client) error {
 	i.port = 6443
-	// TODO: bring the subdomain from the caller of New
-	i.hostname = i.namespacedName.Name + ".crane.dev"
 
 	ing := &networkingv1.Ingress{}
 	err := c.Get(context.TODO(), i.NamespacedName(), ing)
@@ -169,7 +177,11 @@ func (i *IngressEndpoint) setFields(c client.Client) error {
 	}
 
 	i.labels = ing.Labels
-	return nil
+	if len(ing.Spec.Rules) > 0 {
+		i.hostname = ing.Spec.Rules[0].Host
+		return nil
+	}
+	return fmt.Errorf("ingress %s does not have the right spec", i.namespacedName)
 }
 
 // GetEndpointFromKubeObjects check if the required Ingress is created and healthy. It populates the fields
