@@ -23,7 +23,6 @@ var logger logrus.FieldLogger
 const (
 
 	// flags
-	NewNamespace                = "new-namespace"
 	AddAnnotations              = "add-annotations"
 	RemoveAnnotations           = "remove-annotations"
 	RegistryReplacement         = "registry-replacement"
@@ -43,13 +42,6 @@ const (
 {"op": "remove", "path": "/metadata/annotations/%v"}`
 	removeAnnotationNext = `%v,
 {"op": "remove", "path": "/metadata/annotations/%v"}`
-
-	updateNamespaceString = `[
-{"op": "replace", "path": "/metadata/namespace", "value": "%v"}
-]`
-
-	updateRoleBindingSVCACCTNamspacestring = `%v
-{"op": "replace", "path": "/subjects/%v/namespace", "value": "%v"}`
 
 	opRemove = `[
 {"op": "remove", "path": "%v"}
@@ -107,14 +99,12 @@ type KubernetesTransformPlugin struct {
 	AddAnnotations       map[string]string
 	RemoveAnnotations    []string
 	RegistryReplacement  map[string]string
-	NewNamespace         string
 	DisableWhiteoutOwned bool
 	ExtraWhiteouts       []schema.GroupKind
 	IncludeOnly          []schema.GroupKind
 }
 
 func (k *KubernetesTransformPlugin) setOptionalFields(extras map[string]string) {
-	k.NewNamespace = extras[NewNamespace]
 	if len(extras[AddAnnotations]) > 0 {
 		k.AddAnnotations = transform.ParseOptionalFieldMapVal(extras[AddAnnotations])
 	}
@@ -171,11 +161,6 @@ func (k *KubernetesTransformPlugin) Metadata() transform.PluginMetadata {
 				FlagName: RegistryReplacement,
 				Help:     "Map of image registry paths to swap on transform, in the format original-registry1=target-registry1,original-registry2=target-registry2...",
 				Example:  "docker-registry.default.svc:5000=image-registry.openshift-image-registry.svc:5000,docker.io/foo=quay.io/bar",
-			},
-			{
-				FlagName: NewNamespace,
-				Help:     "Change the resource namespace to " + NewNamespace,
-				Example:  "destination-namespace",
 			},
 			{
 				FlagName: RemoveAnnotations,
@@ -262,13 +247,6 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 	}
 	if len(k.RemoveAnnotations) > 0 {
 		patches, err := removeAnnotations(k.RemoveAnnotations)
-		if err != nil {
-			return nil, err
-		}
-		jsonPatch = append(jsonPatch, patches...)
-	}
-	if len(k.NewNamespace) > 0 {
-		patches, err := updateNamespace(k.NewNamespace)
 		if err != nil {
 			return nil, err
 		}
@@ -434,32 +412,6 @@ func removePodFields() (jsonpatch.Patch, error) {
 	}
 	patches = append(patches, patch...)
 	return patches, nil
-}
-
-func updateNamespace(newNamespace string) (jsonpatch.Patch, error) {
-	patchJSON := fmt.Sprintf(updateNamespaceString, newNamespace)
-
-	patch, err := jsonpatch.DecodePatch([]byte(patchJSON))
-	if err != nil {
-		return nil, err
-	}
-	return patch, nil
-}
-
-func updateRoleBindingSVCACCTNamespace(newNamespace string, numberOfSubjects int) (jsonpatch.Patch, error) {
-	patchJSON := "["
-	for i := 0; i < numberOfSubjects; i++ {
-		if i != 0 {
-			patchJSON = fmt.Sprintf("%v,", patchJSON)
-		}
-		patchJSON = fmt.Sprintf(updateRoleBindingSVCACCTNamspacestring, patchJSON, i, newNamespace)
-	}
-
-	patch, err := jsonpatch.DecodePatch([]byte(patchJSON))
-	if err != nil {
-		return nil, err
-	}
-	return patch, nil
 }
 
 func removeServiceFields(obj unstructured.Unstructured) (jsonpatch.Patch, error) {

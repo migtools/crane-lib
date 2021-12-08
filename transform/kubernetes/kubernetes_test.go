@@ -21,7 +21,6 @@ func TestRun(t *testing.T) {
 		Object               *unstructured.Unstructured
 		AddAnnotations       map[string]string
 		RegistryReplacement  map[string]string
-		NewNamespace         string
 		DisableWhiteoutOwned bool
 		RemoveAnnotations    []string
 		ExtraWhiteouts       []schema.GroupKind
@@ -588,7 +587,6 @@ func TestRun(t *testing.T) {
 			var p transform.Plugin = &kubernetes.KubernetesTransformPlugin{
 				AddAnnotations:       c.AddAnnotations,
 				RegistryReplacement:  c.RegistryReplacement,
-				NewNamespace:         c.NewNamespace,
 				RemoveAnnotations:    c.RemoveAnnotations,
 				DisableWhiteoutOwned: c.DisableWhiteoutOwned,
 				ExtraWhiteouts:       c.ExtraWhiteouts,
