@@ -184,6 +184,9 @@ func (r *RouteEndpoint) createRoute(c client.Client) error {
 		if len(routePrefix) > 62 {
 			routePrefix = routePrefix[0:62]
 		}
+	}
+
+	if r.subdomain != "" {
 		route.Spec.Host = routePrefix + "." + r.subdomain
 	}
 
