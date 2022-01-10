@@ -180,7 +180,7 @@ func (r *RouteEndpoint) createRoute(c client.Client) error {
 			return fmt.Errorf("no subdomain specified and route hostname \"%s\" is more than 63 characters", routePrefix)
 		}
 
-		routePrefix := r.NamespacedName().Name + "-" + getMD5Hash(r.NamespacedName().Namespace)
+		routePrefix = r.NamespacedName().Name + "-" + getMD5Hash(r.NamespacedName().Namespace)
 		if len(routePrefix) > 62 {
 			routePrefix = routePrefix[0:62]
 		}
