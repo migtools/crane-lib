@@ -438,15 +438,28 @@ func createOpenVPNClient(tunnel *Tunnel) error {
 
 	dstService := &corev1.Service{}
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 40; i++ {
 		err = tunnel.DstClient.Get(context.TODO(), client.ObjectKey{Name: serviceName, Namespace: tunnel.Options.Namespace}, dstService)
 		if err != nil {
 			return err
 		}
-		if dstService.Status.LoadBalancer.Ingress != nil {
+		if len(dstService.Status.LoadBalancer.Ingress) > 0 {
 			break
 		}
+		if i == 39 {
+			return fmt.Errorf("Unable to determine ingress address on destination cluster.")
+		}
 		time.Sleep(time.Second * 3)
+
+	}
+
+	var endpoint string
+	if dstService.Status.LoadBalancer.Ingress[0].Hostname != "" {
+		endpoint = dstService.Status.LoadBalancer.Ingress[0].Hostname
+	} else if dstService.Status.LoadBalancer.Ingress[0].IP != "" {
+		endpoint = dstService.Status.LoadBalancer.Ingress[0].IP
+	} else {
+		return fmt.Errorf("The service endpoint has no hostname or IP address associated with it.")
 	}
 
 	configdata := openvpnConfigData{
@@ -454,7 +467,7 @@ func createOpenVPNClient(tunnel *Tunnel) error {
 		CA:       tunnel.Options.CACrt.String(),
 		Key:      tunnel.Options.ClientKey.String(),
 		Crt:      tunnel.Options.ClientCrt.String(),
-		Endpoint: dstService.Status.LoadBalancer.Ingress[0].Hostname,
+		Endpoint: endpoint,
 	}
 
 	err = openvpnConfTemplate.Execute(&openvpnConf, configdata)
