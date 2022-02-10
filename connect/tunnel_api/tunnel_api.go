@@ -38,6 +38,7 @@ cipher AES-256-GCM
 dev tun
 proto tcp4
 remote {{ $.Endpoint }} {{ $.Port }} tcp-client
+{{ $.Proxy }}
 <ca>
 {{ .CA }}
 </ca>
@@ -62,7 +63,8 @@ cert /certs/server.crt
 key /certs/server.key
 `
 	serviceName   = "openvpn"
-	serviceConfig = "openv1pn-conf"
+	serviceConfig = "openvpn-conf"
+	proxyConfig   = "openvpn-proxy-creds"
 	keySize       = 2048
 )
 
@@ -87,6 +89,10 @@ type Options struct {
 	ClientImage string
 	ServerImage string
 	ServerPort  int32
+	ProxyHost   string
+	ProxyPort   string
+	ProxyUser   string
+	ProxyPass   string
 }
 
 type openvpnConfigData struct {
@@ -95,6 +101,7 @@ type openvpnConfigData struct {
 	Crt      string
 	Key      string
 	Endpoint string
+	Proxy    string
 }
 
 func Openvpn(tunnel Tunnel) error {
@@ -462,12 +469,20 @@ func createOpenVPNClient(tunnel *Tunnel) error {
 		return fmt.Errorf("The service endpoint has no hostname or IP address associated with it.")
 	}
 
+	var proxy string
+	if tunnel.Options.ProxyHost != "" && tunnel.Options.ProxyUser != "" && tunnel.Options.ProxyPass != "" {
+		proxy = fmt.Sprintf("http-proxy %s %s /proxy.secret basic", tunnel.Options.ProxyHost, tunnel.Options.ProxyPort)
+	} else if tunnel.Options.ProxyHost != "" {
+		proxy = fmt.Sprintf("http-proxy %s %s", tunnel.Options.ProxyHost, tunnel.Options.ProxyPort)
+	}
+
 	configdata := openvpnConfigData{
 		Port:     strconv.Itoa(int(tunnel.Options.ServerPort)),
 		CA:       tunnel.Options.CACrt.String(),
 		Key:      tunnel.Options.ClientKey.String(),
 		Crt:      tunnel.Options.ClientCrt.String(),
 		Endpoint: endpoint,
+		Proxy:    proxy,
 	}
 
 	err = openvpnConfTemplate.Execute(&openvpnConf, configdata)
@@ -475,13 +490,24 @@ func createOpenVPNClient(tunnel *Tunnel) error {
 		return err
 	}
 
-	secret := &corev1.Secret{
+	configSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceName,
 			Namespace: *&tunnel.Options.Namespace,
 		},
 		Data: map[string][]byte{
 			"openvpn.conf": openvpnConf.Bytes(),
+		},
+	}
+
+	proxySecretString := fmt.Sprintf("%s\n%s", tunnel.Options.ProxyUser, tunnel.Options.ProxyPass)
+	proxySecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      proxyConfig,
+			Namespace: *&tunnel.Options.Namespace,
+		},
+		Data: map[string][]byte{
+			"proxy.secret": []byte(proxySecretString),
 		},
 	}
 
@@ -504,6 +530,27 @@ func createOpenVPNClient(tunnel *Tunnel) error {
 			MountPath: "/openvpn.conf",
 			SubPath:   "openvpn.conf",
 		},
+	}
+
+	if tunnel.Options.ProxyUser != "" && tunnel.Options.ProxyPass != "" {
+		proxyVolume := v1.Volume{
+			Name: proxyConfig,
+			VolumeSource: v1.VolumeSource{
+				Secret: &v1.SecretVolumeSource{
+					DefaultMode: &mode,
+					SecretName:  proxyConfig,
+				},
+			},
+		}
+
+		proxyVolumeMount := v1.VolumeMount{
+			Name:      proxyConfig,
+			MountPath: "/proxy.secret",
+			SubPath:   "proxy.secret",
+		}
+
+		volumes = append(volumes, proxyVolume)
+		volumeMounts = append(volumeMounts, proxyVolumeMount)
 	}
 
 	trueBool := true
@@ -562,11 +609,16 @@ func createOpenVPNClient(tunnel *Tunnel) error {
 	if err != nil {
 		return err
 	}
-	err = tunnel.SrcClient.Create(context.TODO(), secret, &client.CreateOptions{})
+	err = tunnel.SrcClient.Create(context.TODO(), configSecret, &client.CreateOptions{})
 	if err != nil {
 		return err
 	}
-
+	if tunnel.Options.ProxyUser != "" && tunnel.Options.ProxyPass != "" {
+		err = tunnel.SrcClient.Create(context.TODO(), proxySecret, &client.CreateOptions{})
+		if err != nil {
+			return err
+		}
+	}
 	if tunnel.SrcVersionMinor < 9 {
 		deploymentBeta := &appsv1beta1.Deployment{
 			ObjectMeta: deploymentMeta,
