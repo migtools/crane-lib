@@ -265,10 +265,16 @@ func createOpenVPNServer(tunnel *Tunnel) error {
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
 				{
-					Name:       "proxy",
+					Name:       "api",
 					Protocol:   corev1.ProtocolTCP,
 					Port:       int32(8443),
 					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: 8443},
+				},
+				{
+					Name:       "image-registry",
+					Protocol:   corev1.ProtocolTCP,
+					Port:       int32(5000),
+					TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: 5000},
 				},
 			},
 			Selector: deploymentLabels,
@@ -338,12 +344,21 @@ func createOpenVPNServer(tunnel *Tunnel) error {
 			SecurityContext: &corev1.SecurityContext{Privileged: &trueBool},
 		},
 		{
-			Name:  "socat",
+			Name:  "api-socat",
 			Image: *&tunnel.Options.ServerImage,
 			Command: []string{
 				"bash",
 				"-c",
 				"socat TCP-LISTEN:8443,fork,reuseaddr TCP:192.168.123.6:8443",
+			},
+		},
+		{
+			Name:  "image-registry-socat",
+			Image: *&tunnel.Options.ServerImage,
+			Command: []string{
+				"bash",
+				"-c",
+				"socat TCP-LISTEN:5000,fork,reuseaddr TCP:192.168.123.6:5000",
 			},
 		},
 	}
@@ -559,6 +574,13 @@ func createOpenVPNClient(tunnel *Tunnel) error {
 	}
 
 	trueBool := true
+	var registrySvc string
+	if tunnel.SrcVersionMinor <= 11 {
+		registrySvc = "docker-registry.default.svc.cluster.local:5000"
+	} else {
+		registrySvc = "image-registry.openshift-image-registry.svc.cluster.local:5000"
+	}
+
 	containers := []corev1.Container{
 		{
 			Name:  serviceName,
@@ -572,12 +594,21 @@ func createOpenVPNClient(tunnel *Tunnel) error {
 			SecurityContext: &corev1.SecurityContext{Privileged: &trueBool},
 		},
 		{
-			Name:  "socat",
+			Name:  "api-socat",
 			Image: *&tunnel.Options.ServerImage,
 			Command: []string{
 				"bash",
 				"-c",
 				"socat TCP-LISTEN:8443,fork,reuseaddr TCP:${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT_HTTPS}",
+			},
+		},
+		{
+			Name:  "image-registry-socat",
+			Image: *&tunnel.Options.ServerImage,
+			Command: []string{
+				"bash",
+				"-c",
+				"socat TCP-LISTEN:5000,fork,reuseaddr TCP:" + registrySvc,
 			},
 		},
 	}
