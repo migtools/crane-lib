@@ -470,6 +470,11 @@ func createOpenVPNClient(tunnel *Tunnel) error {
 	}
 
 	var proxy string
+
+	if tunnel.Options.ProxyPort == "" {
+		tunnel.Options.ProxyPort = "3128"
+	}
+
 	if tunnel.Options.ProxyHost != "" && tunnel.Options.ProxyUser != "" && tunnel.Options.ProxyPass != "" {
 		proxy = fmt.Sprintf("http-proxy %s %s /proxy.secret basic", tunnel.Options.ProxyHost, tunnel.Options.ProxyPort)
 	} else if tunnel.Options.ProxyHost != "" {
