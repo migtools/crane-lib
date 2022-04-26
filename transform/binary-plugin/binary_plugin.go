@@ -67,18 +67,27 @@ func contain(validVersion transform.Version, versions []transform.Version) bool 
 func (b *BinaryPlugin) Run(request transform.PluginRequest) (transform.PluginResponse, error) {
 	p := transform.PluginResponse{}
 
-	out, errBytes, err := b.commandRunner.Run(request, b.log)
-	if len(errBytes) != 0 {
-		logs := strings.Split(string(errBytes), "\n")
-		for _, line := range logs {
-			b.log.Debug("Plugin Log line: ", line)
-		}
-	}
+	out, logBytes, err := b.commandRunner.Run(request, b.log)
 	if err != nil {
 		b.log.Errorf("error running the plugin command")
 		return p, fmt.Errorf("error running the plugin command: %v", err)
 	}
-
+	if len(logBytes) != 0 {
+		logs := strings.Split(string(logBytes), "\n")
+		//TODO: we should be able to find what type of log, warning, debug, error, info and based on debug level filter them out
+		for _, line := range logs {
+			switch {
+			case strings.Contains(line, "level=info"):
+				b.log.Infof("Plugin: %v -- %v ", b.pluginMetadata.Name, line)
+			case strings.Contains(line, "level=warning"):
+				b.log.Warnf("Plugin: %v -- %v ", b.pluginMetadata.Name, line)
+			case strings.Contains(line, "level=error"):
+				b.log.Errorf("Plugin: %v -- %v ", b.pluginMetadata.Name, line)
+			case strings.Contains(line, "level=debug"):
+				b.log.Debugf("Plugin: %v -- %v ", b.pluginMetadata.Name, line)
+			}
+		}
+	}
 
 	err = json.Unmarshal(out, &p)
 	if err != nil {
