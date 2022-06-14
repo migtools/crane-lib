@@ -8,8 +8,8 @@ import (
 
 	jsonpatch "github.com/evanphx/json-patch"
 	transform "github.com/konveyor/crane-lib/transform"
-	"github.com/konveyor/crane-lib/transform/util"
 	"github.com/konveyor/crane-lib/transform/types"
+	"github.com/konveyor/crane-lib/transform/util"
 	"github.com/konveyor/crane-lib/version"
 	"github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
@@ -21,15 +21,17 @@ import (
 var logger logrus.FieldLogger
 
 const (
+	AddAnnotationsFlag       = "add-annotations"
+	RemoveAnnotationsFlag    = "remove-annotations"
+	RegistryReplacementFlag  = "registry-replacement"
+	ExtraWhiteoutsFlag       = "extra-whiteouts"
+	IncludeOnlyFlag          = "include-only"
+	DisableWhiteoutOwnedFlag = "disable-whiteout-owned"
+	StripDefaultRBACFlag     = "strip-default-rbac"
+	StripDefaultCABundleFlag = "strip-default-cabundle"
+)
 
-	// flags
-	AddAnnotations              = "add-annotations"
-	RemoveAnnotations           = "remove-annotations"
-	RegistryReplacement         = "registry-replacement"
-	ExtraWhiteouts              = "extra-whiteouts"
-	IncludeOnly                 = "include-only"
-	DisableWhiteoutOwned        = "disable-whiteout-owned"
-
+const (
 	containerImageUpdate        = "/spec/template/spec/containers/%v/image"
 	initContainerImageUpdate    = "/spec/template/spec/initContainers/%v/image"
 	podContainerImageUpdate     = "/spec/containers/%v/image"
@@ -55,39 +57,28 @@ const (
 	updateExternalIPs    = "/spec/externalIPs"
 	updateNodePortString = "/spec/ports/%v/nodePort"
 )
+
 var fieldsToStrip = [...][]string{
-		[]string{metadata, "uid"},
-		[]string{metadata, "selfLink"},
-		[]string{metadata, "resourceVersion"},
-		[]string{metadata, "creationTimestamp"},
-		[]string{metadata, "generation"},
-		[]string{"status"},
-	}
-
-var endpointGK = schema.GroupKind{
-	Group: "",
-	Kind:  "Endpoints",
+	{metadata, "uid"},
+	{metadata, "selfLink"},
+	{metadata, "resourceVersion"},
+	{metadata, "creationTimestamp"},
+	{metadata, "generation"},
+	{metadata, "managedFields"},
+	{"status"},
 }
 
-var endpointSliceGK = schema.GroupKind{
-	Group: "discovery.k8s.io",
-	Kind:  "EndpointSlice",
-}
-
-var pvcGK = schema.GroupKind{
-	Group: "",
-	Kind:  "PersistentVolumeClaim",
-}
-
-var podGK = schema.GroupKind{
-	Group: "",
-	Kind:  "Pod",
-}
-
-var serviceGK = schema.GroupKind{
-	Group: "",
-	Kind:  "Service",
-}
+// GroupKinds we are likely to interact with
+var (
+	endpointGK       = schema.GroupKind{Group: "", Kind: "Endpoints"}
+	endpointSliceGK  = schema.GroupKind{Group: "discovery.k8s.io", Kind: "EndpointSlice"}
+	pvcGK            = schema.GroupKind{Group: "", Kind: "PersistentVolumeClaim"}
+	podGK            = schema.GroupKind{Group: "", Kind: "Pod"}
+	serviceGK        = schema.GroupKind{Group: "", Kind: "Service"}
+	secretGK         = schema.GroupKind{Group: "", Kind: "Secret"}
+	serviceAccountGK = schema.GroupKind{Group: "", Kind: "ServiceAccount"}
+	configMapGK      = schema.GroupKind{Group: "", Kind: "ConfigMap"}
+)
 
 var gksToWhiteout = []schema.GroupKind{
 	endpointGK,
@@ -102,31 +93,8 @@ type KubernetesTransformPlugin struct {
 	DisableWhiteoutOwned bool
 	ExtraWhiteouts       []schema.GroupKind
 	IncludeOnly          []schema.GroupKind
-}
-
-func (k *KubernetesTransformPlugin) setOptionalFields(extras map[string]string) {
-	if len(extras[AddAnnotations]) > 0 {
-		k.AddAnnotations = transform.ParseOptionalFieldMapVal(extras[AddAnnotations])
-	}
-	if len(extras[RemoveAnnotations]) > 0 {
-		k.RemoveAnnotations = transform.ParseOptionalFieldSliceVal(extras[RemoveAnnotations])
-	}
-	if len(extras[RegistryReplacement]) > 0 {
-		k.RegistryReplacement = transform.ParseOptionalFieldMapVal(extras[RegistryReplacement])
-	}
-	if len(extras[ExtraWhiteouts]) > 0 {
-		k.ExtraWhiteouts = parseGroupKindSlice(transform.ParseOptionalFieldSliceVal(extras[ExtraWhiteouts]))
-	}
-	if len(extras[IncludeOnly]) > 0 {
-		k.IncludeOnly = parseGroupKindSlice(transform.ParseOptionalFieldSliceVal(extras[IncludeOnly]))
-	}
-	if len(extras[DisableWhiteoutOwned]) > 0 {
-		var err error
-		k.DisableWhiteoutOwned, err = strconv.ParseBool(extras[DisableWhiteoutOwned])
-		if err != nil {
-			k.DisableWhiteoutOwned = false
-		}
-	}
+	StripDefaultRBAC     bool
+	StripDefaultCABundle bool
 }
 
 func (k *KubernetesTransformPlugin) Run(request transform.PluginRequest) (transform.PluginResponse, error) {
@@ -151,38 +119,83 @@ func (k *KubernetesTransformPlugin) Metadata() transform.PluginMetadata {
 		Version:         version.Version,
 		RequestVersion:  []transform.Version{transform.V1},
 		ResponseVersion: []transform.Version{transform.V1},
-		OptionalFields:  []transform.OptionalFields{
+		OptionalFields: []transform.OptionalFields{
 			{
-				FlagName: AddAnnotations,
+				FlagName: AddAnnotationsFlag,
 				Help:     "Annotations to add to each resource",
 				Example:  "annotation1=value1,annotation2=value2",
 			},
 			{
-				FlagName: RegistryReplacement,
+				FlagName: RegistryReplacementFlag,
 				Help:     "Map of image registry paths to swap on transform, in the format original-registry1=target-registry1,original-registry2=target-registry2...",
 				Example:  "docker-registry.default.svc:5000=image-registry.openshift-image-registry.svc:5000,docker.io/foo=quay.io/bar",
 			},
 			{
-				FlagName: RemoveAnnotations,
+				FlagName: RemoveAnnotationsFlag,
 				Help:     "Annotations to remove",
 				Example:  "annotation1,annotation2",
 			},
 			{
-				FlagName: DisableWhiteoutOwned,
+				FlagName: DisableWhiteoutOwnedFlag,
 				Help:     "Disable whiting out owned pods and pod template resources",
 				Example:  "true",
 			},
 			{
-				FlagName: ExtraWhiteouts,
+				FlagName: ExtraWhiteoutsFlag,
 				Help:     "Additional resources to whiteout specified as a comma-separated list of GroupKind strings.",
 				Example:  "Deployment.apps,Service,Route.route.openshift.io",
 			},
 			{
-				FlagName: IncludeOnly,
+				FlagName: IncludeOnlyFlag,
 				Help:     "If specified, every resource not listed here will be a whiteout. extra-whiteouts is ignored when include-only is specified. Specified as a comma-separated list of GroupKind strings.",
 				Example:  "Deployment.apps,Service,Route.route.openshift.io",
 			},
+			{
+				FlagName: StripDefaultRBACFlag,
+				Help:     "Whether to strip default RBAC including default serviceAccount (default: true)",
+				Example:  "true",
+			},
+			{
+				FlagName: StripDefaultCABundleFlag,
+				Help:     "Whether to strip default CA Bundle (default: true)",
+				Example:  "true",
+			},
 		},
+	}
+}
+
+func (k *KubernetesTransformPlugin) setOptionalFields(extras map[string]string) {
+	// first set defaults as necessary
+	k.StripDefaultRBAC = true
+	k.StripDefaultCABundle = true
+
+	if len(extras[AddAnnotationsFlag]) > 0 {
+		k.AddAnnotations = transform.ParseOptionalFieldMapVal(extras[AddAnnotationsFlag])
+	}
+	if len(extras[RemoveAnnotationsFlag]) > 0 {
+		k.RemoveAnnotations = transform.ParseOptionalFieldSliceVal(extras[RemoveAnnotationsFlag])
+	}
+	if len(extras[RegistryReplacementFlag]) > 0 {
+		k.RegistryReplacement = transform.ParseOptionalFieldMapVal(extras[RegistryReplacementFlag])
+	}
+	if len(extras[ExtraWhiteoutsFlag]) > 0 {
+		k.ExtraWhiteouts = parseGroupKindSlice(transform.ParseOptionalFieldSliceVal(extras[ExtraWhiteoutsFlag]))
+	}
+	if len(extras[IncludeOnlyFlag]) > 0 {
+		k.IncludeOnly = parseGroupKindSlice(transform.ParseOptionalFieldSliceVal(extras[IncludeOnlyFlag]))
+	}
+	if len(extras[DisableWhiteoutOwnedFlag]) > 0 {
+		var err error
+		k.DisableWhiteoutOwned, err = strconv.ParseBool(extras[DisableWhiteoutOwnedFlag])
+		if err != nil {
+			k.DisableWhiteoutOwned = false
+		}
+	}
+	if len(extras[StripDefaultRBACFlag]) > 0 {
+		k.StripDefaultRBAC, _ = strconv.ParseBool(extras[StripDefaultRBACFlag])
+	}
+	if len(extras[StripDefaultCABundleFlag]) > 0 {
+		k.StripDefaultCABundle, _ = strconv.ParseBool(extras[StripDefaultCABundleFlag])
 	}
 }
 
@@ -205,10 +218,24 @@ func (k *KubernetesTransformPlugin) getWhiteOuts(obj unstructured.Unstructured) 
 	if k.DisableWhiteoutOwned {
 		return false
 	}
-	_, isPodSpecable := types.IsPodSpecable(obj)
-	if (groupKind == podGK || isPodSpecable) && len(obj.GetOwnerReferences()) > 0 {
+	if len(obj.GetOwnerReferences()) > 0 {
 		return true
 	}
+	// drop the default serviceaccount
+	if groupKind == serviceAccountGK && obj.GetName() == "default" && k.StripDefaultRBAC {
+		return true
+	}
+	// drop any Secrets belonging to default serviceaccount
+	if groupKind == secretGK && k.StripDefaultRBAC {
+		if sa, ok := obj.GetAnnotations()["kubernetes.io/service-account.name"]; ok && sa == "default" {
+			return true
+		}
+	}
+	// drop kube-root-ca.crt configmap
+	if groupKind == configMapGK && obj.GetName() == "kube-root-ca.crt" && k.StripDefaultCABundle {
+		return true
+	}
+
 	return false
 }
 
@@ -335,6 +362,7 @@ func interfaceSlice(inStrings []string) []interface{} {
 	}
 	return outSlice
 }
+
 func stripFields(obj unstructured.Unstructured) (jsonpatch.Patch, error) {
 	var patches jsonpatch.Patch
 	for _, field := range fieldsToStrip {
