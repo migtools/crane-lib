@@ -2,7 +2,9 @@ package kubernetes
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -11,7 +13,10 @@ import (
 	"github.com/konveyor/crane-lib/transform/types"
 	"github.com/konveyor/crane-lib/transform/util"
 	"github.com/konveyor/crane-lib/version"
+	ocpappsv1 "github.com/openshift/api/apps/v1"
 	"github.com/sirupsen/logrus"
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -29,10 +34,16 @@ const (
 	DisableWhiteoutOwnedFlag = "disable-whiteout-owned"
 	StripDefaultRBACFlag     = "strip-default-rbac"
 	StripDefaultCABundleFlag = "strip-default-cabundle"
+	PVCRenameMap             = "pvc-rename-map"
 )
 
 const (
 	containerImageUpdate        = "/spec/template/spec/containers/%v/image"
+	dns1123LabelFmt             = "[a-z0-9]([-a-z0-9]*[a-z0-9])?"
+	dns1123SubdomainFmt         = dns1123LabelFmt + "(\\." + dns1123LabelFmt + ")*"
+	dns1123SubdomainMaxLength   = 253
+	dns1123SubdomainErrorMsg    = "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character"
+	dns1123SubdomainErrorMaxLen = "must be no more than 253 characters"
 	initContainerImageUpdate    = "/spec/template/spec/initContainers/%v/image"
 	podContainerImageUpdate     = "/spec/containers/%v/image"
 	podInitContainerImageUpdate = "/spec/initContainers/%v/image"
@@ -48,14 +59,21 @@ const (
 	opRemove = `[
 {"op": "remove", "path": "%v"}
 ]`
-	metadata             = "metadata"
-	podNodeName          = "/spec/nodeName"
-	podNodeSelector      = "/spec/nodeSelector"
-	podPriority          = "/spec/priority"
-	updateClusterIP      = "/spec/clusterIP"
-	updateClusterIPs     = "/spec/clusterIPs"
-	updateExternalIPs    = "/spec/externalIPs"
-	updateNodePortString = "/spec/ports/%v/nodePort"
+	opReplace = `[
+{"op": "replace", "path": "%v", "value": "%v"}
+]`
+	metadata              = "metadata"
+	podNodeName           = "/spec/nodeName"
+	podNodeSelector       = "/spec/nodeSelector"
+	podPriority           = "/spec/priority"
+	pvcPathCronJobString  = "/spec/jobTemplate/spec/template/spec/volumes/%d/persistentVolumeClaim/claimName"
+	pvcPathPodString      = "/spec/volumes/%d/persistentVolumeClaim/claimName"
+	pvcPathGenericString  = "/spec/template/spec/volumes/%d/persistentVolumeClaim/claimName"
+	pvcPathTemplateString = "/spec/volumeClaimTemplates/%d/metadata/name"
+	updateClusterIP       = "/spec/clusterIP"
+	updateClusterIPs      = "/spec/clusterIPs"
+	updateExternalIPs     = "/spec/externalIPs"
+	updateNodePortString  = "/spec/ports/%v/nodePort"
 )
 
 var fieldsToStrip = [...][]string{
@@ -70,14 +88,22 @@ var fieldsToStrip = [...][]string{
 
 // GroupKinds we are likely to interact with
 var (
-	endpointGK       = schema.GroupKind{Group: "", Kind: "Endpoints"}
-	endpointSliceGK  = schema.GroupKind{Group: "discovery.k8s.io", Kind: "EndpointSlice"}
-	pvcGK            = schema.GroupKind{Group: "", Kind: "PersistentVolumeClaim"}
-	podGK            = schema.GroupKind{Group: "", Kind: "Pod"}
-	serviceGK        = schema.GroupKind{Group: "", Kind: "Service"}
-	secretGK         = schema.GroupKind{Group: "", Kind: "Secret"}
-	serviceAccountGK = schema.GroupKind{Group: "", Kind: "ServiceAccount"}
-	configMapGK      = schema.GroupKind{Group: "", Kind: "ConfigMap"}
+	configMapGK             = schema.GroupKind{Group: "", Kind: "ConfigMap"}
+	cronJobGK               = schema.GroupKind{Group: "batch", Kind: "CronJob"}
+	daemonSetGK             = schema.GroupKind{Group: "apps", Kind: "DaemonSet"}
+	deploymentConfigGK      = schema.GroupKind{Group: "apps.openshift.io", Kind: "DeploymentConfig"}
+	deploymentGK            = schema.GroupKind{Group: "apps", Kind: "Deployment"}
+	endpointGK              = schema.GroupKind{Group: "", Kind: "Endpoints"}
+	endpointSliceGK         = schema.GroupKind{Group: "discovery.k8s.io", Kind: "EndpointSlice"}
+	jobGK                   = schema.GroupKind{Group: "batch", Kind: "Job"}
+	pvcGK                   = schema.GroupKind{Group: "", Kind: "PersistentVolumeClaim"}
+	podGK                   = schema.GroupKind{Group: "", Kind: "Pod"}
+	replicaSetGK            = schema.GroupKind{Group: "apps", Kind: "ReplicaSet"}
+	replicationControllerGK = schema.GroupKind{Group: "", Kind: "ReplicationController"}
+	serviceGK               = schema.GroupKind{Group: "", Kind: "Service"}
+	secretGK                = schema.GroupKind{Group: "", Kind: "Secret"}
+	serviceAccountGK        = schema.GroupKind{Group: "", Kind: "ServiceAccount"}
+	statefulSetGK           = schema.GroupKind{Group: "apps", Kind: "StatefulSet"}
 )
 
 var gksToWhiteout = []schema.GroupKind{
@@ -95,18 +121,21 @@ type KubernetesTransformPlugin struct {
 	IncludeOnly          []schema.GroupKind
 	StripDefaultRBAC     bool
 	StripDefaultCABundle bool
+	PVCRenameMap         map[string]string
 }
 
 func (k *KubernetesTransformPlugin) Run(request transform.PluginRequest) (transform.PluginResponse, error) {
 	logger = logrus.New()
-	k.setOptionalFields(request.Extras)
 	resp := transform.PluginResponse{}
+	err := k.setOptionalFields(request.Extras)
+	if err != nil {
+		return resp, err
+	}
 	// Set version in the future
 	resp.Version = string(transform.V1)
-	var err error
 	resp.IsWhiteOut = k.getWhiteOuts(request.Unstructured)
 	if resp.IsWhiteOut {
-		return resp, err
+		return resp, nil
 	}
 	resp.Patches, err = k.getKubernetesTransforms(request.Unstructured)
 	return resp, err
@@ -160,11 +189,16 @@ func (k *KubernetesTransformPlugin) Metadata() transform.PluginMetadata {
 				Help:     "Whether to strip default CA Bundle (default: true)",
 				Example:  "true",
 			},
+			{
+				FlagName: PVCRenameMap,
+				Help:     "A comma-separated list of colon separated pvc renames.",
+				Example:  "old-pvc1-name:new-pvc1-name,old-pvc2-name:new-pvc2-name",
+			},
 		},
 	}
 }
 
-func (k *KubernetesTransformPlugin) setOptionalFields(extras map[string]string) {
+func (k *KubernetesTransformPlugin) setOptionalFields(extras map[string]string) error {
 	// first set defaults as necessary
 	k.StripDefaultRBAC = true
 	k.StripDefaultCABundle = true
@@ -197,6 +231,23 @@ func (k *KubernetesTransformPlugin) setOptionalFields(extras map[string]string) 
 	if len(extras[StripDefaultCABundleFlag]) > 0 {
 		k.StripDefaultCABundle, _ = strconv.ParseBool(extras[StripDefaultCABundleFlag])
 	}
+	if len(extras[PVCRenameMap]) > 0 {
+		pvcMap := map[string]string{}
+		pvcRenameList := strings.Split(extras[PVCRenameMap], ",")
+		var dns1123SubdomainRegexp = regexp.MustCompile("^" + dns1123SubdomainFmt + "$")
+
+		for _, pair := range pvcRenameList {
+			split := strings.Split(pair, ":")
+			if len(split[0]) > dns1123SubdomainMaxLength || len(split[1]) > dns1123SubdomainMaxLength {
+				return errors.New("Invalid PVC remap: " + pair + ", " + dns1123SubdomainErrorMaxLen)
+			} else if !dns1123SubdomainRegexp.MatchString(split[0]) || !dns1123SubdomainRegexp.MatchString(split[1]) {
+				return errors.New("Invalid PVC remap: " + pair + ", " + dns1123SubdomainErrorMsg)
+			}
+			pvcMap[split[0]] = split[1]
+		}
+		k.PVCRenameMap = pvcMap
+	}
+	return nil
 }
 
 var _ transform.Plugin = &KubernetesTransformPlugin{}
@@ -257,7 +308,6 @@ func groupKindInList(gk schema.GroupKind, list []schema.GroupKind) bool {
 }
 
 func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Unstructured) (jsonpatch.Patch, error) {
-
 	// Always attempt to add annotations for each thing.
 	jsonPatch := jsonpatch.Patch{}
 	patches, err := stripFields(obj)
@@ -279,8 +329,140 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 		}
 		jsonPatch = append(jsonPatch, patches...)
 	}
+	if cronJobGK == obj.GetObjectKind().GroupVersionKind().GroupKind() {
+		js, err := obj.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		cronJob := &batchv1.CronJob{}
+		err = json.Unmarshal(js, cronJob)
+
+		patches, err := renamePVCs(cronJob.Spec.JobTemplate.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathCronJobString)
+		if err != nil {
+			return nil, err
+		}
+		jsonPatch = append(jsonPatch, patches...)
+	}
+
 	if podGK == obj.GetObjectKind().GroupVersionKind().GroupKind() {
+		js, err := obj.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		pod := &v1.Pod{}
+		err = json.Unmarshal(js, pod)
+
 		patches, err := removePodFields()
+		if err != nil {
+			return nil, err
+		}
+		jsonPatch = append(jsonPatch, patches...)
+
+		patches, err = renamePVCs(pod.Spec.Volumes, k.PVCRenameMap, pvcPathPodString)
+		if err != nil {
+			return nil, err
+		}
+		jsonPatch = append(jsonPatch, patches...)
+	}
+	if daemonSetGK == obj.GetObjectKind().GroupVersionKind().GroupKind() {
+		js, err := obj.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		daemonSet := &appsv1.DaemonSet{}
+		err = json.Unmarshal(js, daemonSet)
+
+		patches, err := renamePVCs(daemonSet.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
+		if err != nil {
+			return nil, err
+		}
+		jsonPatch = append(jsonPatch, patches...)
+	}
+	if deploymentConfigGK == obj.GetObjectKind().GroupVersionKind().GroupKind() {
+		js, err := obj.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		deploymentConfig := &ocpappsv1.DeploymentConfig{}
+		err = json.Unmarshal(js, deploymentConfig)
+
+		patches, err := renamePVCs(deploymentConfig.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
+		if err != nil {
+			return nil, err
+		}
+		jsonPatch = append(jsonPatch, patches...)
+	}
+	if deploymentGK == obj.GetObjectKind().GroupVersionKind().GroupKind() {
+		js, err := obj.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		deployment := &appsv1.Deployment{}
+		err = json.Unmarshal(js, deployment)
+
+		patches, err := renamePVCs(deployment.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
+		if err != nil {
+			return nil, err
+		}
+		jsonPatch = append(jsonPatch, patches...)
+	}
+	if jobGK == obj.GetObjectKind().GroupVersionKind().GroupKind() {
+		js, err := obj.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		job := &batchv1.Job{}
+		err = json.Unmarshal(js, job)
+
+		patches, err := renamePVCs(job.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
+		if err != nil {
+			return nil, err
+		}
+		jsonPatch = append(jsonPatch, patches...)
+	}
+	if replicationControllerGK == obj.GetObjectKind().GroupVersionKind().GroupKind() {
+		js, err := obj.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		replicationController := &v1.ReplicationController{}
+		err = json.Unmarshal(js, replicationController)
+
+		patches, err := renamePVCs(replicationController.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
+		if err != nil {
+			return nil, err
+		}
+		jsonPatch = append(jsonPatch, patches...)
+	}
+	if replicaSetGK == obj.GetObjectKind().GroupVersionKind().GroupKind() {
+		js, err := obj.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		replicaSet := &appsv1.ReplicaSet{}
+		err = json.Unmarshal(js, replicaSet)
+
+		patches, err := renamePVCs(replicaSet.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
+		if err != nil {
+			return nil, err
+		}
+		jsonPatch = append(jsonPatch, patches...)
+	}
+	if statefulSetGK == obj.GetObjectKind().GroupVersionKind().GroupKind() {
+		js, err := obj.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		statefulSet := &appsv1.StatefulSet{}
+		err = json.Unmarshal(js, statefulSet)
+
+		patches, err := renamePVCs(statefulSet.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
+		if err != nil {
+			return nil, err
+		}
+		jsonPatch = append(jsonPatch, patches...)
+
+		patches, err = renamePVCTemplates(statefulSet.Spec.VolumeClaimTemplates, k.PVCRenameMap, pvcPathTemplateString)
 		if err != nil {
 			return nil, err
 		}
@@ -439,6 +621,42 @@ func removePodFields() (jsonpatch.Patch, error) {
 		return nil, err
 	}
 	patches = append(patches, patch...)
+	return patches, nil
+}
+
+func renamePVCs(volumes []v1.Volume, PVCRenameMap map[string]string, path string) (jsonpatch.Patch, error) {
+	var patches jsonpatch.Patch
+	if len(PVCRenameMap) > 0 && len(volumes) > 0 {
+		for i, volume := range volumes {
+			if volume.PersistentVolumeClaim != nil {
+				if pvcName, ok := PVCRenameMap[volume.PersistentVolumeClaim.ClaimName]; ok {
+					pvcPath := fmt.Sprintf(path, i)
+					patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opReplace, pvcPath, pvcName)))
+					if err != nil {
+						return nil, err
+					}
+					patches = append(patches, patch...)
+				}
+			}
+		}
+	}
+	return patches, nil
+}
+
+func renamePVCTemplates(volumes []v1.PersistentVolumeClaim, PVCRenameMap map[string]string, path string) (jsonpatch.Patch, error) {
+	var patches jsonpatch.Patch
+	if len(PVCRenameMap) > 0 && len(volumes) > 0 {
+		for i, volume := range volumes {
+			if pvcName, ok := PVCRenameMap[volume.Name]; ok {
+				pvcTemplatePath := fmt.Sprintf(path, i)
+				patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opReplace, pvcTemplatePath, pvcName)))
+				if err != nil {
+					return nil, err
+				}
+				patches = append(patches, patch...)
+			}
+		}
+	}
 	return patches, nil
 }
 
