@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -21,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 var logger logrus.FieldLogger
@@ -39,11 +39,6 @@ const (
 
 const (
 	containerImageUpdate        = "/spec/template/spec/containers/%v/image"
-	dns1123LabelFmt             = "[a-z0-9]([-a-z0-9]*[a-z0-9])?"
-	dns1123SubdomainFmt         = dns1123LabelFmt + "(\\." + dns1123LabelFmt + ")*"
-	dns1123SubdomainMaxLength   = 253
-	dns1123SubdomainErrorMsg    = "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character"
-	dns1123SubdomainErrorMaxLen = "must be no more than 253 characters"
 	initContainerImageUpdate    = "/spec/template/spec/initContainers/%v/image"
 	podContainerImageUpdate     = "/spec/containers/%v/image"
 	podInitContainerImageUpdate = "/spec/initContainers/%v/image"
@@ -234,14 +229,13 @@ func (k *KubernetesTransformPlugin) setOptionalFields(extras map[string]string) 
 	if len(extras[PVCRenameMap]) > 0 {
 		pvcMap := map[string]string{}
 		pvcRenameList := strings.Split(extras[PVCRenameMap], ",")
-		var dns1123SubdomainRegexp = regexp.MustCompile("^" + dns1123SubdomainFmt + "$")
 
 		for _, pair := range pvcRenameList {
 			split := strings.Split(pair, ":")
-			if len(split[0]) > dns1123SubdomainMaxLength || len(split[1]) > dns1123SubdomainMaxLength {
-				return errors.New("Invalid PVC remap: " + pair + ", " + dns1123SubdomainErrorMaxLen)
-			} else if !dns1123SubdomainRegexp.MatchString(split[0]) || !dns1123SubdomainRegexp.MatchString(split[1]) {
-				return errors.New("Invalid PVC remap: " + pair + ", " + dns1123SubdomainErrorMsg)
+			if errs := validation.IsDNS1123Subdomain(split[0]); len(errs) != 0 {
+				return errors.New("Invalid PVC remap: " + pair + ", " + strings.Join(errs[:], ","))
+			} else if errs := validation.IsDNS1123Subdomain(split[1]); len(errs) != 0 {
+				return errors.New("Invalid PVC remap: " + pair + ", " + strings.Join(errs[:], ","))
 			}
 			pvcMap[split[0]] = split[1]
 		}
