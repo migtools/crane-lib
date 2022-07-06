@@ -17,6 +17,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -65,6 +66,7 @@ const (
 	pvcPathPodString      = "/spec/volumes/%d/persistentVolumeClaim/claimName"
 	pvcPathGenericString  = "/spec/template/spec/volumes/%d/persistentVolumeClaim/claimName"
 	pvcPathTemplateString = "/spec/volumeClaimTemplates/%d/metadata/name"
+	roleBindingSubject    = "/subjects/%d/namespace"
 	updateClusterIP       = "/spec/clusterIP"
 	updateClusterIPs      = "/spec/clusterIPs"
 	updateExternalIPs     = "/spec/externalIPs"
@@ -95,6 +97,7 @@ var (
 	podGK                   = schema.GroupKind{Group: "", Kind: "Pod"}
 	replicaSetGK            = schema.GroupKind{Group: "apps", Kind: "ReplicaSet"}
 	replicationControllerGK = schema.GroupKind{Group: "", Kind: "ReplicationController"}
+	roleBindingGK           = schema.GroupKind{Group: "rbac.authorization.k8s.io", Kind: "RoleBinding"}
 	serviceGK               = schema.GroupKind{Group: "", Kind: "Service"}
 	secretGK                = schema.GroupKind{Group: "", Kind: "Secret"}
 	serviceAccountGK        = schema.GroupKind{Group: "", Kind: "ServiceAccount"}
@@ -330,6 +333,9 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 		}
 		cronJob := &batchv1.CronJob{}
 		err = json.Unmarshal(js, cronJob)
+		if err != nil {
+			return nil, err
+		}
 
 		patches, err := renamePVCs(cronJob.Spec.JobTemplate.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathCronJobString)
 		if err != nil {
@@ -345,6 +351,9 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 		}
 		pod := &v1.Pod{}
 		err = json.Unmarshal(js, pod)
+		if err != nil {
+			return nil, err
+		}
 
 		patches, err := removePodFields()
 		if err != nil {
@@ -365,6 +374,9 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 		}
 		daemonSet := &appsv1.DaemonSet{}
 		err = json.Unmarshal(js, daemonSet)
+		if err != nil {
+			return nil, err
+		}
 
 		patches, err := renamePVCs(daemonSet.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
 		if err != nil {
@@ -379,6 +391,9 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 		}
 		deploymentConfig := &ocpappsv1.DeploymentConfig{}
 		err = json.Unmarshal(js, deploymentConfig)
+		if err != nil {
+			return nil, err
+		}
 
 		patches, err := renamePVCs(deploymentConfig.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
 		if err != nil {
@@ -393,6 +408,9 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 		}
 		deployment := &appsv1.Deployment{}
 		err = json.Unmarshal(js, deployment)
+		if err != nil {
+			return nil, err
+		}
 
 		patches, err := renamePVCs(deployment.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
 		if err != nil {
@@ -407,6 +425,9 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 		}
 		job := &batchv1.Job{}
 		err = json.Unmarshal(js, job)
+		if err != nil {
+			return nil, err
+		}
 
 		patches, err := renamePVCs(job.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
 		if err != nil {
@@ -421,6 +442,9 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 		}
 		replicationController := &v1.ReplicationController{}
 		err = json.Unmarshal(js, replicationController)
+		if err != nil {
+			return nil, err
+		}
 
 		patches, err := renamePVCs(replicationController.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
 		if err != nil {
@@ -435,12 +459,37 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 		}
 		replicaSet := &appsv1.ReplicaSet{}
 		err = json.Unmarshal(js, replicaSet)
+		if err != nil {
+			return nil, err
+		}
 
 		patches, err := renamePVCs(replicaSet.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
 		if err != nil {
 			return nil, err
 		}
 		jsonPatch = append(jsonPatch, patches...)
+	}
+	if roleBindingGK == obj.GetObjectKind().GroupVersionKind().GroupKind() {
+		js, err := obj.MarshalJSON()
+		if err != nil {
+			return nil, err
+		}
+		rb := &rbacv1.RoleBinding{}
+
+		err = json.Unmarshal(js, rb)
+		if err != nil {
+			return nil, err
+		}
+		for i, subj := range rb.Subjects {
+			if subj.Kind == "ServiceAccount" && subj.Namespace == rb.Namespace {
+				subjPath := fmt.Sprintf(roleBindingSubject, i)
+				patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opRemove, subjPath)))
+				if err != nil {
+					return nil, err
+				}
+				jsonPatch = append(jsonPatch, patch...)
+			}
+		}
 	}
 	if statefulSetGK == obj.GetObjectKind().GroupVersionKind().GroupKind() {
 		js, err := obj.MarshalJSON()
@@ -449,6 +498,9 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 		}
 		statefulSet := &appsv1.StatefulSet{}
 		err = json.Unmarshal(js, statefulSet)
+		if err != nil {
+			return nil, err
+		}
 
 		patches, err := renamePVCs(statefulSet.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
 		if err != nil {
