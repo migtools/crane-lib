@@ -2,7 +2,6 @@ package kubernetes
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	"github.com/konveyor/crane-lib/transform/types"
 	"github.com/konveyor/crane-lib/transform/util"
 	"github.com/konveyor/crane-lib/version"
-	ocpappsv1 "github.com/openshift/api/apps/v1"
 	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -21,7 +19,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 var logger logrus.FieldLogger
@@ -58,19 +55,15 @@ const (
 	opReplace = `[
 {"op": "replace", "path": "%v", "value": "%v"}
 ]`
-	metadata              = "metadata"
-	podNodeName           = "/spec/nodeName"
-	podNodeSelector       = "/spec/nodeSelector"
-	podPriority           = "/spec/priority"
-	pvcPathCronJobString  = "/spec/jobTemplate/spec/template/spec/volumes/%d/persistentVolumeClaim/claimName"
-	pvcPathPodString      = "/spec/volumes/%d/persistentVolumeClaim/claimName"
-	pvcPathGenericString  = "/spec/template/spec/volumes/%d/persistentVolumeClaim/claimName"
-	pvcPathTemplateString = "/spec/volumeClaimTemplates/%d/metadata/name"
-	roleBindingSubject    = "/subjects/%d/namespace"
-	updateClusterIP       = "/spec/clusterIP"
-	updateClusterIPs      = "/spec/clusterIPs"
-	updateExternalIPs     = "/spec/externalIPs"
-	updateNodePortString  = "/spec/ports/%v/nodePort"
+	metadata             = "metadata"
+	podNodeName          = "/spec/nodeName"
+	podNodeSelector      = "/spec/nodeSelector"
+	podPriority          = "/spec/priority"
+	roleBindingSubject   = "/subjects/%d/namespace"
+	updateClusterIP      = "/spec/clusterIP"
+	updateClusterIPs     = "/spec/clusterIPs"
+	updateExternalIPs    = "/spec/externalIPs"
+	updateNodePortString = "/spec/ports/%v/nodePort"
 )
 
 var fieldsToStrip = [...][]string{
@@ -88,7 +81,6 @@ var (
 	configMapGK             = schema.GroupKind{Group: "", Kind: "ConfigMap"}
 	cronJobGK               = schema.GroupKind{Group: "batch", Kind: "CronJob"}
 	daemonSetGK             = schema.GroupKind{Group: "apps", Kind: "DaemonSet"}
-	deploymentConfigGK      = schema.GroupKind{Group: "apps.openshift.io", Kind: "DeploymentConfig"}
 	deploymentGK            = schema.GroupKind{Group: "apps", Kind: "Deployment"}
 	endpointGK              = schema.GroupKind{Group: "", Kind: "Endpoints"}
 	endpointSliceGK         = schema.GroupKind{Group: "discovery.k8s.io", Kind: "EndpointSlice"}
@@ -230,17 +222,9 @@ func (k *KubernetesTransformPlugin) setOptionalFields(extras map[string]string) 
 		k.StripDefaultCABundle, _ = strconv.ParseBool(extras[StripDefaultCABundleFlag])
 	}
 	if len(extras[PVCRenameMap]) > 0 {
-		pvcMap := map[string]string{}
-		pvcRenameList := strings.Split(extras[PVCRenameMap], ",")
-
-		for _, pair := range pvcRenameList {
-			split := strings.Split(pair, ":")
-			if errs := validation.IsDNS1123Subdomain(split[0]); len(errs) != 0 {
-				return errors.New("Invalid PVC remap: " + pair + ", " + strings.Join(errs[:], ","))
-			} else if errs := validation.IsDNS1123Subdomain(split[1]); len(errs) != 0 {
-				return errors.New("Invalid PVC remap: " + pair + ", " + strings.Join(errs[:], ","))
-			}
-			pvcMap[split[0]] = split[1]
+		pvcMap, err := util.ProcessPVCMap(extras[PVCRenameMap])
+		if err != nil {
+			return err
 		}
 		k.PVCRenameMap = pvcMap
 	}
@@ -337,7 +321,7 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 			return nil, err
 		}
 
-		patches, err := renamePVCs(cronJob.Spec.JobTemplate.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathCronJobString)
+		patches, err := util.RenamePVCs(cronJob.Spec.JobTemplate.Spec.Template.Spec.Volumes, k.PVCRenameMap, util.PVCPathCronJobString)
 		if err != nil {
 			return nil, err
 		}
@@ -361,7 +345,7 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 		}
 		jsonPatch = append(jsonPatch, patches...)
 
-		patches, err = renamePVCs(pod.Spec.Volumes, k.PVCRenameMap, pvcPathPodString)
+		patches, err = util.RenamePVCs(pod.Spec.Volumes, k.PVCRenameMap, util.PVCPathPodString)
 		if err != nil {
 			return nil, err
 		}
@@ -378,24 +362,7 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 			return nil, err
 		}
 
-		patches, err := renamePVCs(daemonSet.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
-		if err != nil {
-			return nil, err
-		}
-		jsonPatch = append(jsonPatch, patches...)
-	}
-	if deploymentConfigGK == obj.GetObjectKind().GroupVersionKind().GroupKind() {
-		js, err := obj.MarshalJSON()
-		if err != nil {
-			return nil, err
-		}
-		deploymentConfig := &ocpappsv1.DeploymentConfig{}
-		err = json.Unmarshal(js, deploymentConfig)
-		if err != nil {
-			return nil, err
-		}
-
-		patches, err := renamePVCs(deploymentConfig.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
+		patches, err := util.RenamePVCs(daemonSet.Spec.Template.Spec.Volumes, k.PVCRenameMap, util.PVCPathGenericString)
 		if err != nil {
 			return nil, err
 		}
@@ -412,7 +379,7 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 			return nil, err
 		}
 
-		patches, err := renamePVCs(deployment.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
+		patches, err := util.RenamePVCs(deployment.Spec.Template.Spec.Volumes, k.PVCRenameMap, util.PVCPathGenericString)
 		if err != nil {
 			return nil, err
 		}
@@ -429,7 +396,7 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 			return nil, err
 		}
 
-		patches, err := renamePVCs(job.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
+		patches, err := util.RenamePVCs(job.Spec.Template.Spec.Volumes, k.PVCRenameMap, util.PVCPathGenericString)
 		if err != nil {
 			return nil, err
 		}
@@ -446,7 +413,7 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 			return nil, err
 		}
 
-		patches, err := renamePVCs(replicationController.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
+		patches, err := util.RenamePVCs(replicationController.Spec.Template.Spec.Volumes, k.PVCRenameMap, util.PVCPathGenericString)
 		if err != nil {
 			return nil, err
 		}
@@ -463,7 +430,7 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 			return nil, err
 		}
 
-		patches, err := renamePVCs(replicaSet.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
+		patches, err := util.RenamePVCs(replicaSet.Spec.Template.Spec.Volumes, k.PVCRenameMap, util.PVCPathGenericString)
 		if err != nil {
 			return nil, err
 		}
@@ -502,13 +469,13 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 			return nil, err
 		}
 
-		patches, err := renamePVCs(statefulSet.Spec.Template.Spec.Volumes, k.PVCRenameMap, pvcPathGenericString)
+		patches, err := util.RenamePVCs(statefulSet.Spec.Template.Spec.Volumes, k.PVCRenameMap, util.PVCPathGenericString)
 		if err != nil {
 			return nil, err
 		}
 		jsonPatch = append(jsonPatch, patches...)
 
-		patches, err = renamePVCTemplates(statefulSet.Spec.VolumeClaimTemplates, k.PVCRenameMap, pvcPathTemplateString)
+		patches, err = renamePVCTemplates(statefulSet.Spec.VolumeClaimTemplates, k.PVCRenameMap, util.PVCPathTemplateString)
 		if err != nil {
 			return nil, err
 		}
@@ -667,25 +634,6 @@ func removePodFields() (jsonpatch.Patch, error) {
 		return nil, err
 	}
 	patches = append(patches, patch...)
-	return patches, nil
-}
-
-func renamePVCs(volumes []v1.Volume, PVCRenameMap map[string]string, path string) (jsonpatch.Patch, error) {
-	var patches jsonpatch.Patch
-	if len(PVCRenameMap) > 0 && len(volumes) > 0 {
-		for i, volume := range volumes {
-			if volume.PersistentVolumeClaim != nil {
-				if pvcName, ok := PVCRenameMap[volume.PersistentVolumeClaim.ClaimName]; ok {
-					pvcPath := fmt.Sprintf(path, i)
-					patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opReplace, pvcPath, pvcName)))
-					if err != nil {
-						return nil, err
-					}
-					patches = append(patches, patch...)
-				}
-			}
-		}
-	}
 	return patches, nil
 }
 
