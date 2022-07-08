@@ -24,8 +24,10 @@ log file = /dev/stdout
 max verbosity = 4
 auth users = {{ $.Username }}
 hosts allow = ::1, 127.0.0.1, localhost
+{{ if $.RunAsRoot }}
 uid = root
 gid = root
+{{ end }}
 {{ range $i, $pvc := .PVCPairList }}
 [{{ $pvc.Destination.LabelSafeName }}]
     comment = archive for {{ $pvc.Destination.Claim.Namespace }}/{{ $pvc.Destination.Claim.Name }}
@@ -43,6 +45,7 @@ gid = root
 type rsyncConfigData struct {
 	Username    string
 	PVCPairList transfer.PVCPairList
+	RunAsRoot   bool
 }
 
 func (r *RsyncTransfer) CreateServer(c client.Client) error {
@@ -91,6 +94,14 @@ func createRsyncServerResources(c client.Client, r *RsyncTransfer, ns string) er
 
 func createRsyncServerConfig(c client.Client, r *RsyncTransfer, ns string) error {
 	var rsyncConf bytes.Buffer
+	runRsyncRoot := false
+	for _, ops := range r.options.DestContainerMutations {
+		if (ops.SecurityContext().RunAsUser != nil && *ops.SecurityContext().RunAsUser == int64(0)) || (ops.SecurityContext().Privileged != nil && *ops.SecurityContext().Privileged) {
+			// running rsync as root
+			runRsyncRoot = true
+			break
+		}
+	}
 	rsyncConfTemplate, err := template.New("config").Parse(rsyncServerConfTemplate)
 	if err != nil {
 		return err
@@ -99,6 +110,7 @@ func createRsyncServerConfig(c client.Client, r *RsyncTransfer, ns string) error
 	configdata := rsyncConfigData{
 		Username:    r.options.username,
 		PVCPairList: r.pvcList.InDestinationNamespace(ns),
+		RunAsRoot:   runRsyncRoot,
 	}
 
 	err = rsyncConfTemplate.Execute(&rsyncConf, configdata)
