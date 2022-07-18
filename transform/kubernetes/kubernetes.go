@@ -84,6 +84,7 @@ var (
 	deploymentGK            = schema.GroupKind{Group: "apps", Kind: "Deployment"}
 	endpointGK              = schema.GroupKind{Group: "", Kind: "Endpoints"}
 	endpointSliceGK         = schema.GroupKind{Group: "discovery.k8s.io", Kind: "EndpointSlice"}
+	extensionsGroup         = "extensions"
 	jobGK                   = schema.GroupKind{Group: "batch", Kind: "Job"}
 	pvcGK                   = schema.GroupKind{Group: "", Kind: "PersistentVolumeClaim"}
 	podGK                   = schema.GroupKind{Group: "", Kind: "Pod"}
@@ -265,6 +266,10 @@ func (k *KubernetesTransformPlugin) getWhiteOuts(obj unstructured.Unstructured) 
 	}
 	// drop kube-root-ca.crt configmap
 	if groupKind == configMapGK && obj.GetName() == "kube-root-ca.crt" && k.StripDefaultCABundle {
+		return true
+	}
+
+	if groupKind.Group == extensionsGroup {
 		return true
 	}
 
