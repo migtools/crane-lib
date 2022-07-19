@@ -1,0 +1,5 @@
+reviewers:
+  - @konveyor/crane-reviewers
+
+approvers:
+  - @konveyor/crane-approvers
