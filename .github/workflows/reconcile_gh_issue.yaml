@@ -52,3 +52,4 @@ jobs:
           jiraToken: ${{ secrets.JIRA_API_TOKEN }}
           jiraProject: MTRHO
           additionalLabels: community
+          addWatchers: ernelson@redhat.com
