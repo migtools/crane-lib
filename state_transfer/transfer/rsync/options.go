@@ -29,6 +29,7 @@ const (
 	optInfo          = "--info=%s"
 	optHumanReadable = "--human-readable"
 	optLogFile       = "--log-file=%s"
+	optExclude       = "--exclude=%s"
 )
 
 const (
@@ -82,6 +83,7 @@ type CommandOptions struct {
 	HumanReadable bool
 	LogFile       string
 	Info          []string
+	ExcludeFiles  []string
 	Extras        []string
 }
 
@@ -146,7 +148,11 @@ func (c *CommandOptions) AsRsyncCommandOptions() ([]string, error) {
 	if len(c.Extras) > 0 {
 		extraOpts, err := filterRsyncExtraOptions(c.Extras)
 		errs = append(errs, err)
+
 		opts = append(opts, extraOpts...)
+	}
+	for _, file := range c.ExcludeFiles {
+		opts = append(opts, fmt.Sprintf(optExclude, file))
 	}
 	return opts, errorsutil.NewAggregate(errs)
 }
@@ -324,5 +330,16 @@ type RsyncClientImage string
 
 func (r RsyncClientImage) ApplyTo(opts *TransferOptions) error {
 	opts.rsyncClientImage = string(r)
+	return nil
+}
+
+type ExcludeFiles []string
+
+func (e ExcludeFiles) ApplyTo(opts *TransferOptions) error {
+	for _, f := range e {
+		if f != "" {
+			opts.ExcludeFiles = append(opts.ExcludeFiles, f)
+		}
+	}
 	return nil
 }
