@@ -38,6 +38,20 @@ func Test_filterRsyncExtraOptions(t *testing.T) {
 			},
 			wantError: true,
 		},
+		{
+			name: "test options with parameters",
+			args: []string{
+				"--exclude=\"./.snapshot/file\"",
+				"--exclude=\"/snapshot/tmp/\"",
+				"--exclude=./.snapshot/",
+			},
+			wantValidatedOptions: []string{
+				"--exclude=\"./.snapshot/file\"",
+				"--exclude=\"/snapshot/tmp/\"",
+				"--exclude=./.snapshot/",
+			},
+			wantError: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
