@@ -28,12 +28,20 @@ hosts allow = ::1, 127.0.0.1, localhost
 uid = root
 gid = root
 {{ end }}
+{{ if .UseChroot }}
+use chroot = yes
+{{ else }}
+use chroot = no
+{{ fi }}
+{{ if .MungeSymlinks }}
+munge symlinks = yes
+{{ else }}
+munge symlinks = no
+{{ end }}
 {{ range $i, $pvc := .PVCPairList }}
 [{{ $pvc.Destination.LabelSafeName }}]
     comment = archive for {{ $pvc.Destination.Claim.Namespace }}/{{ $pvc.Destination.Claim.Name }}
     path = /mnt/{{ $pvc.Destination.Claim.Namespace }}/{{ $pvc.Destination.LabelSafeName }}
-    use chroot = no
-    munge symlinks = no
     list = yes
     read only = false
     auth users = {{ $.Username }}
@@ -43,9 +51,11 @@ gid = root
 )
 
 type rsyncConfigData struct {
-	Username    string
-	PVCPairList transfer.PVCPairList
-	RunAsRoot   bool
+	Username      string
+	PVCPairList   transfer.PVCPairList
+	RunAsRoot     bool
+	MungeSymlinks bool
+	UseChroot     bool
 }
 
 func (r *RsyncTransfer) CreateServer(c client.Client) error {
@@ -108,9 +118,11 @@ func createRsyncServerConfig(c client.Client, r *RsyncTransfer, ns string) error
 	}
 
 	configdata := rsyncConfigData{
-		Username:    r.options.username,
-		PVCPairList: r.pvcList.InDestinationNamespace(ns),
-		RunAsRoot:   runRsyncRoot,
+		Username:      r.options.username,
+		PVCPairList:   r.pvcList.InDestinationNamespace(ns),
+		RunAsRoot:     runRsyncRoot,
+		MungeSymlinks: r.options.mungeSymlinks,
+		UseChroot:     r.options.useChroot,
 	}
 
 	err = rsyncConfTemplate.Execute(&rsyncConf, configdata)

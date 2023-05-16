@@ -49,6 +49,8 @@ type TransferOptions struct {
 	password                 string
 	rsyncServerImage         string
 	rsyncClientImage         string
+	mungeSymlinks            bool
+	useChroot                bool
 }
 
 // TransferOption knows how to apply a user provided option to a given TransferOptions
@@ -341,5 +343,19 @@ func (e ExcludeFiles) ApplyTo(opts *TransferOptions) error {
 			opts.ExcludeFiles = append(opts.ExcludeFiles, f)
 		}
 	}
+	return nil
+}
+
+type MungeSymlinks bool
+
+func (e MungeSymlinks) ApplyTo(opts *TransferOptions) error {
+	opts.mungeSymlinks = bool(e)
+	return nil
+}
+
+type UseChroot bool
+
+func (u UseChroot) ApplyTo(opts *TransferOptions) error {
+	opts.useChroot = bool(u)
 	return nil
 }
