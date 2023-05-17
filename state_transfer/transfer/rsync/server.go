@@ -28,7 +28,7 @@ hosts allow = ::1, 127.0.0.1, localhost
 uid = root
 gid = root
 {{ end }}
-{{ if .UseChroot }}
+{{ if $.RunAsRoot }}
 use chroot = yes
 {{ else }}
 use chroot = no
@@ -55,7 +55,6 @@ type rsyncConfigData struct {
 	PVCPairList   transfer.PVCPairList
 	RunAsRoot     bool
 	MungeSymlinks bool
-	UseChroot     bool
 }
 
 func (r *RsyncTransfer) CreateServer(c client.Client) error {
@@ -122,7 +121,6 @@ func createRsyncServerConfig(c client.Client, r *RsyncTransfer, ns string) error
 		PVCPairList:   r.pvcList.InDestinationNamespace(ns),
 		RunAsRoot:     runRsyncRoot,
 		MungeSymlinks: r.options.mungeSymlinks,
-		UseChroot:     r.options.useChroot,
 	}
 
 	err = rsyncConfTemplate.Execute(&rsyncConf, configdata)
