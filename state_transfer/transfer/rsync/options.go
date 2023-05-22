@@ -49,6 +49,7 @@ type TransferOptions struct {
 	password                 string
 	rsyncServerImage         string
 	rsyncClientImage         string
+	mungeSymlinks            bool
 }
 
 // TransferOption knows how to apply a user provided option to a given TransferOptions
@@ -341,5 +342,12 @@ func (e ExcludeFiles) ApplyTo(opts *TransferOptions) error {
 			opts.ExcludeFiles = append(opts.ExcludeFiles, f)
 		}
 	}
+	return nil
+}
+
+type MungeSymlinks bool
+
+func (e MungeSymlinks) ApplyTo(opts *TransferOptions) error {
+	opts.mungeSymlinks = bool(e)
 	return nil
 }
