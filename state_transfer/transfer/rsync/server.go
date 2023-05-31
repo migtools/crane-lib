@@ -32,7 +32,7 @@ gid = root
 use chroot = yes
 {{ else }}
 use chroot = no
-{{ fi }}
+{{ end }}
 {{ if .MungeSymlinks }}
 munge symlinks = yes
 {{ else }}
