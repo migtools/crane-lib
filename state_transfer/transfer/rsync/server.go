@@ -28,7 +28,7 @@ hosts allow = ::1, 127.0.0.1, localhost
 uid = root
 gid = root
 {{ end }}
-{{ if $.RunAsRoot }}
+{{ if $.EnableChroot }}
 use chroot = yes
 {{ else }}
 use chroot = no
@@ -54,6 +54,7 @@ type rsyncConfigData struct {
 	Username      string
 	PVCPairList   transfer.PVCPairList
 	RunAsRoot     bool
+	EnableChroot  bool
 	MungeSymlinks bool
 }
 
@@ -64,18 +65,8 @@ func (r *RsyncTransfer) CreateServer(c client.Client) error {
 	err := createRsyncServerResources(c, r, destNs)
 	errs = append(errs, err)
 
-	// _, err = transport.CreateServer(r.Transport(), c, r.Endpoint())
-	// if err != nil {
-	// 	return err
-	// }
-
 	err = createRsyncServer(c, r, destNs)
 	errs = append(errs, err)
-
-	// _, err = endpoint.Create(r.Endpoint(), c)
-	// if err != nil {
-	// 	return err
-	// }
 
 	return errorsutil.NewAggregate(errs)
 }
@@ -103,12 +94,16 @@ func createRsyncServerResources(c client.Client, r *RsyncTransfer, ns string) er
 
 func createRsyncServerConfig(c client.Client, r *RsyncTransfer, ns string) error {
 	var rsyncConf bytes.Buffer
-	runRsyncRoot := false
+	runRsyncAsRoot := false
+	runRsyncAsPrivileged := false
 	for _, ops := range r.options.DestContainerMutations {
-		if (ops.SecurityContext().RunAsUser != nil && *ops.SecurityContext().RunAsUser == int64(0)) || (ops.SecurityContext().Privileged != nil && *ops.SecurityContext().Privileged) {
+		if ops.SecurityContext().RunAsUser != nil && *ops.SecurityContext().RunAsUser == int64(0) {
 			// running rsync as root
-			runRsyncRoot = true
-			break
+			runRsyncAsRoot = true
+		}
+		if ops.SecurityContext().Privileged != nil && *ops.SecurityContext().Privileged {
+			// running rsync as privileged
+			runRsyncAsPrivileged = true
 		}
 	}
 	rsyncConfTemplate, err := template.New("config").Parse(rsyncServerConfTemplate)
@@ -119,7 +114,8 @@ func createRsyncServerConfig(c client.Client, r *RsyncTransfer, ns string) error
 	configdata := rsyncConfigData{
 		Username:      r.options.username,
 		PVCPairList:   r.pvcList.InDestinationNamespace(ns),
-		RunAsRoot:     runRsyncRoot,
+		RunAsRoot:     runRsyncAsRoot || runRsyncAsPrivileged,
+		EnableChroot:  runRsyncAsPrivileged,
 		MungeSymlinks: r.options.mungeSymlinks,
 	}
 
