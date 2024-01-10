@@ -37,8 +37,6 @@ type StunnelTransport struct {
 	clientVolumes    []corev1.Volume
 	direct           bool
 	options          *transport.Options
-	noVerifyCA       bool
-	caVerifyLevel    string
 	nsNamePair       meta.NamespacedNamePair
 }
 
@@ -113,42 +111,42 @@ func (s *StunnelTransport) getStunnelClientImage() string {
 	}
 }
 
-// GetTransportFromKubeObjects checks if the required configmaps and secretes are created for the transport
-//. It populates the fields for the Transport needed for transfer object.
+// GetTransportFromKubeObjects checks if the required configmaps and secrets are created for the transport
+// . It populates the fields for the Transport needed for transfer object.
 // NOTE: this method will be removed in the future interfaces. 'options' are not persisted in the system
 // therefore, they require to be passed from outside by the consumers every time a transport is fetched
-func GetTransportFromKubeObjects(srcClient client.Client, destClient client.Client, nnPair meta.NamespacedNamePair, e endpoint.Endpoint, options *transport.Options) (transport.Transport, error) {
-	_, err := getClientConfig(srcClient, nnPair.Source())
+func GetTransportFromKubeObjects(srcClient client.Client, destClient client.Client, prefix string, nnPair meta.NamespacedNamePair, e endpoint.Endpoint, options *transport.Options) (transport.Transport, error) {
+	_, err := getClientConfig(srcClient, nnPair.Source(), prefix)
 	switch {
 	case errors.IsNotFound(err):
-		fmt.Printf("transport: %s Client Config is not created", nnPair.Source())
+		fmt.Printf("transport: %s Client Config is not created, prefix: %s", nnPair.Source(), prefix)
 		return nil, err
 	case err != nil:
 		return nil, err
 	}
 
-	_, err = getServerConfig(destClient, nnPair.Destination())
+	_, err = getServerConfig(destClient, nnPair.Destination(), prefix)
 	switch {
 	case errors.IsNotFound(err):
-		fmt.Printf("transport: %s Server Config is not created", nnPair.Destination())
+		fmt.Printf("transport: %s Server Config is not created, prefix: %s", nnPair.Destination(), prefix)
 		return nil, err
 	case err != nil:
 		return nil, err
 	}
 
-	clientSecretCreated, err := getClientSecret(srcClient, nnPair.Source())
+	clientSecretCreated, err := getClientSecret(srcClient, nnPair.Source(), prefix)
 	switch {
 	case errors.IsNotFound(err):
-		fmt.Printf("transport: %s Client secret is not created", nnPair.Source())
+		fmt.Printf("transport: %s Client secret is not created, prefix: %s", nnPair.Source(), prefix)
 		return nil, err
 	case err != nil:
 		return nil, err
 	}
 
-	_, err = getServerSecret(destClient, nnPair.Destination())
+	_, err = getServerSecret(destClient, nnPair.Destination(), prefix)
 	switch {
 	case errors.IsNotFound(err):
-		fmt.Printf("transport: %s Server secret is not created", nnPair.Destination())
+		fmt.Printf("transport: %s Server secret is not created, prefix: %s", nnPair.Destination(), prefix)
 		return nil, err
 	case err != nil:
 		return nil, err
@@ -174,8 +172,8 @@ func GetTransportFromKubeObjects(srcClient client.Client, destClient client.Clie
 	s.key = bytes.NewBuffer(key)
 	s.crt = bytes.NewBuffer(crt)
 
-	createStunnelServerVolumes(s)
-	createClientVolumes(s)
+	createStunnelServerVolumes(s, prefix)
+	createClientVolumes(s, prefix)
 	setClientContainers(s, e)
 	createStunnelServerContainers(s, e)
 	s.nsNamePair = nnPair
@@ -184,4 +182,11 @@ func GetTransportFromKubeObjects(srcClient client.Client, destClient client.Clie
 
 func (s *StunnelTransport) Options() *transport.Options {
 	return s.options
+}
+
+func withPrefix(prefix string, name string) string {
+	if prefix == "" {
+		prefix = "fs"
+	}
+	return fmt.Sprintf("%s-%s", prefix, name)
 }

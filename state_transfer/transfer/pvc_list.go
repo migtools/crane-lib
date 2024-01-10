@@ -9,6 +9,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+const (
+	kubeVirtAnnKey      = "cdi.kubevirt.io/storage.contentType"
+	kubevirtContentType = "kubevirt"
+)
+
 // PVCPairList defines a managed list of PVCPair
 type PVCPairList []PVCPair
 
@@ -24,6 +29,9 @@ func (p pvc) Claim() *v1.PersistentVolumeClaim {
 
 // LabelSafeName returns a name which is guaranteed to be a safe label value
 func (p pvc) LabelSafeName() string {
+	if p.p == nil {
+		return ""
+	}
 	return getMD5Hash(p.p.Name)
 }
 
@@ -58,8 +66,8 @@ func NewPVCPair(src *v1.PersistentVolumeClaim, dest *v1.PersistentVolumeClaim) P
 	return newPvcPair
 }
 
-// NewPVCPairList when given a list of PVCPair, returns a managed list
-func NewPVCPairList(pvcs ...PVCPair) (PVCPairList, error) {
+// NewFilesystemPVCPairList when given a list of PVCPair, returns a managed list
+func NewBlockOrVMDiskPVCPairList(pvcs ...PVCPair) (PVCPairList, error) {
 	pvcList := PVCPairList{}
 	for _, p := range pvcs {
 		newPvc := pvcPair{}
@@ -72,9 +80,55 @@ func NewPVCPairList(pvcs ...PVCPair) (PVCPairList, error) {
 		} else {
 			newPvc.dest = p.Destination()
 		}
-		pvcList = append(pvcList, &newPvc)
+
+		if isBlockOrVMDisk(newPvc.src.Claim()) && isBlockOrVMDisk(newPvc.dest.Claim()) {
+			pvcList = append(pvcList, &newPvc)
+		}
+		if isBlockOrVMDisk(newPvc.src.Claim()) && !isBlockOrVMDisk(newPvc.dest.Claim()) ||
+			!isBlockOrVMDisk(newPvc.src.Claim()) && isBlockOrVMDisk(newPvc.dest.Claim()) {
+			return nil, fmt.Errorf("source and destination must be the same type of volume")
+		}
 	}
 	return pvcList, nil
+}
+
+// NewFilesystemPVCPairList when given a list of PVCPair, returns a managed list
+func NewFilesystemPVCPairList(pvcs ...PVCPair) (PVCPairList, error) {
+	pvcList := PVCPairList{}
+	for _, p := range pvcs {
+		newPvc := pvcPair{}
+		if p.Source() == nil {
+			return nil, fmt.Errorf("source pvc definition cannot be nil")
+		}
+		newPvc.src = p.Source()
+		if p.Destination() == nil {
+			newPvc.dest = p.Source()
+		} else {
+			newPvc.dest = p.Destination()
+		}
+
+		if !isBlockOrVMDisk(newPvc.src.Claim()) && !isBlockOrVMDisk(newPvc.dest.Claim()) {
+			pvcList = append(pvcList, &newPvc)
+		}
+		if isBlockOrVMDisk(newPvc.src.Claim()) && !isBlockOrVMDisk(newPvc.dest.Claim()) ||
+			!isBlockOrVMDisk(newPvc.src.Claim()) && isBlockOrVMDisk(newPvc.dest.Claim()) {
+			return nil, fmt.Errorf("source and destination must be the same type of volume")
+		}
+	}
+	return pvcList, nil
+}
+
+func isBlockOrVMDisk(pvc *v1.PersistentVolumeClaim) bool {
+	if pvc == nil {
+		return false
+	}
+	isBlock := pvc.Spec.VolumeMode != nil && *pvc.Spec.VolumeMode == v1.PersistentVolumeBlock
+	if !isBlock {
+		if v, ok := pvc.GetAnnotations()[kubeVirtAnnKey]; !ok || v != kubevirtContentType {
+			return false
+		}
+	}
+	return isBlock
 }
 
 // GetSourceNamespaces returns all source namespaces present in the list of pvcs
@@ -82,9 +136,11 @@ func (p PVCPairList) GetSourceNamespaces() (namespaces []string) {
 	nsSet := map[string]bool{}
 	for i := range p {
 		pvcPair := p[i]
-		if _, exists := nsSet[pvcPair.Source().Claim().Namespace]; !exists {
-			nsSet[pvcPair.Source().Claim().Namespace] = true
-			namespaces = append(namespaces, pvcPair.Source().Claim().Namespace)
+		if pvcPair != nil && pvcPair.Source() != nil && pvcPair.Source().Claim() != nil {
+			if _, exists := nsSet[pvcPair.Source().Claim().Namespace]; !exists {
+				nsSet[pvcPair.Source().Claim().Namespace] = true
+				namespaces = append(namespaces, pvcPair.Source().Claim().Namespace)
+			}
 		}
 	}
 	return
@@ -95,9 +151,11 @@ func (p PVCPairList) GetDestinationNamespaces() (namespaces []string) {
 	nsSet := map[string]bool{}
 	for i := range p {
 		pvcPair := p[i]
-		if _, exists := nsSet[pvcPair.Destination().Claim().Namespace]; !exists {
-			nsSet[pvcPair.Destination().Claim().Namespace] = true
-			namespaces = append(namespaces, pvcPair.Destination().Claim().Namespace)
+		if pvcPair != nil && pvcPair.Source() != nil && pvcPair.Source().Claim() != nil {
+			if _, exists := nsSet[pvcPair.Destination().Claim().Namespace]; !exists {
+				nsSet[pvcPair.Destination().Claim().Namespace] = true
+				namespaces = append(namespaces, pvcPair.Destination().Claim().Namespace)
+			}
 		}
 	}
 	return

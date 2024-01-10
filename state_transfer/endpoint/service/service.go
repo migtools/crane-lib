@@ -6,6 +6,7 @@ import (
 
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -137,7 +138,7 @@ func (s *ServiceEndpoint) createService(c client.Client) error {
 	}
 
 	err := c.Create(context.TODO(), &service, &client.CreateOptions{})
-	if err != nil {
+	if err != nil && !k8serrors.IsAlreadyExists(err) {
 		return err
 	}
 

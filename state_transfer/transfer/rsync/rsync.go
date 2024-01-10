@@ -3,12 +3,13 @@ package rsync
 import (
 	"fmt"
 
+	"github.com/go-logr/logr"
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 	"github.com/konveyor/crane-lib/state_transfer/meta"
 	"github.com/konveyor/crane-lib/state_transfer/transfer"
 	"github.com/konveyor/crane-lib/state_transfer/transport"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -25,10 +26,11 @@ const (
 )
 
 type RsyncTransfer struct {
+	Log         logr.Logger
 	username    string
 	password    string
-	source      *rest.Config
-	destination *rest.Config
+	source      client.Client
+	destination client.Client
 	pvcList     transfer.PVCPairList
 	transport   transport.Transport
 	endpoint    endpoint.Endpoint
@@ -36,8 +38,8 @@ type RsyncTransfer struct {
 	options     TransferOptions
 }
 
-func NewTransfer(t transport.Transport, e endpoint.Endpoint, src *rest.Config, dest *rest.Config,
-	pvcList transfer.PVCPairList, opts ...TransferOption) (transfer.Transfer, error) {
+func NewTransfer(t transport.Transport, e endpoint.Endpoint, src client.Client, dest client.Client,
+	pvcList transfer.PVCPairList, log logr.Logger, opts ...TransferOption) (transfer.Transfer, error) {
 	err := validatePVCList(pvcList)
 	if err != nil {
 		return nil, err
@@ -54,6 +56,7 @@ func NewTransfer(t transport.Transport, e endpoint.Endpoint, src *rest.Config, d
 		destination: dest,
 		pvcList:     pvcList,
 		options:     options,
+		Log:         log,
 	}, nil
 }
 
@@ -69,11 +72,11 @@ func (r *RsyncTransfer) Transport() transport.Transport {
 	return r.transport
 }
 
-func (r *RsyncTransfer) Source() *rest.Config {
+func (r *RsyncTransfer) Source() client.Client {
 	return r.source
 }
 
-func (r *RsyncTransfer) Destination() *rest.Config {
+func (r *RsyncTransfer) Destination() client.Client {
 	return r.destination
 }
 

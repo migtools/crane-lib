@@ -5,6 +5,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (s *NullTransport) CreateClient(c client.Client, endpoint endpoint.Endpoint) error {
+func (s *NullTransport) CreateClient(c client.Client, prefix string, endpoint endpoint.Endpoint) error {
 	return nil
 }
