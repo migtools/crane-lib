@@ -45,10 +45,15 @@ func createRsyncClient(c client.Client, r *RsyncTransfer, ns string) error {
 	}
 	podLabels := transferOptions.SourcePodMeta.Labels
 	for _, pvc := range r.pvcList.InSourceNamespace(ns) {
+		fileSystemCount := 0
 		// create Rsync command for PVC
 		rsyncCommand := []string{"/usr/bin/rsync"}
 		rsyncCommand = append(rsyncCommand, rsyncOptions...)
-		rsyncCommand = append(rsyncCommand, fmt.Sprintf("%s/", getMountPathForPVC(pvc.Source())))
+		isFileSystem := pvc.Source().Claim().Spec.VolumeMode == nil || *pvc.Source().Claim().Spec.VolumeMode == v1.PersistentVolumeFilesystem
+		if isFileSystem {
+			fileSystemCount++
+			rsyncCommand = append(rsyncCommand, fmt.Sprintf("%s/", getMountPathForPVC(pvc.Source())))
+		}
 		rsyncCommand = append(rsyncCommand,
 			fmt.Sprintf("rsync://%s@%s/%s --port %d",
 				transferOptions.username, transfer.ConnectionHostname(r),
@@ -77,15 +82,17 @@ func createRsyncClient(c client.Client, r *RsyncTransfer, ns string) error {
 
 				VolumeMounts: []v1.VolumeMount{
 					{
-						Name:      "mnt",
-						MountPath: getMountPathForPVC(pvc.Source()),
-					},
-					{
 						Name:      "rsync-communication",
 						MountPath: "/usr/share/rsync",
 					},
 				},
 			},
+		}
+		if isFileSystem {
+			containers[0].VolumeMounts = append(containers[0].VolumeMounts, v1.VolumeMount{
+				Name:      "mnt",
+				MountPath: getMountPathForPVC(pvc.Source()),
+			})
 		}
 		// attach transport containers
 		customizeTransportClientContainers(r.Transport())
@@ -98,19 +105,21 @@ func createRsyncClient(c client.Client, r *RsyncTransfer, ns string) error {
 
 		volumes := []v1.Volume{
 			{
+				Name: "rsync-communication",
+				VolumeSource: v1.VolumeSource{
+					EmptyDir: &v1.EmptyDirVolumeSource{Medium: v1.StorageMediumDefault},
+				},
+			},
+		}
+		if isFileSystem {
+			volumes = append(volumes, v1.Volume{
 				Name: "mnt",
 				VolumeSource: v1.VolumeSource{
 					PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
 						ClaimName: pvc.Source().Claim().Name,
 					},
 				},
-			},
-			{
-				Name: "rsync-communication",
-				VolumeSource: v1.VolumeSource{
-					EmptyDir: &v1.EmptyDirVolumeSource{Medium: v1.StorageMediumDefault},
-				},
-			},
+			})
 		}
 		volumes = append(volumes, r.Transport().ClientVolumes()...)
 		podSpec := v1.PodSpec{
@@ -130,8 +139,10 @@ func createRsyncClient(c client.Client, r *RsyncTransfer, ns string) error {
 			Spec: podSpec,
 		}
 
-		err := c.Create(context.TODO(), &pod, &client.CreateOptions{})
-		errs = append(errs, err)
+		if fileSystemCount > 0 {
+			err := c.Create(context.TODO(), &pod, &client.CreateOptions{})
+			errs = append(errs, err)
+		}
 	}
 
 	return errorsutil.NewAggregate(errs)

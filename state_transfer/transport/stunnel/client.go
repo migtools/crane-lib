@@ -47,38 +47,38 @@ const (
 `
 )
 
-func (s *StunnelTransport) CreateClient(c client.Client, e endpoint.Endpoint) error {
-	err := createClientResources(c, s, e)
+func (s *StunnelTransport) CreateClient(c client.Client, prefix string, e endpoint.Endpoint) error {
+	err := createClientResources(c, s, prefix, e)
 	return err
 }
 
-func createClientResources(c client.Client, s *StunnelTransport, e endpoint.Endpoint) error {
+func createClientResources(c client.Client, s *StunnelTransport, prefix string, e endpoint.Endpoint) error {
 	errs := []error{}
 
 	// assuming the name of the endpoint is the same as the name of the PVC
-	err := createClientConfig(c, s, e)
+	err := createClientConfig(c, s, prefix, e)
 	errs = append(errs, err)
 
-	err = createClientSecret(c, s, e)
+	err = createClientSecret(c, s, prefix, e)
 	errs = append(errs, err)
 
 	setClientContainers(s, e)
 
-	createClientVolumes(s)
+	createClientVolumes(s, prefix)
 
 	return errorsutil.NewAggregate(errs)
 }
 
-func getClientConfig(c client.Client, obj types.NamespacedName) (*corev1.ConfigMap, error) {
+func getClientConfig(c client.Client, obj types.NamespacedName, prefix string) (*corev1.ConfigMap, error) {
 	cm := &corev1.ConfigMap{}
 	err := c.Get(context.Background(), types.NamespacedName{
 		Namespace: obj.Namespace,
-		Name:      defaultStunnelClientConfig,
+		Name:      withPrefix(prefix, defaultStunnelClientConfig),
 	}, cm)
 	return cm, err
 }
 
-func createClientConfig(c client.Client, s *StunnelTransport, e endpoint.Endpoint) error {
+func createClientConfig(c client.Client, s *StunnelTransport, prefix string, e endpoint.Endpoint) error {
 	var caVerifyLevel string
 
 	if s.Options().CAVerifyLevel == "" {
@@ -112,7 +112,7 @@ func createClientConfig(c client.Client, s *StunnelTransport, e endpoint.Endpoin
 	stunnelConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: s.nsNamePair.Source().Namespace,
-			Name:      defaultStunnelClientConfig,
+			Name:      withPrefix(prefix, defaultStunnelClientConfig),
 			Labels:    e.Labels(),
 		},
 		Data: map[string]string{
@@ -122,24 +122,29 @@ func createClientConfig(c client.Client, s *StunnelTransport, e endpoint.Endpoin
 	err = c.Create(context.TODO(), stunnelConfigMap, &client.CreateOptions{})
 	if err != nil && !k8serrors.IsAlreadyExists(err) {
 		return err
+	} else if k8serrors.IsAlreadyExists(err) {
+		err = c.Update(context.TODO(), stunnelConfigMap, &client.UpdateOptions{})
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func getClientSecret(c client.Client, obj types.NamespacedName) (*corev1.Secret, error) {
+func getClientSecret(c client.Client, obj types.NamespacedName, prefix string) (*corev1.Secret, error) {
 	secret := &corev1.Secret{}
 	err := c.Get(context.Background(), types.NamespacedName{
 		Namespace: obj.Namespace,
-		Name:      defaultStunnelClientSecret,
+		Name:      withPrefix(prefix, defaultStunnelClientSecret),
 	}, secret)
 	return secret, err
 }
 
-func createClientSecret(c client.Client, s *StunnelTransport, e endpoint.Endpoint) error {
+func createClientSecret(c client.Client, s *StunnelTransport, prefix string, e endpoint.Endpoint) error {
 	stunnelSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: s.nsNamePair.Source().Namespace,
-			Name:      defaultStunnelClientSecret,
+			Name:      withPrefix(prefix, defaultStunnelClientSecret),
 			Labels:    e.Labels(),
 		},
 		Data: map[string][]byte{
@@ -186,14 +191,14 @@ func setClientContainers(s *StunnelTransport, e endpoint.Endpoint) {
 	}
 }
 
-func createClientVolumes(s *StunnelTransport) {
+func createClientVolumes(s *StunnelTransport, prefix string) {
 	s.clientVolumes = []corev1.Volume{
 		{
 			Name: defaultStunnelClientConfig,
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: defaultStunnelClientConfig,
+						Name: withPrefix(prefix, defaultStunnelClientConfig),
 					},
 				},
 			},
@@ -202,7 +207,7 @@ func createClientVolumes(s *StunnelTransport) {
 			Name: defaultStunnelClientSecret,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: defaultStunnelClientSecret,
+					SecretName: withPrefix(prefix, defaultStunnelClientSecret),
 					Items: []corev1.KeyToPath{
 						{
 							Key:  "tls.crt",

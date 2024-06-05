@@ -185,12 +185,14 @@ func createRsyncServer(c client.Client, r *RsyncTransfer, ns string) error {
 	}
 	pvcVolumeMounts := []corev1.VolumeMount{}
 	for _, pvc := range r.pvcList.InDestinationNamespace(ns) {
-		pvcVolumeMounts = append(
-			pvcVolumeMounts,
-			corev1.VolumeMount{
-				Name:      pvc.Destination().LabelSafeName(),
-				MountPath: fmt.Sprintf("/mnt/%s/%s", pvc.Destination().Claim().Namespace, pvc.Destination().LabelSafeName()),
-			})
+		if pvc.Source().Claim().Spec.VolumeMode == nil || *pvc.Source().Claim().Spec.VolumeMode == corev1.PersistentVolumeFilesystem {
+			pvcVolumeMounts = append(
+				pvcVolumeMounts,
+				corev1.VolumeMount{
+					Name:      pvc.Destination().LabelSafeName(),
+					MountPath: fmt.Sprintf("/mnt/%s/%s", pvc.Destination().Claim().Namespace, pvc.Destination().LabelSafeName()),
+				})
+		}
 	}
 	volumeMounts = append(volumeMounts, configVolumeMounts...)
 	volumeMounts = append(volumeMounts, pvcVolumeMounts...)
@@ -253,18 +255,22 @@ func createRsyncServer(c client.Client, r *RsyncTransfer, ns string) error {
 		},
 	}
 	pvcVolumes := []corev1.Volume{}
+	filesystemCount := 0
 	for _, pvc := range r.pvcList.InDestinationNamespace(ns) {
-		pvcVolumes = append(
-			pvcVolumes,
-			corev1.Volume{
-				Name: pvc.Destination().LabelSafeName(),
-				VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: pvc.Destination().Claim().Name,
+		if pvc.Source().Claim().Spec.VolumeMode == nil || *pvc.Source().Claim().Spec.VolumeMode == corev1.PersistentVolumeFilesystem {
+			filesystemCount++
+			pvcVolumes = append(
+				pvcVolumes,
+				corev1.Volume{
+					Name: pvc.Destination().LabelSafeName(),
+					VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvc.Destination().Claim().Name,
+						},
 					},
 				},
-			},
-		)
+			)
+		}
 	}
 	volumes := append(pvcVolumes, configVolumes...)
 	volumes = append(volumes, r.Transport().ServerVolumes()...)
@@ -285,9 +291,12 @@ func createRsyncServer(c client.Client, r *RsyncTransfer, ns string) error {
 		Spec: podSpec,
 	}
 
-	err := c.Create(context.TODO(), server, &client.CreateOptions{})
-	if err != nil && !k8serrors.IsAlreadyExists(err) {
+	if filesystemCount > 0 {
+		err := c.Create(context.TODO(), server, &client.CreateOptions{})
+		if err != nil && !k8serrors.IsAlreadyExists(err) {
+			return err
+		}
 		return err
 	}
-	return err
+	return nil
 }

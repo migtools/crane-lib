@@ -12,16 +12,15 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	errorsutil "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Transfer knows how to transfer PV data from a source to a destination
 type Transfer interface {
 	// Source returns a source client
-	Source() *rest.Config
+	Source() client.Client
 	// Destination returns a destination client
-	Destination() *rest.Config
+	Destination() client.Client
 	// Endpoint returns the endpoint used by the transfer
 	Endpoint() endpoint.Endpoint
 	// Transport returns the transport used by the transfer
@@ -46,12 +45,8 @@ func CreateServer(t Transfer) error {
 	if err := corev1.AddToScheme(scheme); err != nil {
 		return err
 	}
-	c, err := client.New(t.Source(), client.Options{Scheme: scheme})
-	if err != nil {
-		return err
-	}
 
-	err = t.CreateServer(c)
+	err := t.CreateServer(t.Destination())
 	if err != nil {
 		return err
 	}
@@ -64,17 +59,7 @@ func DeleteServer(t Transfer) error {
 }
 
 func CreateClient(t Transfer) error {
-	c, err := client.New(t.Destination(), client.Options{})
-	if err != nil {
-		return err
-	}
-
-	err = t.CreateClient(c)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return t.CreateClient(t.Source())
 }
 
 func DeleteClient(t Transfer) error {
@@ -110,7 +95,7 @@ func IsPodHealthy(c client.Client, pod client.ObjectKey) (bool, error) {
 
 func areContainersReady(pod *corev1.Pod) (bool, error) {
 	if len(pod.Status.ContainerStatuses) != 2 {
-		return false, fmt.Errorf("expected two contaier statuses found %d, for pod %s", len(pod.Status.ContainerStatuses), client.ObjectKey{Namespace: pod.Namespace, Name: pod.Name})
+		return false, fmt.Errorf("expected two container statuses found %d, for pod %s", len(pod.Status.ContainerStatuses), client.ObjectKey{Namespace: pod.Namespace, Name: pod.Name})
 	}
 
 	for _, containerStatus := range pod.Status.ContainerStatuses {

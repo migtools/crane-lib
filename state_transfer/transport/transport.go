@@ -39,8 +39,8 @@ type Transport interface {
 	// ServerVolumes returns a list of volumes transfers can add to their server Pods
 	ServerVolumes() []v1.Volume
 	Direct() bool
-	CreateServer(client.Client, endpoint.Endpoint) error
-	CreateClient(client.Client, endpoint.Endpoint) error
+	CreateServer(client.Client, string, endpoint.Endpoint) error
+	CreateClient(client.Client, string, endpoint.Endpoint) error
 	Options() *Options
 	// Type
 	Type() TransportType
@@ -58,8 +58,8 @@ type Options struct {
 
 type TransportType string
 
-func CreateServer(t Transport, c client.Client, e endpoint.Endpoint) (Transport, error) {
-	err := t.CreateServer(c, e)
+func CreateServer(t Transport, c client.Client, prefix string, e endpoint.Endpoint) (Transport, error) {
+	err := t.CreateServer(c, prefix, e)
 	if err != nil {
 		return nil, err
 	}
@@ -67,8 +67,8 @@ func CreateServer(t Transport, c client.Client, e endpoint.Endpoint) (Transport,
 	return t, nil
 }
 
-func CreateClient(t Transport, c client.Client, e endpoint.Endpoint) (Transport, error) {
-	err := t.CreateClient(c, e)
+func CreateClient(t Transport, c client.Client, prefix string, e endpoint.Endpoint) (Transport, error) {
+	err := t.CreateClient(c, prefix, e)
 	if err != nil {
 		return nil, err
 	}

@@ -4,7 +4,7 @@ import (
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
 	"github.com/konveyor/crane-lib/state_transfer/transfer"
 	"github.com/konveyor/crane-lib/state_transfer/transport"
-	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -17,15 +17,15 @@ const (
 type RcloneTransfer struct {
 	username    string
 	password    string
-	source      *rest.Config
-	destination *rest.Config
+	source      client.Client
+	destination client.Client
 	pvcList     transfer.PVCPairList
 	transport   transport.Transport
 	endpoint    endpoint.Endpoint
 	port        int32
 }
 
-func NewTransfer(t transport.Transport, e endpoint.Endpoint, src *rest.Config, dest *rest.Config, pvcList transfer.PVCPairList) (transfer.Transfer, error) {
+func NewTransfer(t transport.Transport, e endpoint.Endpoint, src client.Client, dest client.Client, pvcList transfer.PVCPairList) (transfer.Transfer, error) {
 	err := validatePVCList(pvcList)
 	if err != nil {
 		return nil, err
@@ -51,11 +51,11 @@ func (r *RcloneTransfer) Transport() transport.Transport {
 	return r.transport
 }
 
-func (r *RcloneTransfer) Source() *rest.Config {
+func (r *RcloneTransfer) Source() client.Client {
 	return r.source
 }
 
-func (r *RcloneTransfer) Destination() *rest.Config {
+func (r *RcloneTransfer) Destination() client.Client {
 	return r.destination
 }
 
