@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	blockrsyncImage     = "quay.io/awels/blockrsync:latest"
+	blockrsyncImage     = "quay.io/konveyor/rsync-transfer:latest"
 	volumeName          = "volume"
 	BlockRsyncContainer = "blockrsync"
 	Proxy               = "proxy"
