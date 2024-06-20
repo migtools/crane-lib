@@ -24,3 +24,17 @@ func (t *TransferOptions) GetBlockrsyncClientImage() string {
 	}
 	return t.blockrsyncClientImage
 }
+
+type RsyncServerImage string
+
+func (r RsyncServerImage) ApplyTo(opts *TransferOptions) error {
+	opts.blockrsyncServerImage = string(r)
+	return nil
+}
+
+type RsyncClientImage string
+
+func (r RsyncClientImage) ApplyTo(opts *TransferOptions) error {
+	opts.blockrsyncClientImage = string(r)
+	return nil
+}
