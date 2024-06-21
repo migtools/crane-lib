@@ -57,7 +57,7 @@ func createBlockrsyncClient(c client.Client, r *BlockrsyncTransfer, pvc transfer
 		{
 			Name:            BlockRsyncContainer,
 			ImagePullPolicy: v1.PullAlways,
-			Image:           blockrsyncImage,
+			Image:           r.transferOptions.GetBlockrsyncClientImage(),
 		},
 	}
 	addVolumeToContainer(pvc.Source().Claim(), pvc.Source().LabelSafeName(), pvc.Source().LabelSafeName(), &containers[1])
