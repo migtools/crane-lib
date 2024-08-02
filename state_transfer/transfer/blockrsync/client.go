@@ -97,6 +97,9 @@ func createBlockrsyncClient(c client.Client, r *BlockrsyncTransfer, pvc transfer
 			RestartPolicy: v1.RestartPolicyOnFailure,
 		},
 	}
+	if r.transferOptions.NodeName != "" {
+		pod.Spec.NodeName = r.transferOptions.NodeName
+	}
 
 	return c.Create(context.TODO(), &pod, &client.CreateOptions{})
 }
