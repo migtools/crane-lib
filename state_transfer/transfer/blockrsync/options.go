@@ -9,6 +9,7 @@ type TransferOptions struct {
 	password              string
 	blockrsyncServerImage string
 	blockrsyncClientImage string
+	NodeName              string
 }
 
 func (t *TransferOptions) GetBlockrsyncServerImage() string {
