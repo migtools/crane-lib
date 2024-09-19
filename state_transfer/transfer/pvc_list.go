@@ -127,6 +127,7 @@ func isBlockOrVMDisk(pvc *v1.PersistentVolumeClaim) bool {
 		if v, ok := pvc.GetAnnotations()[kubeVirtAnnKey]; !ok || v != kubevirtContentType {
 			return false
 		}
+		isBlock = true
 	}
 	return isBlock
 }
