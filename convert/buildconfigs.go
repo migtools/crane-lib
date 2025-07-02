@@ -1,0 +1,301 @@
+package convert
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	buildv1 "github.com/openshift/api/build/v1"
+	imagev1 "github.com/openshift/api/image/v1"
+	shipwrightv1beta1 "github.com/shipwright-io/build/pkg/apis/build/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
+)
+
+func (t *ConvertOptions) convertBuildConfigs() error {
+	bcList := buildv1.BuildConfigList{}
+	err := t.Client.List(context.TODO(), &bcList, client.InNamespace(t.Namespace))
+	if err != nil {
+		return err
+	}
+
+	err = t.writeBuildConfigs(bcList)
+	if err != nil {
+		return err
+	}
+
+	for _, bc := range bcList.Items {
+		b := &shipwrightv1beta1.Build{}
+		b.Name = bc.Name
+		b.Kind = "Build"
+		b.APIVersion = "shipwright.io/v1beta1"
+		b.Spec.ParamValues = []shipwrightv1beta1.ParamValue{}
+
+		switch strategyType := bc.Spec.Strategy.Type; strategyType {
+		case "Docker":
+			ClusterBuildStrategyKind := shipwrightv1beta1.ClusterBuildStrategyKind
+			b.Spec.Strategy = shipwrightv1beta1.Strategy{
+				Kind: &ClusterBuildStrategyKind,
+				Name: "buildah",
+			}
+			if bc.Spec.Strategy.DockerStrategy.DockerfilePath != "" {
+				dockerfile := shipwrightv1beta1.ParamValue{
+					Name: "dockerfile",
+					SingleValue: &shipwrightv1beta1.SingleValue{
+						Value: &bc.Spec.Strategy.DockerStrategy.DockerfilePath,
+					},
+				}
+				b.Spec.ParamValues = append(b.Spec.ParamValues, dockerfile)
+			}
+
+			t.processBuildArgs(bc, b)
+		case "Source":
+			ClusterBuildStrategyKind := shipwrightv1beta1.ClusterBuildStrategyKind
+			b.Spec.Strategy = shipwrightv1beta1.Strategy{
+				Kind: &ClusterBuildStrategyKind,
+				Name: "source-to-image",
+			}
+			switch fromKind := bc.Spec.Strategy.SourceStrategy.From.Kind; fromKind {
+			case "ImageStreamTag":
+				imageRef, err := t.resolveImageStreamRef(bc.Spec.Strategy.SourceStrategy.From.Name, bc.Spec.Strategy.SourceStrategy.From.Namespace)
+				if err != nil {
+					return err
+				}
+				builderImage := shipwrightv1beta1.ParamValue{
+					Name: "builder-image",
+					SingleValue: &shipwrightv1beta1.SingleValue{
+						Value: &imageRef,
+					},
+				}
+				b.Spec.ParamValues = append(b.Spec.ParamValues, builderImage)
+
+			//TODO: DockerImage
+
+			//TODO: ImageStreamImage
+			default:
+				fmt.Println("Strategy From kind", bc.Spec.Strategy.DockerStrategy.From.Kind, "is unknown for BuildConfig", bc.Name)
+			}
+
+		// TODO: What do we do for custom?
+		// TODO: Jenkins Pipeline?
+		default:
+			fmt.Println("Strategy type", bc.Spec.Strategy.Type, "is unknown for BuildConfig", bc.Name)
+		}
+
+		if bc.Spec.Output.PushSecret != nil && bc.Spec.Output.PushSecret.Name != "" {
+			b.Spec.Output.PushSecret = &bc.Spec.Output.PushSecret.Name
+		}
+
+		t.processSource(bc, b)
+		t.processOutput(bc, b)
+		t.addRegistries(b)
+		t.writeBuild(b)
+	}
+
+	return nil
+}
+
+func (t *ConvertOptions) processSource(bc buildv1.BuildConfig, b *shipwrightv1beta1.Build) {
+	switch stype := bc.Spec.Source.Type; stype {
+	case "Git":
+		git := &shipwrightv1beta1.Git{
+			Revision: &bc.Spec.Source.Git.Ref,
+			URL:      bc.Spec.Source.Git.URI,
+		}
+		source := &shipwrightv1beta1.Source{
+			Git:  git,
+			Type: "Git",
+		}
+
+		b.Spec.Source = source
+	// TODO: Dockerfile
+	// TODO: Binary
+	// TODO: Image
+	// TODO: None
+	default:
+		fmt.Println("Source type", bc.Spec.Source.Type, "is unknown for BuildConfig", bc.Name)
+	}
+}
+
+func (t *ConvertOptions) processOutput(bc buildv1.BuildConfig, b *shipwrightv1beta1.Build) {
+	if bc.Spec.Output.To.Kind == "ImageStreamTag" {
+		var namespace string
+		if bc.Spec.Output.To.Namespace != "" {
+			namespace = bc.Spec.Output.To.Namespace
+		} else {
+			namespace = bc.Namespace
+		}
+		b.Spec.Output.Image = "image-registry.openshift-image-registry.svc:5000/" + namespace + "/" + bc.Spec.Output.To.Name
+	} else {
+		b.Spec.Output.Image = bc.Spec.Output.To.Name
+	}
+}
+
+func (t *ConvertOptions) addRegistries(b *shipwrightv1beta1.Build) {
+	if len(t.SearchRegistries) != 0 {
+		values := parseRegistries(t.SearchRegistries)
+
+		registryParam := shipwrightv1beta1.ParamValue{
+			Name:   "registries-search",
+			Values: values,
+		}
+
+		b.Spec.ParamValues = append(b.Spec.ParamValues, registryParam)
+	}
+
+	if len(t.InsecureRegistries) != 0 {
+		values := parseRegistries(t.BlockRegistries)
+
+		insecureRegistryParam := shipwrightv1beta1.ParamValue{
+			Name:   "registries-insecure",
+			Values: values,
+		}
+
+		b.Spec.ParamValues = append(b.Spec.ParamValues, insecureRegistryParam)
+	}
+
+	if len(t.BlockRegistries) != 0 {
+		values := parseRegistries(t.BlockRegistries)
+
+		insecureRegistryParam := shipwrightv1beta1.ParamValue{
+			Name:   "registries-block",
+			Values: values,
+		}
+
+		b.Spec.ParamValues = append(b.Spec.ParamValues, insecureRegistryParam)
+	}
+}
+
+func parseRegistries(registries []string) []shipwrightv1beta1.SingleValue {
+	values := []shipwrightv1beta1.SingleValue{}
+	for _, r := range registries {
+		singleValue := shipwrightv1beta1.SingleValue{
+			Value: &r,
+		}
+		values = append(values, singleValue)
+	}
+
+	return values
+}
+
+func (t *ConvertOptions) resolveImageStreamRef(name string, namespace string) (string, error) {
+	imageStreamTag := imagev1.ImageStreamTag{}
+
+	err := t.Client.Get(context.Background(), client.ObjectKey{
+		Namespace: namespace,
+		Name:      name,
+	}, &imageStreamTag)
+	if err != nil {
+		return "", err
+	}
+	imageRef := imageStreamTag.Tag.From.Name
+
+	return imageRef, nil
+}
+
+func (t *ConvertOptions) writeBuildConfigs(bcList buildv1.BuildConfigList) error {
+	errs := []error{}
+	targetDir := filepath.Join(t.ExportDir, "buildconfigs", t.Namespace)
+	err := os.MkdirAll(targetDir, 0700)
+	switch {
+	case os.IsExist(err):
+	case err != nil:
+		t.logger.Errorf("error creating the resources directory: %#v", err)
+		return err
+	}
+
+	for _, bc := range bcList.Items {
+		bc.Kind = "BuildConfig"
+		bc.APIVersion = "build.openshift.io/v1"
+		path := filepath.Join(targetDir, getBuildConfigFilePath(bc))
+		f, err := os.Create(path)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+
+		objBytes, err := yaml.Marshal(bc)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+
+		_, err = f.Write(objBytes)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+
+		err = f.Close()
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+	}
+
+	return nil
+}
+
+func getBuildConfigFilePath(bc buildv1.BuildConfig) string {
+	return strings.Join([]string{bc.GetObjectKind().GroupVersionKind().GroupKind().Kind, bc.GetObjectKind().GroupVersionKind().GroupKind().Group, bc.GetObjectKind().GroupVersionKind().Version, bc.Namespace, bc.Name}, "_") + ".yaml"
+}
+
+func (t *ConvertOptions) writeBuild(b *shipwrightv1beta1.Build) error {
+	targetDir := filepath.Join(t.ExportDir, "builds", t.Namespace)
+	err := os.MkdirAll(targetDir, 0700)
+	switch {
+	case os.IsExist(err):
+	case err != nil:
+		t.logger.Errorf("error creating the resources directory: %#v", err)
+		return err
+	}
+
+	path := filepath.Join(targetDir, getBuildFilePath(*b))
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+
+	objBytes, err := yaml.Marshal(b)
+	if err != nil {
+		return err
+	}
+
+	_, err = f.Write(objBytes)
+	if err != nil {
+		return err
+	}
+
+	err = f.Close()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (t *ConvertOptions) processBuildArgs(bc buildv1.BuildConfig, b *shipwrightv1beta1.Build) {
+	if len(bc.Spec.Strategy.DockerStrategy.BuildArgs) != 0 {
+		values := []shipwrightv1beta1.SingleValue{}
+
+		for _, buildArg := range bc.Spec.Strategy.DockerStrategy.BuildArgs {
+			envNameValue := buildArg.Name + "=" + buildArg.Value
+			value := shipwrightv1beta1.SingleValue{
+				Value: &envNameValue,
+			}
+			values = append(values, value)
+		}
+
+		buildArgsParam := shipwrightv1beta1.ParamValue{
+			Name:   "build-args",
+			Values: values,
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, buildArgsParam)
+	}
+}
+
+func getBuildFilePath(b shipwrightv1beta1.Build) string {
+	return strings.Join([]string{b.GetObjectKind().GroupVersionKind().GroupKind().Kind, b.GetObjectKind().GroupVersionKind().GroupKind().Group, b.GetObjectKind().GroupVersionKind().Version, b.Namespace, b.Name}, "_") + ".yaml"
+}
