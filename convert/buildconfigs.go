@@ -105,8 +105,9 @@ func (t *ConvertOptions) processSource(bc buildv1.BuildConfig, b *shipwrightv1be
 			URL:      bc.Spec.Source.Git.URI,
 		}
 		source := &shipwrightv1beta1.Source{
-			Git:  git,
-			Type: "Git",
+			Git:        git,
+			Type:       "Git",
+			ContextDir: &bc.Spec.Source.ContextDir,
 		}
 
 		b.Spec.Source = source
