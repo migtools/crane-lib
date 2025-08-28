@@ -14,6 +14,13 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+const (
+	// Type of "From" image for Docker Strategy
+	ImageStreamTag   = "ImageStreamTag"
+	ImageStreamImage = "ImageStreamImage"
+	DockerImage      = "DockerImage"
+)
+
 func (t *ConvertOptions) convertBuildConfigs() error {
 	bcList := buildv1.BuildConfigList{}
 	err := t.Client.List(context.TODO(), &bcList, client.InNamespace(t.Namespace))
@@ -39,6 +46,12 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 			b.Spec.Strategy = shipwrightv1beta1.Strategy{
 				Kind: &ClusterBuildStrategyKind,
 				Name: "buildah",
+			}
+			if bc.Spec.Strategy.DockerStrategy.From != nil {
+				err := t.processDockerStrategyFromField(&bc, b)
+				if err != nil {
+					return err
+				}
 			}
 			if bc.Spec.Strategy.DockerStrategy.DockerfilePath != "" {
 				dockerfile := shipwrightv1beta1.ParamValue{
@@ -94,6 +107,53 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 		t.writeBuild(b)
 	}
 
+	return nil
+}
+
+// processDockerStrategyFromField processes From field for Docker Strategy
+// TODO: This can probably be generalised to use with Source strategy also
+func (t *ConvertOptions) processDockerStrategyFromField(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
+	if bc.Spec.Strategy.DockerStrategy.From == nil {
+		return nil
+	}
+
+	switch fromKind := bc.Spec.Strategy.DockerStrategy.From.Kind; fromKind {
+	case ImageStreamTag:
+		imageRef, err := t.resolveImageStreamRef(bc.Spec.Strategy.DockerStrategy.From.Name, bc.Spec.Strategy.DockerStrategy.From.Namespace)
+		if err != nil {
+			return err
+		}
+		fromImage := shipwrightv1beta1.ParamValue{
+			Name: "from",
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &imageRef,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, fromImage)
+	case ImageStreamImage:
+		imageRef, err := t.resolveImageStreamRef(bc.Spec.Strategy.DockerStrategy.From.Name, bc.Spec.Strategy.DockerStrategy.From.Namespace)
+		if err != nil {
+			return err
+		}
+		fromImage := shipwrightv1beta1.ParamValue{
+			Name: "from",
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &imageRef,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, fromImage)
+	case DockerImage:
+		// we can use the name directly
+		fromImage := shipwrightv1beta1.ParamValue{
+			Name: "from",
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &bc.Spec.Strategy.DockerStrategy.From.Name,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, fromImage)
+	default:
+		return fmt.Errorf("docker strategy From kind %s is unknown for BuildConfig %s", fromKind, bc.Name)
+	}
 	return nil
 }
 
