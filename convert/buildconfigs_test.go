@@ -31,7 +31,7 @@ func (m *MockClient) Get(ctx context.Context, key client.ObjectKey, obj client.O
 	if args.Get(0) != nil {
 		return args.Error(0)
 	}
-	
+
 	// Handle ImageStreamTag mock response
 	if ist, ok := obj.(*imagev1.ImageStreamTag); ok {
 		ist.Tag = &imagev1.TagReference{
@@ -48,7 +48,7 @@ func (m *MockClient) List(ctx context.Context, list client.ObjectList, opts ...c
 	if args.Get(0) != nil {
 		return args.Error(0)
 	}
-	
+
 	// Handle BuildConfigList mock response
 	if bcList, ok := list.(*buildv1.BuildConfigList); ok {
 		bc := buildv1.BuildConfig{
@@ -179,7 +179,7 @@ func TestParseRegistries(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := parseRegistries(tt.registries)
 			assert.Equal(t, tt.expectedLen, len(result))
-			
+
 			for i, registry := range tt.registries {
 				assert.Equal(t, registry, *result[i].Value)
 			}
@@ -237,9 +237,9 @@ func TestProcessSource(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			co := &ConvertOptions{}
 			build := &shipwrightv1beta1.Build{}
-			
+
 			co.processSource(tt.buildConfig, build)
-			
+
 			if tt.expectedSource == nil {
 				assert.Nil(t, build.Spec.Source)
 			} else {
@@ -255,9 +255,9 @@ func TestProcessSource(t *testing.T) {
 
 func TestProcessOutput(t *testing.T) {
 	tests := []struct {
-		name           string
-		buildConfig    buildv1.BuildConfig
-		expectedImage  string
+		name          string
+		buildConfig   buildv1.BuildConfig
+		expectedImage string
 	}{
 		{
 			name: "ImageStreamTag output with namespace",
@@ -326,9 +326,9 @@ func TestProcessOutput(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			co := &ConvertOptions{}
 			build := &shipwrightv1beta1.Build{}
-			
+
 			co.processOutput(tt.buildConfig, build)
-			
+
 			assert.Equal(t, tt.expectedImage, build.Spec.Output.Image)
 		})
 	}
@@ -336,32 +336,32 @@ func TestProcessOutput(t *testing.T) {
 
 func TestAddRegistries(t *testing.T) {
 	tests := []struct {
-		name              string
-		searchRegistries  []string
+		name               string
+		searchRegistries   []string
 		insecureRegistries []string
-		blockRegistries   []string
-		expectedParams    int
+		blockRegistries    []string
+		expectedParams     int
 	}{
 		{
-			name:              "no registries",
-			searchRegistries:  []string{},
+			name:               "no registries",
+			searchRegistries:   []string{},
 			insecureRegistries: []string{},
-			blockRegistries:   []string{},
-			expectedParams:    0,
+			blockRegistries:    []string{},
+			expectedParams:     0,
 		},
 		{
-			name:              "search registries only",
-			searchRegistries:  []string{"registry1.example.com"},
+			name:               "search registries only",
+			searchRegistries:   []string{"registry1.example.com"},
 			insecureRegistries: []string{},
-			blockRegistries:   []string{},
-			expectedParams:    1,
+			blockRegistries:    []string{},
+			expectedParams:     1,
 		},
 		{
-			name:              "all registry types",
-			searchRegistries:  []string{"registry1.example.com"},
+			name:               "all registry types",
+			searchRegistries:   []string{"registry1.example.com"},
 			insecureRegistries: []string{"registry2.example.com"},
-			blockRegistries:   []string{"registry3.example.com"},
-			expectedParams:    3,
+			blockRegistries:    []string{"registry3.example.com"},
+			expectedParams:     3,
 		},
 	}
 
@@ -377,17 +377,17 @@ func TestAddRegistries(t *testing.T) {
 					ParamValues: []shipwrightv1beta1.ParamValue{},
 				},
 			}
-			
+
 			co.addRegistries(build)
-			
+
 			assert.Equal(t, tt.expectedParams, len(build.Spec.ParamValues))
-			
+
 			// Verify parameter names
 			paramNames := make(map[string]bool)
 			for _, param := range build.Spec.ParamValues {
 				paramNames[param.Name] = true
 			}
-			
+
 			if len(tt.searchRegistries) > 0 {
 				assert.True(t, paramNames["registries-search"])
 			}
@@ -453,16 +453,16 @@ func TestProcessBuildArgs(t *testing.T) {
 					ParamValues: []shipwrightv1beta1.ParamValue{},
 				},
 			}
-			
+
 			co.processBuildArgs(tt.buildConfig, build)
-			
+
 			assert.Equal(t, tt.expectedParams, len(build.Spec.ParamValues))
-			
+
 			if tt.expectedParams > 0 {
 				param := build.Spec.ParamValues[0]
 				assert.Equal(t, "build-args", param.Name)
 				assert.Equal(t, len(tt.expectedValues), len(param.Values))
-				
+
 				for i, expectedValue := range tt.expectedValues {
 					assert.Equal(t, expectedValue, *param.Values[i].Value)
 				}
@@ -509,20 +509,20 @@ func TestGetBuildFilePath(t *testing.T) {
 
 func TestResolveImageStreamRef(t *testing.T) {
 	tests := []struct {
-		name           string
-		streamName     string
-		namespace      string
-		mockError      error
-		expectedImage  string
-		expectError    bool
+		name          string
+		streamName    string
+		namespace     string
+		mockError     error
+		expectedImage string
+		expectError   bool
 	}{
 		{
-			name:           "successful resolution",
-			streamName:     "test-stream:latest",
-			namespace:      "test-namespace",
-			mockError:      nil,
-			expectedImage:  "registry.example.com/image:latest",
-			expectError:    false,
+			name:          "successful resolution",
+			streamName:    "test-stream:latest",
+			namespace:     "test-namespace",
+			mockError:     nil,
+			expectedImage: "registry.example.com/image:latest",
+			expectError:   false,
 		},
 		{
 			name:        "client error",
@@ -554,6 +554,142 @@ func TestResolveImageStreamRef(t *testing.T) {
 			mockClient.AssertExpectations(t)
 		})
 	}
+}
+
+func TestProcessDockerStrategyFromField(t *testing.T) {
+	t.Run("ImageStreamTag success", func(t *testing.T) {
+		mockClient := &MockClient{}
+		co := &ConvertOptions{Client: mockClient}
+
+		// Mock Get to succeed and populate ImageStreamTag
+		mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+		bc := &buildv1.BuildConfig{
+			Spec: buildv1.BuildConfigSpec{
+				CommonSpec: buildv1.CommonSpec{
+					Strategy: buildv1.BuildStrategy{
+						Type: buildv1.DockerBuildStrategyType,
+						DockerStrategy: &buildv1.DockerBuildStrategy{
+							From: &corev1.ObjectReference{Kind: ImageStreamTag, Name: "example:latest", Namespace: "ns"},
+						},
+					},
+				},
+			},
+		}
+
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+
+		err := co.processDockerStrategyFromField(bc, build)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(build.Spec.ParamValues))
+		assert.Equal(t, "from", build.Spec.ParamValues[0].Name)
+		assert.NotNil(t, build.Spec.ParamValues[0].SingleValue)
+		assert.Equal(t, "registry.example.com/image:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("ImageStreamImage success", func(t *testing.T) {
+		mockClient := &MockClient{}
+		co := &ConvertOptions{Client: mockClient}
+
+		// Mock Get to succeed and populate ImageStreamTag (resolveImageStreamRef uses ImageStreamTag)
+		mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+		bc := &buildv1.BuildConfig{
+			Spec: buildv1.BuildConfigSpec{
+				CommonSpec: buildv1.CommonSpec{
+					Strategy: buildv1.BuildStrategy{
+						Type: buildv1.DockerBuildStrategyType,
+						DockerStrategy: &buildv1.DockerBuildStrategy{
+							From: &corev1.ObjectReference{Kind: ImageStreamImage, Name: "example@sha256:deadbeef", Namespace: "ns"},
+						},
+					},
+				},
+			},
+		}
+
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+
+		err := co.processDockerStrategyFromField(bc, build)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(build.Spec.ParamValues))
+		assert.Equal(t, "from", build.Spec.ParamValues[0].Name)
+		assert.NotNil(t, build.Spec.ParamValues[0].SingleValue)
+		assert.Equal(t, "registry.example.com/image:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("DockerImage direct", func(t *testing.T) {
+		co := &ConvertOptions{}
+
+		bc := &buildv1.BuildConfig{
+			Spec: buildv1.BuildConfigSpec{
+				CommonSpec: buildv1.CommonSpec{
+					Strategy: buildv1.BuildStrategy{
+						Type: buildv1.DockerBuildStrategyType,
+						DockerStrategy: &buildv1.DockerBuildStrategy{
+							From: &corev1.ObjectReference{Kind: DockerImage, Name: "docker.io/library/nginx:latest"},
+						},
+					},
+				},
+			},
+		}
+
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+
+		err := co.processDockerStrategyFromField(bc, build)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(build.Spec.ParamValues))
+		assert.Equal(t, "from", build.Spec.ParamValues[0].Name)
+		assert.NotNil(t, build.Spec.ParamValues[0].SingleValue)
+		assert.Equal(t, "docker.io/library/nginx:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+	})
+
+	t.Run("Unknown kind returns error", func(t *testing.T) {
+		co := &ConvertOptions{}
+
+		bc := &buildv1.BuildConfig{
+			Spec: buildv1.BuildConfigSpec{
+				CommonSpec: buildv1.CommonSpec{
+					Strategy: buildv1.BuildStrategy{
+						Type: buildv1.DockerBuildStrategyType,
+						DockerStrategy: &buildv1.DockerBuildStrategy{
+							From: &corev1.ObjectReference{Kind: "Unknown", Name: "x"},
+						},
+					},
+				},
+			},
+		}
+
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+
+		err := co.processDockerStrategyFromField(bc, build)
+		assert.Error(t, err)
+		assert.Equal(t, 0, len(build.Spec.ParamValues))
+	})
+
+	t.Run("Nil From no-op", func(t *testing.T) {
+		co := &ConvertOptions{}
+
+		bc := &buildv1.BuildConfig{
+			Spec: buildv1.BuildConfigSpec{
+				CommonSpec: buildv1.CommonSpec{
+					Strategy: buildv1.BuildStrategy{
+						Type:           buildv1.DockerBuildStrategyType,
+						DockerStrategy: &buildv1.DockerBuildStrategy{From: nil},
+					},
+				},
+			},
+		}
+
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+
+		err := co.processDockerStrategyFromField(bc, build)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, len(build.Spec.ParamValues))
+	})
 }
 
 func TestWriteBuildConfigs(t *testing.T) {
@@ -629,4 +765,4 @@ func TestWriteBuild(t *testing.T) {
 // Helper function to create string pointers
 func stringPtr(s string) *string {
 	return &s
-} 
+}
