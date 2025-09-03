@@ -10,6 +10,7 @@ import (
 	buildv1 "github.com/openshift/api/build/v1"
 	imagev1 "github.com/openshift/api/image/v1"
 	shipwrightv1beta1 "github.com/shipwright-io/build/pkg/apis/build/v1beta1"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 )
@@ -47,12 +48,21 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 				Kind: &ClusterBuildStrategyKind,
 				Name: "buildah",
 			}
+
 			if bc.Spec.Strategy.DockerStrategy.From != nil {
 				err := t.processDockerStrategyFromField(&bc, b)
 				if err != nil {
 					return err
 				}
 			}
+
+			// Validate DockerStrategy pull secret
+			if bc.Spec.Strategy.DockerStrategy.PullSecret != nil {
+				if err := t.validateDockerPullSecret(&bc); err != nil {
+					return err
+				}
+			}
+
 			if bc.Spec.Strategy.DockerStrategy.DockerfilePath != "" {
 				dockerfile := shipwrightv1beta1.ParamValue{
 					Name: "dockerfile",
@@ -154,6 +164,41 @@ func (t *ConvertOptions) processDockerStrategyFromField(bc *buildv1.BuildConfig,
 	default:
 		return fmt.Errorf("docker strategy From kind %s is unknown for BuildConfig %s", fromKind, bc.Name)
 	}
+	return nil
+}
+
+func (t *ConvertOptions) validateDockerPullSecret(bc *buildv1.BuildConfig) error {
+	secretName := bc.Spec.Strategy.DockerStrategy.PullSecret.Name
+	if secretName == "" {
+		return fmt.Errorf("dockerStrategy.pullSecret name is empty for BuildConfig %s", bc.Name)
+	}
+
+	var secret corev1.Secret
+	if err := t.Client.Get(context.Background(), client.ObjectKey{
+		Namespace: bc.Namespace,
+		Name:      secretName,
+	}, &secret); err != nil {
+		return fmt.Errorf("failed to get pull secret %q for BuildConfig %s: %w", secretName, bc.Name, err)
+	}
+
+	switch secret.Type {
+	case corev1.SecretTypeDockerConfigJson:
+		data, ok := secret.Data[corev1.DockerConfigJsonKey]
+		if !ok || len(data) == 0 {
+			return fmt.Errorf("secret %q must contain key %q for type %q",
+				secretName, corev1.DockerConfigJsonKey, corev1.SecretTypeDockerConfigJson)
+		}
+	case corev1.SecretTypeDockercfg:
+		data, ok := secret.Data[corev1.DockerConfigKey]
+		if !ok || len(data) == 0 {
+			return fmt.Errorf("secret %q must contain key %q for type %q",
+				secretName, corev1.DockerConfigKey, corev1.SecretTypeDockercfg)
+		}
+	default:
+		return fmt.Errorf("unsupported pull secret type %q for secret %q; supported types are %q and %q",
+			string(secret.Type), secretName, corev1.SecretTypeDockerConfigJson, corev1.SecretTypeDockercfg)
+	}
+
 	return nil
 }
 
