@@ -69,6 +69,10 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 				}
 			}
 
+			if bc.Spec.Strategy.DockerStrategy.Env != nil {
+				b.Spec.Env = append(b.Spec.Env, bc.Spec.Strategy.DockerStrategy.Env...)
+			}
+
 			if bc.Spec.Strategy.DockerStrategy.DockerfilePath != "" {
 				dockerfile := shipwrightv1beta1.ParamValue{
 					Name: "dockerfile",
