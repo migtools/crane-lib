@@ -11,6 +11,7 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 	shipwrightv1beta1 "github.com/shipwright-io/build/pkg/apis/build/v1beta1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 )
@@ -56,9 +57,14 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 				}
 			}
 
-			// Validate DockerStrategy pull secret
 			if bc.Spec.Strategy.DockerStrategy.PullSecret != nil {
+				// Validate DockerStrategy pull secret
 				if err := t.validateDockerPullSecret(&bc); err != nil {
+					return err
+				}
+
+				// Generate ServiceAccount for pull secret
+				if err := t.generateServiceAccountForPullSecret(&bc); err != nil {
 					return err
 				}
 			}
@@ -200,6 +206,64 @@ func (t *ConvertOptions) validateDockerPullSecret(bc *buildv1.BuildConfig) error
 	}
 
 	return nil
+}
+
+func (t *ConvertOptions) generateServiceAccountForPullSecret(bc *buildv1.BuildConfig) error {
+	// Determine ServiceAccount name
+	saName := bc.Spec.ServiceAccount
+	if saName == "" {
+		saName = bc.Name + "-sa"
+	}
+
+	// Create ServiceAccount object
+	serviceAccount := &corev1.ServiceAccount{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ServiceAccount",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      saName,
+			Namespace: bc.Namespace,
+		},
+		ImagePullSecrets: []corev1.LocalObjectReference{
+			{
+				Name: bc.Spec.Strategy.DockerStrategy.PullSecret.Name,
+			},
+		},
+	}
+
+	// Write ServiceAccount YAML
+	return t.writeServiceAccount(serviceAccount)
+}
+
+func (t *ConvertOptions) writeServiceAccount(sa *corev1.ServiceAccount) error {
+	targetDir := filepath.Join(t.ExportDir, "serviceaccounts", sa.Namespace)
+	err := os.MkdirAll(targetDir, 0700)
+	switch {
+	case os.IsExist(err):
+	case err != nil:
+		t.logger.Errorf("error creating the serviceaccounts directory: %#v", err)
+		return err
+	}
+
+	path := filepath.Join(targetDir, getServiceAccountFilePath(*sa))
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	objBytes, err := yaml.Marshal(sa)
+	if err != nil {
+		return err
+	}
+
+	_, err = f.Write(objBytes)
+	return err
+}
+
+func getServiceAccountFilePath(sa corev1.ServiceAccount) string {
+	return strings.Join([]string{sa.GetObjectKind().GroupVersionKind().GroupKind().Kind, sa.GetObjectKind().GroupVersionKind().GroupKind().Group, sa.GetObjectKind().GroupVersionKind().Version, sa.Namespace, sa.Name}, "_") + ".yaml"
 }
 
 func (t *ConvertOptions) processSource(bc buildv1.BuildConfig, b *shipwrightv1beta1.Build) {
