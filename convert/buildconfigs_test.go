@@ -3,6 +3,7 @@ package convert
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1031,6 +1032,339 @@ func TestProcessDockerStrategyVolumes(t *testing.T) {
 					}
 				}
 			}
+		})
+	}
+}
+
+func TestValidateDockerPullSecret(t *testing.T) {
+	tests := []struct {
+		name          string
+		buildConfig   *buildv1.BuildConfig
+		mockSecret    *corev1.Secret
+		mockError     error
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "valid dockerconfigjson secret",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc", Namespace: "test-ns"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								PullSecret: &corev1.LocalObjectReference{Name: "my-secret"},
+							},
+						},
+					},
+				},
+			},
+			mockSecret: &corev1.Secret{
+				Type: corev1.SecretTypeDockerConfigJson,
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: []byte(`{"auths":{"registry.example.com":{"auth":"dGVzdDp0ZXN0"}}}`),
+				},
+			},
+			mockError:   nil,
+			expectError: false,
+		},
+		{
+			name: "valid dockercfg secret",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc", Namespace: "test-ns"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								PullSecret: &corev1.LocalObjectReference{Name: "my-secret"},
+							},
+						},
+					},
+				},
+			},
+			mockSecret: &corev1.Secret{
+				Type: corev1.SecretTypeDockercfg,
+				Data: map[string][]byte{
+					corev1.DockerConfigKey: []byte(`{"registry.example.com":{"auth":"dGVzdDp0ZXN0"}}`),
+				},
+			},
+			mockError:   nil,
+			expectError: false,
+		},
+		{
+			name: "empty pull secret name",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc", Namespace: "test-ns"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								PullSecret: &corev1.LocalObjectReference{Name: ""},
+							},
+						},
+					},
+				},
+			},
+			expectError:   true,
+			errorContains: "dockerStrategy.pullSecret name is empty",
+		},
+		{
+			name: "secret not found",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc", Namespace: "test-ns"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								PullSecret: &corev1.LocalObjectReference{Name: "missing-secret"},
+							},
+						},
+					},
+				},
+			},
+			mockError:     errors.New("secret not found"),
+			expectError:   true,
+			errorContains: "failed to get pull secret",
+		},
+		{
+			name: "unsupported secret type",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc", Namespace: "test-ns"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								PullSecret: &corev1.LocalObjectReference{Name: "my-secret"},
+							},
+						},
+					},
+				},
+			},
+			mockSecret: &corev1.Secret{
+				Type: "Opaque",
+				Data: map[string][]byte{
+					"data": []byte("some-data"),
+				},
+			},
+			mockError:     nil,
+			expectError:   true,
+			errorContains: "unsupported pull secret type",
+		},
+		{
+			name: "dockerconfigjson secret missing data",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc", Namespace: "test-ns"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								PullSecret: &corev1.LocalObjectReference{Name: "my-secret"},
+							},
+						},
+					},
+				},
+			},
+			mockSecret: &corev1.Secret{
+				Type: corev1.SecretTypeDockerConfigJson,
+				Data: map[string][]byte{}, // Missing .dockerconfigjson key
+			},
+			mockError:     nil,
+			expectError:   true,
+			errorContains: "must contain key \".dockerconfigjson\"",
+		},
+		{
+			name: "dockercfg secret missing data",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc", Namespace: "test-ns"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								PullSecret: &corev1.LocalObjectReference{Name: "my-secret"},
+							},
+						},
+					},
+				},
+			},
+			mockSecret: &corev1.Secret{
+				Type: corev1.SecretTypeDockercfg,
+				Data: map[string][]byte{}, // Missing .dockercfg key
+			},
+			mockError:     nil,
+			expectError:   true,
+			errorContains: "must contain key \".dockercfg\"",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockClient := &MockClient{}
+			co := &ConvertOptions{Client: mockClient}
+
+			// Mock the Get call
+			if tt.mockError != nil || tt.mockSecret != nil {
+				mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+					secret := args.Get(2).(*corev1.Secret)
+					if tt.mockSecret != nil {
+						*secret = *tt.mockSecret
+					}
+				}).Return(tt.mockError)
+			}
+
+			err := co.validateDockerPullSecret(tt.buildConfig)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+
+			mockClient.AssertExpectations(t)
+		})
+	}
+}
+
+func TestGenerateServiceAccountForPullSecret(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir, err := os.MkdirTemp("", "serviceaccount_test")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	tests := []struct {
+		name               string
+		buildConfig        *buildv1.BuildConfig
+		expectedSAName     string
+		expectedSecretName string
+		expectError        bool
+		errorContains      string
+	}{
+		{
+			name: "with existing service account name",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc", Namespace: "test-ns"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						ServiceAccount: "existing-sa",
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								PullSecret: &corev1.LocalObjectReference{Name: "my-secret"},
+							},
+						},
+					},
+				},
+			},
+			expectedSAName:     "existing-sa",
+			expectedSecretName: "my-secret",
+			expectError:        false,
+		},
+		{
+			name: "without service account name - generates default",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc", Namespace: "test-ns"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								PullSecret: &corev1.LocalObjectReference{Name: "my-secret"},
+							},
+						},
+					},
+				},
+			},
+			expectedSAName:     "test-bc-sa",
+			expectedSecretName: "my-secret",
+			expectError:        false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			co := &ConvertOptions{
+				ExportDir: tempDir,
+				logger:    logrus.New(),
+			}
+
+			err := co.generateServiceAccountForPullSecret(tt.buildConfig)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+
+				// Verify ServiceAccount file was created
+				expectedPath := filepath.Join(tempDir, "serviceaccounts", tt.buildConfig.Namespace,
+					fmt.Sprintf("ServiceAccount__v1_%s_%s.yaml", tt.buildConfig.Namespace, tt.expectedSAName))
+				_, err = os.Stat(expectedPath)
+				assert.NoError(t, err, "ServiceAccount file should be created")
+
+				// Read and verify the ServiceAccount content
+				content, err := os.ReadFile(expectedPath)
+				assert.NoError(t, err)
+
+				// Basic content verification
+				assert.Contains(t, string(content), tt.expectedSAName)
+				assert.Contains(t, string(content), tt.expectedSecretName)
+				assert.Contains(t, string(content), "imagePullSecrets")
+			}
+		})
+	}
+}
+
+func TestGetServiceAccountFilePath(t *testing.T) {
+	tests := []struct {
+		name           string
+		serviceAccount corev1.ServiceAccount
+		expectedPath   string
+	}{
+		{
+			name: "standard service account",
+			serviceAccount: corev1.ServiceAccount{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "ServiceAccount",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-sa",
+					Namespace: "test-ns",
+				},
+			},
+			expectedPath: "ServiceAccount__v1_test-ns_test-sa.yaml",
+		},
+		{
+			name: "service account with group",
+			serviceAccount: corev1.ServiceAccount{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "ServiceAccount",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "complex-sa",
+					Namespace: "complex-ns",
+				},
+			},
+			expectedPath: "ServiceAccount__v1_complex-ns_complex-sa.yaml",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getServiceAccountFilePath(tt.serviceAccount)
+			assert.Equal(t, tt.expectedPath, result)
 		})
 	}
 }
