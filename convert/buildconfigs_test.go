@@ -762,6 +762,279 @@ func TestWriteBuild(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestProcessDockerStrategyVolumes(t *testing.T) {
+	tests := []struct {
+		name            string
+		buildConfig     *buildv1.BuildConfig
+		expectedVolumes int
+		expectError     bool
+		errorContains   string
+	}{
+		{
+			name: "no volumes",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								Volumes: []buildv1.BuildVolume{},
+							},
+						},
+					},
+				},
+			},
+			expectedVolumes: 0,
+			expectError:     false,
+		},
+		{
+			name: "nil volumes",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								Volumes: nil,
+							},
+						},
+					},
+				},
+			},
+			expectedVolumes: 0,
+			expectError:     false,
+		},
+		{
+			name: "secret volume",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								Volumes: []buildv1.BuildVolume{
+									{
+										Name: "secret-volume",
+										Source: buildv1.BuildVolumeSource{
+											Type: buildv1.BuildVolumeSourceTypeSecret,
+											Secret: &corev1.SecretVolumeSource{
+												SecretName: "my-secret",
+											},
+										},
+										Mounts: []buildv1.BuildVolumeMount{
+											{DestinationPath: "/etc/secret"},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedVolumes: 1,
+			expectError:     false,
+		},
+		{
+			name: "configmap volume",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								Volumes: []buildv1.BuildVolume{
+									{
+										Name: "config-volume",
+										Source: buildv1.BuildVolumeSource{
+											Type: buildv1.BuildVolumeSourceTypeConfigMap,
+											ConfigMap: &corev1.ConfigMapVolumeSource{
+												LocalObjectReference: corev1.LocalObjectReference{
+													Name: "my-config",
+												},
+											},
+										},
+										Mounts: []buildv1.BuildVolumeMount{
+											{DestinationPath: "/etc/config"},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedVolumes: 1,
+			expectError:     false,
+		},
+		{
+			name: "multiple volumes",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								Volumes: []buildv1.BuildVolume{
+									{
+										Name: "secret-volume",
+										Source: buildv1.BuildVolumeSource{
+											Type: buildv1.BuildVolumeSourceTypeSecret,
+											Secret: &corev1.SecretVolumeSource{
+												SecretName: "my-secret",
+											},
+										},
+									},
+									{
+										Name: "config-volume",
+										Source: buildv1.BuildVolumeSource{
+											Type: buildv1.BuildVolumeSourceTypeConfigMap,
+											ConfigMap: &corev1.ConfigMapVolumeSource{
+												LocalObjectReference: corev1.LocalObjectReference{
+													Name: "my-config",
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedVolumes: 2,
+			expectError:     false,
+		},
+		{
+			name: "secret volume with nil secret",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								Volumes: []buildv1.BuildVolume{
+									{
+										Name: "secret-volume",
+										Source: buildv1.BuildVolumeSource{
+											Type:   buildv1.BuildVolumeSourceTypeSecret,
+											Secret: nil, // This should cause an error
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedVolumes: 0,
+			expectError:     true,
+			errorContains:   "secret volume source is nil",
+		},
+		{
+			name: "configmap volume with nil configmap",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								Volumes: []buildv1.BuildVolume{
+									{
+										Name: "config-volume",
+										Source: buildv1.BuildVolumeSource{
+											Type:      buildv1.BuildVolumeSourceTypeConfigMap,
+											ConfigMap: nil, // This should cause an error
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedVolumes: 0,
+			expectError:     true,
+			errorContains:   "configMap volume source is nil",
+		},
+		{
+			name: "unsupported volume type",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								Volumes: []buildv1.BuildVolume{
+									{
+										Name: "unsupported-volume",
+										Source: buildv1.BuildVolumeSource{
+											Type: "UnsupportedType",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedVolumes: 0,
+			expectError:     true,
+			errorContains:   "unsupported volume source type",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			co := &ConvertOptions{
+				logger: logrus.New(),
+			}
+			build := &shipwrightv1beta1.Build{
+				Spec: shipwrightv1beta1.BuildSpec{
+					Volumes: []shipwrightv1beta1.BuildVolume{},
+				},
+			}
+
+			err := co.processDockerStrategyVolumes(tt.buildConfig, build)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				if tt.errorContains != "" {
+					assert.Contains(t, err.Error(), tt.errorContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+
+			assert.Equal(t, tt.expectedVolumes, len(build.Spec.Volumes))
+
+			// Verify volume names and types for successful cases
+			if !tt.expectError && tt.expectedVolumes > 0 {
+				for i, expectedVolume := range tt.buildConfig.Spec.Strategy.DockerStrategy.Volumes {
+					assert.Equal(t, expectedVolume.Name, build.Spec.Volumes[i].Name)
+
+					// Verify volume source type
+					switch expectedVolume.Source.Type {
+					case buildv1.BuildVolumeSourceTypeSecret:
+						assert.NotNil(t, build.Spec.Volumes[i].Secret)
+						assert.Equal(t, expectedVolume.Source.Secret.SecretName, build.Spec.Volumes[i].Secret.SecretName)
+					case buildv1.BuildVolumeSourceTypeConfigMap:
+						assert.NotNil(t, build.Spec.Volumes[i].ConfigMap)
+						assert.Equal(t, expectedVolume.Source.ConfigMap.Name, build.Spec.Volumes[i].ConfigMap.Name)
+					}
+				}
+			}
+		})
+	}
+}
+
 // Helper function to create string pointers
 func stringPtr(s string) *string {
 	return &s
