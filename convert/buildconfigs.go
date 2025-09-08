@@ -83,6 +83,12 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 				b.Spec.ParamValues = append(b.Spec.ParamValues, dockerfile)
 			}
 
+			if len(bc.Spec.Strategy.DockerStrategy.Volumes) > 0 {
+				if err := t.processDockerStrategyVolumes(&bc, b); err != nil {
+					return err
+				}
+			}
+
 			t.processBuildArgs(bc, b)
 		case "Source":
 			ClusterBuildStrategyKind := shipwrightv1beta1.ClusterBuildStrategyKind
@@ -268,6 +274,56 @@ func (t *ConvertOptions) writeServiceAccount(sa *corev1.ServiceAccount) error {
 
 func getServiceAccountFilePath(sa corev1.ServiceAccount) string {
 	return strings.Join([]string{sa.GetObjectKind().GroupVersionKind().GroupKind().Kind, sa.GetObjectKind().GroupVersionKind().GroupKind().Group, sa.GetObjectKind().GroupVersionKind().Version, sa.Namespace, sa.Name}, "_") + ".yaml"
+}
+
+func (t *ConvertOptions) processDockerStrategyVolumes(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
+	if len(bc.Spec.Strategy.DockerStrategy.Volumes) == 0 {
+		return nil
+	}
+
+	// Convert BuildConfig volumes to Shipwright volumes
+	for _, bcVolume := range bc.Spec.Strategy.DockerStrategy.Volumes {
+		// Convert OpenShift BuildVolumeSource to Kubernetes VolumeSource, which is used by Shipwright
+		volumeSource, err := t.convertBuildVolumeSource(bcVolume.Source)
+		if err != nil {
+			return fmt.Errorf("failed to convert volume %q for BuildConfig %s: %w", bcVolume.Name, bc.Name, err)
+		}
+
+		shpVolume := shipwrightv1beta1.BuildVolume{
+			Name:         bcVolume.Name,
+			VolumeSource: volumeSource,
+		}
+		b.Spec.Volumes = append(b.Spec.Volumes, shpVolume)
+
+		// Note: BuildConfig volume mount paths are not migrated to Shipwright Build
+		// Mount paths are defined in the BuildStrategy, not in the Build resource
+		if len(bcVolume.Mounts) > 0 {
+			t.logger.Warnf("BuildConfig %s volume %q has mount paths that cannot be migrated to Shipwright Build. Mount paths are defined in the BuildStrategy. Original mounts: %v",
+				bc.Name, bcVolume.Name, bcVolume.Mounts)
+		}
+	}
+	return nil
+}
+
+func (t *ConvertOptions) convertBuildVolumeSource(bcSource buildv1.BuildVolumeSource) (corev1.VolumeSource, error) {
+	volumeSource := corev1.VolumeSource{}
+
+	switch bcSource.Type {
+	case "Secret":
+		if bcSource.Secret == nil {
+			return volumeSource, fmt.Errorf("secret volume source is nil")
+		}
+		volumeSource.Secret = bcSource.Secret
+	case "ConfigMap":
+		if bcSource.ConfigMap == nil {
+			return volumeSource, fmt.Errorf("configMap volume source is nil")
+		}
+		volumeSource.ConfigMap = bcSource.ConfigMap
+	default:
+		return volumeSource, fmt.Errorf("unsupported volume source type %q; supported types are Secret and ConfigMap", bcSource.Type)
+	}
+
+	return volumeSource, nil
 }
 
 func (t *ConvertOptions) processSource(bc buildv1.BuildConfig, b *shipwrightv1beta1.Build) {
