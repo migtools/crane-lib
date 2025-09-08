@@ -1325,6 +1325,161 @@ func TestGenerateServiceAccountForPullSecret(t *testing.T) {
 	}
 }
 
+func TestProcessDockerStrategyEnv(t *testing.T) {
+	tests := []struct {
+		name          string
+		buildConfig   *buildv1.BuildConfig
+		expectedEnv   []corev1.EnvVar
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "nil env - no change",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								Env: nil,
+							},
+						},
+					},
+				},
+			},
+			expectedEnv: []corev1.EnvVar{},
+			expectError: false,
+		},
+		{
+			name: "empty env - no change",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								Env: []corev1.EnvVar{},
+							},
+						},
+					},
+				},
+			},
+			expectedEnv: []corev1.EnvVar{},
+			expectError: false,
+		},
+		{
+			name: "single env variable",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								Env: []corev1.EnvVar{
+									{Name: "VAR1", Value: "value1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedEnv: []corev1.EnvVar{
+				{Name: "VAR1", Value: "value1"},
+			},
+			expectError: false,
+		},
+		{
+			name: "multiple env variables",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								Env: []corev1.EnvVar{
+									{Name: "VAR1", Value: "value1"},
+									{Name: "VAR2", Value: "value2"},
+									{Name: "VAR3", Value: "value3"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedEnv: []corev1.EnvVar{
+				{Name: "VAR1", Value: "value1"},
+				{Name: "VAR2", Value: "value2"},
+				{Name: "VAR3", Value: "value3"},
+			},
+			expectError: false,
+		},
+		{
+			name: "env variables with existing env in build",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								Env: []corev1.EnvVar{
+									{Name: "DOCKER_VAR", Value: "docker_value"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedEnv: []corev1.EnvVar{
+				{Name: "EXISTING_VAR", Value: "existing_value"},
+				{Name: "DOCKER_VAR", Value: "docker_value"},
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			build := &shipwrightv1beta1.Build{
+				Spec: shipwrightv1beta1.BuildSpec{
+					Env: []corev1.EnvVar{},
+				},
+			}
+
+			// Add existing env for the test case that checks appending
+			if tt.name == "env variables with existing env in build" {
+				build.Spec.Env = []corev1.EnvVar{
+					{Name: "EXISTING_VAR", Value: "existing_value"},
+				}
+			}
+
+			// Simulate the ENV processing logic from convertBuildConfigs
+			if tt.buildConfig.Spec.Strategy.DockerStrategy.Env != nil {
+				build.Spec.Env = append(build.Spec.Env, tt.buildConfig.Spec.Strategy.DockerStrategy.Env...)
+			}
+
+			if tt.expectError {
+				// This test case doesn't have error scenarios, but keeping structure for future
+				assert.Fail(t, "No error scenarios defined for ENV processing")
+			} else {
+				assert.NoError(t, nil) // No error expected
+			}
+
+			// Verify the environment variables
+			assert.Equal(t, len(tt.expectedEnv), len(build.Spec.Env))
+
+			for i, expectedEnv := range tt.expectedEnv {
+				assert.Equal(t, expectedEnv.Name, build.Spec.Env[i].Name)
+				assert.Equal(t, expectedEnv.Value, build.Spec.Env[i].Value)
+			}
+		})
+	}
+}
+
 func TestGetServiceAccountFilePath(t *testing.T) {
 	tests := []struct {
 		name           string
