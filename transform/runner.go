@@ -2,6 +2,7 @@ package transform
 
 import (
 	"encoding/json"
+	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch"
 	ijsonpatch "github.com/konveyor/crane-lib/transform/internal/jsonpatch"
@@ -142,13 +143,13 @@ func (r *Runner) sanitizePatches(pluginOps []PluginOperation) (jsonpatch.Patch, 
 			equalOp := ijsonpatch.EqualOperation(foundOp.Operation, o.Operation)
 			// Handle Collision
 			val, err := o.Operation.ValueInterface()
-			err1 := errors.Cause(err)
-			if err1 != nil && err1 != jsonpatch.ErrMissing {
+			isMissing := err != nil && (errors.Cause(err) == jsonpatch.ErrMissing || strings.Contains(err.Error(), "missing value"))
+			if err != nil && !isMissing {
 				return nil, nil, err
 			}
 			previousVal, err := foundOp.Operation.ValueInterface()
-			err1 = errors.Cause(err)
-			if err1 != nil && err1 != jsonpatch.ErrMissing {
+			isPreviousMissing := err != nil && (errors.Cause(err) == jsonpatch.ErrMissing || strings.Contains(err.Error(), "missing value"))
+			if err != nil && !isPreviousMissing {
 				return nil, nil, err
 			}
 			if replaceVal {

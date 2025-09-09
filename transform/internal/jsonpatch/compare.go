@@ -2,25 +2,32 @@ package jsonpatch
 
 import (
 	"reflect"
+	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/pkg/errors"
 )
 
 func Equal(patch1, patch2 jsonpatch.Patch) (bool, error) {
-	found := []bool{}
-	for _, o := range patch1 {
-		for _, n := range patch2 {
-			if EqualOperation(o, n) {
-				found = append(found, true)
-			}
-		}
+	if len(patch1) != len(patch2) {
+		return false, nil
 	}
 
-	if len(found) == len(patch1) && len(found) == len(patch2) {
-		return true, nil
+	used := make([]bool, len(patch2))
+	for _, o1 := range patch1 {
+		found := false
+		for i, o2 := range patch2 {
+			if !used[i] && EqualOperation(o1, o2) {
+				used[i] = true
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false, nil
+		}
 	}
-	return false, nil
+	return true, nil
 }
 
 func EqualOperation(operation1, operation2 jsonpatch.Operation) bool {
@@ -37,7 +44,7 @@ func EqualOperation(operation1, operation2 jsonpatch.Operation) bool {
 		if path1 != path2 {
 			return false
 		}
-		if (operation1.Kind() == "move" || operation1.Kind() == "copy") {
+		if operation1.Kind() == "move" || operation1.Kind() == "copy" {
 			from1, err := operation1.From()
 			if err != nil {
 				return false
@@ -50,20 +57,30 @@ func EqualOperation(operation1, operation2 jsonpatch.Operation) bool {
 				return false
 			}
 		}
-		val1, err := operation1.ValueInterface()
-		err1 := errors.Cause(err)
-		if err != nil && err1 != jsonpatch.ErrMissing {
+		val1, err1 := operation1.ValueInterface()
+		val2, err2 := operation2.ValueInterface()
+		
+		// Check if both operations have missing values (like remove operations)
+		isMissing1 := err1 != nil && (errors.Cause(err1) == jsonpatch.ErrMissing || strings.Contains(err1.Error(), "missing value"))
+		isMissing2 := err2 != nil && (errors.Cause(err2) == jsonpatch.ErrMissing || strings.Contains(err2.Error(), "missing value"))
+		
+		// If one has missing value and the other doesn't, they're not equal
+		if isMissing1 != isMissing2 {
 			return false
 		}
-		val2, err := operation2.ValueInterface()
-		err2 := errors.Cause(err)
-		if err != nil && err2 != jsonpatch.ErrMissing {
-			return false
+		
+		// If both have missing values, they're equal (for operations like remove)
+		if isMissing1 && isMissing2 {
+			return true
 		}
-		if !reflect.DeepEqual(val1, val2) && !(err2 == jsonpatch.ErrMissing && err1 == jsonpatch.ErrMissing) {
-			return false
+		
+		// If neither has missing values, compare the actual values
+		if !isMissing1 && !isMissing2 {
+			return reflect.DeepEqual(val1, val2)
 		}
-		return true
+		
+		// One has an error but it's not a missing value error
+		return false
 	}
 	return false
 }

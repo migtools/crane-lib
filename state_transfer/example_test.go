@@ -42,7 +42,7 @@ var (
 // transfer data from one PVC to another
 func TestExample_basicTransfer(t *testing.T) {
 	srcClient := buildTestClient(createPvc(srcPVC, srcNamespace))
-	destClient := buildTestClient()
+	destClient := buildTestClient(createNamespace(srcNamespace))
 
 	// set up the PVC on destination to receive the data
 	pvc := &corev1.PersistentVolumeClaim{}
@@ -55,7 +55,7 @@ func TestExample_basicTransfer(t *testing.T) {
 
 	destPVC.ResourceVersion = ""
 	destPVC.Spec.VolumeName = ""
-	pvc.Annotations = map[string]string{}
+	destPVC.Annotations = map[string]string{}
 	err = destClient.Create(context.TODO(), destPVC, &client.CreateOptions{})
 	if err != nil {
 		t.Fatalf("unable to create destination PVC: %v", err)
@@ -81,9 +81,9 @@ func TestExample_basicTransfer(t *testing.T) {
 
 	route := &routev1.Route{}
 	// Mark the route as admitted.
-	err = destClient.Get(context.TODO(), client.ObjectKey{Namespace: destPVC.Namespace, Name: destPVC.Name}, route)
+	err = destClient.Get(context.TODO(), client.ObjectKey{Namespace: pvc.Namespace, Name: pvc.Name}, route)
 	if err != nil {
-		t.Fatalf("unable to get route: %v, %s/%s", err, destPVC.Namespace, destPVC.Name)
+		t.Fatalf("unable to get route: %v, %s/%s", err, pvc.Namespace, pvc.Name)
 	}
 	route.Status = routev1.RouteStatus{
 		Ingress: []routev1.RouteIngress{
@@ -97,7 +97,7 @@ func TestExample_basicTransfer(t *testing.T) {
 			},
 		},
 	}
-	err = destClient.Status().Update(context.TODO(), route)
+	err = destClient.Update(context.TODO(), route)
 	if err != nil {
 		t.Fatalf("unable to update route status: %v", err)
 	}
@@ -261,6 +261,14 @@ func createPvc(name, namespace string) *corev1.PersistentVolumeClaim {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+		},
+	}
+}
+
+func createNamespace(name string) *corev1.Namespace {
+	return &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
 		},
 	}
 }
