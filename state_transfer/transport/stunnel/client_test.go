@@ -11,6 +11,7 @@ import (
 	"github.com/konveyor/crane-lib/state_transfer/transport"
 	routev1 "github.com/openshift/api/route/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	statetransfermeta "github.com/konveyor/crane-lib/state_transfer/meta"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -173,7 +174,15 @@ func buildTestClient(objects ...runtime.Object) client.Client {
 		}
 	}
 
-	return fake.NewClientBuilder().WithScheme(s).WithRuntimeObjects(objects...).Build()
+	// Add the test namespace
+	namespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testNamespace,
+		},
+	}
+	allObjects := append([]runtime.Object{namespace}, objects...)
+
+	return fake.NewClientBuilder().WithScheme(s).WithRuntimeObjects(allObjects...).Build()
 }
 
 func createEndpoint(t *testing.T, name, namespace string, c client.Client) endpoint.Endpoint {
@@ -206,7 +215,7 @@ func createEndpoint(t *testing.T, name, namespace string, c client.Client) endpo
 			},
 		},
 	}
-	err = c.Status().Update(context.TODO(), route)
+	err = c.Update(context.TODO(), route)
 	if err != nil {
 		t.Fatalf("unable to update route status: %v", err)
 	}
