@@ -10,8 +10,17 @@ import (
 	buildv1 "github.com/openshift/api/build/v1"
 	imagev1 "github.com/openshift/api/image/v1"
 	shipwrightv1beta1 "github.com/shipwright-io/build/pkg/apis/build/v1beta1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
+)
+
+const (
+	// Type of "From" image for Docker Strategy
+	ImageStreamTag   = "ImageStreamTag"
+	ImageStreamImage = "ImageStreamImage"
+	DockerImage      = "DockerImage"
 )
 
 func (t *ConvertOptions) convertBuildConfigs() error {
@@ -40,6 +49,30 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 				Kind: &ClusterBuildStrategyKind,
 				Name: "buildah",
 			}
+
+			if bc.Spec.Strategy.DockerStrategy.From != nil {
+				err := t.processDockerStrategyFromField(&bc, b)
+				if err != nil {
+					return err
+				}
+			}
+
+			if bc.Spec.Strategy.DockerStrategy.PullSecret != nil {
+				// Validate DockerStrategy pull secret
+				if err := t.validateDockerPullSecret(&bc); err != nil {
+					return err
+				}
+
+				// Generate ServiceAccount for pull secret
+				if err := t.generateServiceAccountForPullSecret(&bc); err != nil {
+					return err
+				}
+			}
+
+			if bc.Spec.Strategy.DockerStrategy.Env != nil {
+				b.Spec.Env = append(b.Spec.Env, bc.Spec.Strategy.DockerStrategy.Env...)
+			}
+
 			if bc.Spec.Strategy.DockerStrategy.DockerfilePath != "" {
 				dockerfile := shipwrightv1beta1.ParamValue{
 					Name: "dockerfile",
@@ -48,6 +81,12 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 					},
 				}
 				b.Spec.ParamValues = append(b.Spec.ParamValues, dockerfile)
+			}
+
+			if len(bc.Spec.Strategy.DockerStrategy.Volumes) > 0 {
+				if err := t.processDockerStrategyVolumes(&bc, b); err != nil {
+					return err
+				}
 			}
 
 			t.processBuildArgs(bc, b)
@@ -95,6 +134,196 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 	}
 
 	return nil
+}
+
+// processDockerStrategyFromField processes From field for Docker Strategy
+// TODO: This can probably be generalised to use with Source strategy also
+func (t *ConvertOptions) processDockerStrategyFromField(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
+	if bc.Spec.Strategy.DockerStrategy.From == nil {
+		return nil
+	}
+
+	switch fromKind := bc.Spec.Strategy.DockerStrategy.From.Kind; fromKind {
+	case ImageStreamTag:
+		imageRef, err := t.resolveImageStreamRef(bc.Spec.Strategy.DockerStrategy.From.Name, bc.Spec.Strategy.DockerStrategy.From.Namespace)
+		if err != nil {
+			return err
+		}
+		fromImage := shipwrightv1beta1.ParamValue{
+			Name: "from",
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &imageRef,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, fromImage)
+	case ImageStreamImage:
+		imageRef, err := t.resolveImageStreamRef(bc.Spec.Strategy.DockerStrategy.From.Name, bc.Spec.Strategy.DockerStrategy.From.Namespace)
+		if err != nil {
+			return err
+		}
+		fromImage := shipwrightv1beta1.ParamValue{
+			Name: "from",
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &imageRef,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, fromImage)
+	case DockerImage:
+		// we can use the name directly
+		fromImage := shipwrightv1beta1.ParamValue{
+			Name: "from",
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &bc.Spec.Strategy.DockerStrategy.From.Name,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, fromImage)
+	default:
+		return fmt.Errorf("docker strategy From kind %s is unknown for BuildConfig %s", fromKind, bc.Name)
+	}
+	return nil
+}
+
+func (t *ConvertOptions) validateDockerPullSecret(bc *buildv1.BuildConfig) error {
+	secretName := bc.Spec.Strategy.DockerStrategy.PullSecret.Name
+	if secretName == "" {
+		return fmt.Errorf("dockerStrategy.pullSecret name is empty for BuildConfig %s", bc.Name)
+	}
+
+	var secret corev1.Secret
+	if err := t.Client.Get(context.Background(), client.ObjectKey{
+		Namespace: bc.Namespace,
+		Name:      secretName,
+	}, &secret); err != nil {
+		return fmt.Errorf("failed to get pull secret %q for BuildConfig %s: %w", secretName, bc.Name, err)
+	}
+
+	switch secret.Type {
+	case corev1.SecretTypeDockerConfigJson:
+		data, ok := secret.Data[corev1.DockerConfigJsonKey]
+		if !ok || len(data) == 0 {
+			return fmt.Errorf("secret %q must contain key %q for type %q",
+				secretName, corev1.DockerConfigJsonKey, corev1.SecretTypeDockerConfigJson)
+		}
+	case corev1.SecretTypeDockercfg:
+		data, ok := secret.Data[corev1.DockerConfigKey]
+		if !ok || len(data) == 0 {
+			return fmt.Errorf("secret %q must contain key %q for type %q",
+				secretName, corev1.DockerConfigKey, corev1.SecretTypeDockercfg)
+		}
+	default:
+		return fmt.Errorf("unsupported pull secret type %q for secret %q; supported types are %q and %q",
+			string(secret.Type), secretName, corev1.SecretTypeDockerConfigJson, corev1.SecretTypeDockercfg)
+	}
+
+	return nil
+}
+
+func (t *ConvertOptions) generateServiceAccountForPullSecret(bc *buildv1.BuildConfig) error {
+	// Determine ServiceAccount name
+	saName := bc.Spec.ServiceAccount
+	if saName == "" {
+		saName = bc.Name + "-sa"
+	}
+
+	// Create ServiceAccount object
+	serviceAccount := &corev1.ServiceAccount{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ServiceAccount",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      saName,
+			Namespace: bc.Namespace,
+		},
+		ImagePullSecrets: []corev1.LocalObjectReference{
+			{
+				Name: bc.Spec.Strategy.DockerStrategy.PullSecret.Name,
+			},
+		},
+	}
+
+	// Write ServiceAccount YAML
+	return t.writeServiceAccount(serviceAccount)
+}
+
+func (t *ConvertOptions) writeServiceAccount(sa *corev1.ServiceAccount) error {
+	targetDir := filepath.Join(t.ExportDir, "serviceaccounts", sa.Namespace)
+	err := os.MkdirAll(targetDir, 0700)
+	switch {
+	case os.IsExist(err):
+	case err != nil:
+		t.logger.Errorf("error creating the serviceaccounts directory: %#v", err)
+		return err
+	}
+
+	path := filepath.Join(targetDir, getServiceAccountFilePath(*sa))
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	objBytes, err := yaml.Marshal(sa)
+	if err != nil {
+		return err
+	}
+
+	_, err = f.Write(objBytes)
+	return err
+}
+
+func getServiceAccountFilePath(sa corev1.ServiceAccount) string {
+	return strings.Join([]string{sa.GetObjectKind().GroupVersionKind().GroupKind().Kind, sa.GetObjectKind().GroupVersionKind().GroupKind().Group, sa.GetObjectKind().GroupVersionKind().Version, sa.Namespace, sa.Name}, "_") + ".yaml"
+}
+
+func (t *ConvertOptions) processDockerStrategyVolumes(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
+	if len(bc.Spec.Strategy.DockerStrategy.Volumes) == 0 {
+		return nil
+	}
+
+	// Convert BuildConfig volumes to Shipwright volumes
+	for _, bcVolume := range bc.Spec.Strategy.DockerStrategy.Volumes {
+		// Convert OpenShift BuildVolumeSource to Kubernetes VolumeSource, which is used by Shipwright
+		volumeSource, err := t.convertBuildVolumeSource(bcVolume.Source)
+		if err != nil {
+			return fmt.Errorf("failed to convert volume %q for BuildConfig %s: %w", bcVolume.Name, bc.Name, err)
+		}
+
+		shpVolume := shipwrightv1beta1.BuildVolume{
+			Name:         bcVolume.Name,
+			VolumeSource: volumeSource,
+		}
+		b.Spec.Volumes = append(b.Spec.Volumes, shpVolume)
+
+		// Note: BuildConfig volume mount paths are not migrated to Shipwright Build
+		// Mount paths are defined in the BuildStrategy, not in the Build resource
+		if len(bcVolume.Mounts) > 0 {
+			t.logger.Warnf("BuildConfig %s volume %q has mount paths that cannot be migrated to Shipwright Build. Mount paths are defined in the BuildStrategy. Original mounts: %v",
+				bc.Name, bcVolume.Name, bcVolume.Mounts)
+		}
+	}
+	return nil
+}
+
+func (t *ConvertOptions) convertBuildVolumeSource(bcSource buildv1.BuildVolumeSource) (corev1.VolumeSource, error) {
+	volumeSource := corev1.VolumeSource{}
+
+	switch bcSource.Type {
+	case "Secret":
+		if bcSource.Secret == nil {
+			return volumeSource, fmt.Errorf("secret volume source is nil")
+		}
+		volumeSource.Secret = bcSource.Secret
+	case "ConfigMap":
+		if bcSource.ConfigMap == nil {
+			return volumeSource, fmt.Errorf("configMap volume source is nil")
+		}
+		volumeSource.ConfigMap = bcSource.ConfigMap
+	default:
+		return volumeSource, fmt.Errorf("unsupported volume source type %q; supported types are Secret and ConfigMap", bcSource.Type)
+	}
+
+	return volumeSource, nil
 }
 
 func (t *ConvertOptions) processSource(bc buildv1.BuildConfig, b *shipwrightv1beta1.Build) {
