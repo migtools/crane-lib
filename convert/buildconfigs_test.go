@@ -1284,7 +1284,7 @@ func TestValidateDockerPullSecret(t *testing.T) {
 				},
 			},
 			expectError:   true,
-			errorContains: "dockerStrategy.pullSecret name is empty",
+			errorContains: "pullSecret name is empty",
 		},
 		{
 			name: "secret not found",
@@ -1393,7 +1393,7 @@ func TestValidateDockerPullSecret(t *testing.T) {
 				}).Return(tt.mockError)
 			}
 
-			err := co.validateDockerPullSecret(tt.buildConfig)
+			err := co.validatePullSecret(tt.buildConfig, tt.buildConfig.Spec.Strategy.DockerStrategy.PullSecret)
 
 			if tt.expectError {
 				assert.Error(t, err)

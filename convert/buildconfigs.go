@@ -50,6 +50,7 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 				Name: "buildah",
 			}
 
+			// process from field
 			if bc.Spec.Strategy.DockerStrategy.From != nil {
 				err := t.processDockerStrategyFromField(&bc, b)
 				if err != nil {
@@ -57,9 +58,11 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 				}
 			}
 
-			if bc.Spec.Strategy.DockerStrategy.PullSecret != nil {
-				// Validate DockerStrategy pull secret
-				if err := t.validateDockerPullSecret(&bc); err != nil {
+			// process pull secret
+			pullSecret := bc.Spec.Strategy.DockerStrategy.PullSecret
+			if pullSecret != nil {
+				// Validate pull secret
+				if err := t.validatePullSecret(&bc, pullSecret); err != nil {
 					return err
 				}
 
@@ -98,9 +101,23 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 			}
 
 			// process From field
-			if bc.Spec.Strategy.DockerStrategy.From != nil {
+			if bc.Spec.Strategy.SourceStrategy.From.Name != "" {
 				err := t.processSourceStrategyFromField(&bc, b)
 				if err != nil {
+					return err
+				}
+			}
+
+			// process pull secret
+			pullSecret := bc.Spec.Strategy.SourceStrategy.PullSecret
+			if pullSecret != nil {
+				// Validate pull secret
+				if err := t.validatePullSecret(&bc, pullSecret); err != nil {
+					return err
+				}
+
+				// Generate ServiceAccount for pull secret
+				if err := t.generateServiceAccountForPullSecret(&bc); err != nil {
 					return err
 				}
 			}
@@ -216,10 +233,15 @@ func (t *ConvertOptions) processDockerStrategyFromField(bc *buildv1.BuildConfig,
 	return nil
 }
 
-func (t *ConvertOptions) validateDockerPullSecret(bc *buildv1.BuildConfig) error {
-	secretName := bc.Spec.Strategy.DockerStrategy.PullSecret.Name
+// validatePullSecret validates a pull secret for any build strategy
+func (t *ConvertOptions) validatePullSecret(bc *buildv1.BuildConfig, secretRef *corev1.LocalObjectReference) error {
+	if secretRef == nil {
+		return nil
+	}
+
+	secretName := secretRef.Name
 	if secretName == "" {
-		return fmt.Errorf("dockerStrategy.pullSecret name is empty for BuildConfig %s", bc.Name)
+		return fmt.Errorf("pullSecret name is empty for BuildConfig %s", bc.Name)
 	}
 
 	var secret corev1.Secret
