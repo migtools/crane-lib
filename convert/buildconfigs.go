@@ -96,25 +96,13 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 				Kind: &ClusterBuildStrategyKind,
 				Name: "source-to-image",
 			}
-			switch fromKind := bc.Spec.Strategy.SourceStrategy.From.Kind; fromKind {
-			case "ImageStreamTag":
-				imageRef, err := t.resolveImageStreamRef(bc.Spec.Strategy.SourceStrategy.From.Name, bc.Spec.Strategy.SourceStrategy.From.Namespace)
+
+			// process From field
+			if bc.Spec.Strategy.DockerStrategy.From != nil {
+				err := t.processSourceStrategyFromField(&bc, b)
 				if err != nil {
 					return err
 				}
-				builderImage := shipwrightv1beta1.ParamValue{
-					Name: "builder-image",
-					SingleValue: &shipwrightv1beta1.SingleValue{
-						Value: &imageRef,
-					},
-				}
-				b.Spec.ParamValues = append(b.Spec.ParamValues, builderImage)
-
-			//TODO: DockerImage
-
-			//TODO: ImageStreamImage
-			default:
-				fmt.Println("Strategy From kind", bc.Spec.Strategy.DockerStrategy.From.Kind, "is unknown for BuildConfig", bc.Name)
 			}
 
 		// TODO: What do we do for custom?
@@ -136,8 +124,53 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 	return nil
 }
 
+// processSourceStrategyFromField processes From field for Source strategy
+func (t *ConvertOptions) processSourceStrategyFromField(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
+	if bc.Spec.Strategy.SourceStrategy.From.Name == "" {
+		return nil
+	}
+
+	switch fromKind := bc.Spec.Strategy.SourceStrategy.From.Kind; fromKind {
+	case ImageStreamTag:
+		imageRef, err := t.resolveImageStreamRef(bc.Spec.Strategy.SourceStrategy.From.Name, bc.Spec.Strategy.SourceStrategy.From.Namespace)
+		if err != nil {
+			return err
+		}
+		builderImage := shipwrightv1beta1.ParamValue{
+			Name: "builder-image",
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &imageRef,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, builderImage)
+	case ImageStreamImage:
+		imageRef, err := t.resolveImageStreamRef(bc.Spec.Strategy.SourceStrategy.From.Name, bc.Spec.Strategy.SourceStrategy.From.Namespace)
+		if err != nil {
+			return err
+		}
+		builderImage := shipwrightv1beta1.ParamValue{
+			Name: "builder-image",
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &imageRef,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, builderImage)
+	case DockerImage:
+		// we can use the name directly
+		builderImage := shipwrightv1beta1.ParamValue{
+			Name: "builder-image",
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &bc.Spec.Strategy.SourceStrategy.From.Name,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, builderImage)
+	default:
+		return fmt.Errorf("source strategy From kind %s is unknown for BuildConfig %s", fromKind, bc.Name)
+	}
+	return nil
+}
+
 // processDockerStrategyFromField processes From field for Docker Strategy
-// TODO: This can probably be generalised to use with Source strategy also
 func (t *ConvertOptions) processDockerStrategyFromField(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
 	if bc.Spec.Strategy.DockerStrategy.From == nil {
 		return nil
