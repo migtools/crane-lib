@@ -693,6 +693,181 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 	})
 }
 
+func TestProcessSourceStrategyFromField(t *testing.T) {
+	t.Run("ImageStreamTag success", func(t *testing.T) {
+		mockClient := &MockClient{}
+		co := &ConvertOptions{Client: mockClient}
+
+		// Mock Get to succeed and populate ImageStreamTag
+		mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+		bc := &buildv1.BuildConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+			Spec: buildv1.BuildConfigSpec{
+				CommonSpec: buildv1.CommonSpec{
+					Strategy: buildv1.BuildStrategy{
+						Type: buildv1.SourceBuildStrategyType,
+						SourceStrategy: &buildv1.SourceBuildStrategy{
+							From: corev1.ObjectReference{Kind: ImageStreamTag, Name: "example:latest", Namespace: "ns"},
+						},
+					},
+				},
+			},
+		}
+
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+
+		err := co.processSourceStrategyFromField(bc, build)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(build.Spec.ParamValues))
+		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
+		assert.NotNil(t, build.Spec.ParamValues[0].SingleValue)
+		assert.Equal(t, "registry.example.com/image:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("ImageStreamImage success", func(t *testing.T) {
+		mockClient := &MockClient{}
+		co := &ConvertOptions{Client: mockClient}
+
+		// Mock Get to succeed and populate ImageStreamTag (resolveImageStreamRef uses ImageStreamTag)
+		mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+		bc := &buildv1.BuildConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+			Spec: buildv1.BuildConfigSpec{
+				CommonSpec: buildv1.CommonSpec{
+					Strategy: buildv1.BuildStrategy{
+						Type: buildv1.SourceBuildStrategyType,
+						SourceStrategy: &buildv1.SourceBuildStrategy{
+							From: corev1.ObjectReference{Kind: ImageStreamImage, Name: "example@sha256:deadbeef", Namespace: "ns"},
+						},
+					},
+				},
+			},
+		}
+
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+
+		err := co.processSourceStrategyFromField(bc, build)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(build.Spec.ParamValues))
+		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
+		assert.NotNil(t, build.Spec.ParamValues[0].SingleValue)
+		assert.Equal(t, "registry.example.com/image:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+
+		mockClient.AssertExpectations(t)
+	})
+
+	t.Run("DockerImage direct", func(t *testing.T) {
+		co := &ConvertOptions{}
+
+		bc := &buildv1.BuildConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+			Spec: buildv1.BuildConfigSpec{
+				CommonSpec: buildv1.CommonSpec{
+					Strategy: buildv1.BuildStrategy{
+						Type: buildv1.SourceBuildStrategyType,
+						SourceStrategy: &buildv1.SourceBuildStrategy{
+							From: corev1.ObjectReference{Kind: DockerImage, Name: "docker.io/library/nginx:latest"},
+						},
+					},
+				},
+			},
+		}
+
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+
+		err := co.processSourceStrategyFromField(bc, build)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(build.Spec.ParamValues))
+		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
+		assert.NotNil(t, build.Spec.ParamValues[0].SingleValue)
+		assert.Equal(t, "docker.io/library/nginx:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+	})
+
+	t.Run("Unknown kind returns error", func(t *testing.T) {
+		co := &ConvertOptions{}
+
+		bc := &buildv1.BuildConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+			Spec: buildv1.BuildConfigSpec{
+				CommonSpec: buildv1.CommonSpec{
+					Strategy: buildv1.BuildStrategy{
+						Type: buildv1.SourceBuildStrategyType,
+						SourceStrategy: &buildv1.SourceBuildStrategy{
+							From: corev1.ObjectReference{Kind: "Unknown", Name: "x"},
+						},
+					},
+				},
+			},
+		}
+
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+
+		err := co.processSourceStrategyFromField(bc, build)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "source strategy From kind Unknown is unknown for BuildConfig test-bc")
+		assert.Equal(t, 0, len(build.Spec.ParamValues))
+	})
+
+	t.Run("Empty Name no-op", func(t *testing.T) {
+		co := &ConvertOptions{}
+
+		bc := &buildv1.BuildConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+			Spec: buildv1.BuildConfigSpec{
+				CommonSpec: buildv1.CommonSpec{
+					Strategy: buildv1.BuildStrategy{
+						Type: buildv1.SourceBuildStrategyType,
+						SourceStrategy: &buildv1.SourceBuildStrategy{
+							From: corev1.ObjectReference{Kind: DockerImage, Name: ""},
+						},
+					},
+				},
+			},
+		}
+
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+
+		err := co.processSourceStrategyFromField(bc, build)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, len(build.Spec.ParamValues))
+	})
+
+	t.Run("ImageStreamTag resolve error", func(t *testing.T) {
+		mockClient := &MockClient{}
+		co := &ConvertOptions{Client: mockClient}
+
+		// Mock Get to return an error
+		mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("image stream not found"))
+
+		bc := &buildv1.BuildConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+			Spec: buildv1.BuildConfigSpec{
+				CommonSpec: buildv1.CommonSpec{
+					Strategy: buildv1.BuildStrategy{
+						Type: buildv1.SourceBuildStrategyType,
+						SourceStrategy: &buildv1.SourceBuildStrategy{
+							From: corev1.ObjectReference{Kind: ImageStreamTag, Name: "example:latest", Namespace: "ns"},
+						},
+					},
+				},
+			},
+		}
+
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+
+		err := co.processSourceStrategyFromField(bc, build)
+		assert.Error(t, err)
+		assert.Equal(t, "image stream not found", err.Error())
+		assert.Equal(t, 0, len(build.Spec.ParamValues))
+
+		mockClient.AssertExpectations(t)
+	})
+}
+
 func TestWriteBuildConfigs(t *testing.T) {
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "buildconfigs_test")
