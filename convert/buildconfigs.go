@@ -72,6 +72,7 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 				}
 			}
 
+			// process env fields
 			if bc.Spec.Strategy.DockerStrategy.Env != nil {
 				b.Spec.Env = append(b.Spec.Env, bc.Spec.Strategy.DockerStrategy.Env...)
 			}
@@ -120,6 +121,11 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 				if err := t.generateServiceAccountForPullSecret(&bc); err != nil {
 					return err
 				}
+			}
+
+			// process env fields
+			if bc.Spec.Strategy.SourceStrategy.Env != nil {
+				b.Spec.Env = append(b.Spec.Env, bc.Spec.Strategy.SourceStrategy.Env...)
 			}
 
 		// TODO: What do we do for custom?
