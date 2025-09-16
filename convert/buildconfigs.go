@@ -77,6 +77,7 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 				b.Spec.Env = append(b.Spec.Env, bc.Spec.Strategy.DockerStrategy.Env...)
 			}
 
+			// process docker file path
 			if bc.Spec.Strategy.DockerStrategy.DockerfilePath != "" {
 				dockerfile := shipwrightv1beta1.ParamValue{
 					Name: "dockerfile",
@@ -87,12 +88,14 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 				b.Spec.ParamValues = append(b.Spec.ParamValues, dockerfile)
 			}
 
+			// process volumes
 			if len(bc.Spec.Strategy.DockerStrategy.Volumes) > 0 {
 				if err := t.processDockerStrategyVolumes(&bc, b); err != nil {
 					return err
 				}
 			}
 
+			// process args
 			t.processBuildArgs(bc, b)
 		case "Source":
 			ClusterBuildStrategyKind := shipwrightv1beta1.ClusterBuildStrategyKind
@@ -126,6 +129,13 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 			// process env fields
 			if bc.Spec.Strategy.SourceStrategy.Env != nil {
 				b.Spec.Env = append(b.Spec.Env, bc.Spec.Strategy.SourceStrategy.Env...)
+			}
+
+			// process volumes
+			if len(bc.Spec.Strategy.SourceStrategy.Volumes) > 0 {
+				if err := t.processSourceStrategyVolumes(&bc, b); err != nil {
+					return err
+				}
 			}
 
 		// TODO: What do we do for custom?
@@ -337,13 +347,14 @@ func getServiceAccountFilePath(sa corev1.ServiceAccount) string {
 	return strings.Join([]string{sa.GetObjectKind().GroupVersionKind().GroupKind().Kind, sa.GetObjectKind().GroupVersionKind().GroupKind().Group, sa.GetObjectKind().GroupVersionKind().Version, sa.Namespace, sa.Name}, "_") + ".yaml"
 }
 
-func (t *ConvertOptions) processDockerStrategyVolumes(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
-	if len(bc.Spec.Strategy.DockerStrategy.Volumes) == 0 {
+// processStrategyVolumes is a generic function that processes volumes for any build strategy
+func (t *ConvertOptions) processStrategyVolumes(bc *buildv1.BuildConfig, volumes []buildv1.BuildVolume, b *shipwrightv1beta1.Build) error {
+	if len(volumes) == 0 {
 		return nil
 	}
 
 	// Convert BuildConfig volumes to Shipwright volumes
-	for _, bcVolume := range bc.Spec.Strategy.DockerStrategy.Volumes {
+	for _, bcVolume := range volumes {
 		// Convert OpenShift BuildVolumeSource to Kubernetes VolumeSource, which is used by Shipwright
 		volumeSource, err := t.convertBuildVolumeSource(bcVolume.Source)
 		if err != nil {
@@ -364,6 +375,14 @@ func (t *ConvertOptions) processDockerStrategyVolumes(bc *buildv1.BuildConfig, b
 		}
 	}
 	return nil
+}
+
+func (t *ConvertOptions) processDockerStrategyVolumes(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
+	return t.processStrategyVolumes(bc, bc.Spec.Strategy.DockerStrategy.Volumes, b)
+}
+
+func (t *ConvertOptions) processSourceStrategyVolumes(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
+	return t.processStrategyVolumes(bc, bc.Spec.Strategy.SourceStrategy.Volumes, b)
 }
 
 func (t *ConvertOptions) convertBuildVolumeSource(bcSource buildv1.BuildVolumeSource) (corev1.VolumeSource, error) {

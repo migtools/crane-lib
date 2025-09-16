@@ -938,7 +938,7 @@ func TestWriteBuild(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestProcessDockerStrategyVolumes(t *testing.T) {
+func TestProcessStrategyVolumes(t *testing.T) {
 	tests := []struct {
 		name            string
 		buildConfig     *buildv1.BuildConfig
@@ -1178,7 +1178,7 @@ func TestProcessDockerStrategyVolumes(t *testing.T) {
 				},
 			}
 
-			err := co.processDockerStrategyVolumes(tt.buildConfig, build)
+			err := co.processStrategyVolumes(tt.buildConfig, tt.buildConfig.Spec.Strategy.DockerStrategy.Volumes, build)
 
 			if tt.expectError {
 				assert.Error(t, err)
