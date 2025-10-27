@@ -580,7 +580,7 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 
 		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
 
-		err := co.processDockerStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, len(build.Spec.ParamValues))
 		assert.Equal(t, "from", build.Spec.ParamValues[0].Name)
@@ -612,7 +612,7 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 
 		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
 
-		err := co.processDockerStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, len(build.Spec.ParamValues))
 		assert.Equal(t, "from", build.Spec.ParamValues[0].Name)
@@ -640,7 +640,7 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 
 		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
 
-		err := co.processDockerStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, len(build.Spec.ParamValues))
 		assert.Equal(t, "from", build.Spec.ParamValues[0].Name)
@@ -666,7 +666,7 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 
 		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
 
-		err := co.processDockerStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.Error(t, err)
 		assert.Equal(t, 0, len(build.Spec.ParamValues))
 	})
@@ -687,7 +687,7 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 
 		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
 
-		err := co.processDockerStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
 		assert.Equal(t, 0, len(build.Spec.ParamValues))
 	})
@@ -717,7 +717,7 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 
 		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
 
-		err := co.processSourceStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, len(build.Spec.ParamValues))
 		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
@@ -750,7 +750,7 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 
 		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
 
-		err := co.processSourceStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, len(build.Spec.ParamValues))
 		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
@@ -779,7 +779,7 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 
 		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
 
-		err := co.processSourceStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, len(build.Spec.ParamValues))
 		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
@@ -806,7 +806,7 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 
 		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
 
-		err := co.processSourceStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "source strategy From kind Unknown is unknown for BuildConfig test-bc")
 		assert.Equal(t, 0, len(build.Spec.ParamValues))
@@ -831,7 +831,7 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 
 		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
 
-		err := co.processSourceStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
 		assert.Equal(t, 0, len(build.Spec.ParamValues))
 	})
@@ -859,7 +859,7 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 
 		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
 
-		err := co.processSourceStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.Error(t, err)
 		assert.Equal(t, "image stream not found", err.Error())
 		assert.Equal(t, 0, len(build.Spec.ParamValues))
