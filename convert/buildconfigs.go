@@ -176,13 +176,30 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 
 // processStrategyFromField processes From field for any strategy
 func (t *ConvertOptions) processStrategyFromField(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
-	if bc.Spec.Strategy.DockerStrategy.From == nil {
+	// Extract From field from whichever strategy is present
+	var from *corev1.ObjectReference
+	if bc.Spec.Strategy.DockerStrategy != nil && bc.Spec.Strategy.DockerStrategy.From != nil {
+		from = bc.Spec.Strategy.DockerStrategy.From
+	} else if bc.Spec.Strategy.SourceStrategy != nil && bc.Spec.Strategy.SourceStrategy.From.Name != "" {
+		from = &bc.Spec.Strategy.SourceStrategy.From
+	} else {
+		t.logger.Debugf("No From field to process for BuildConfig %s", bc.Name)
 		return nil
 	}
 
-	switch fromKind := bc.Spec.Strategy.DockerStrategy.From.Kind; fromKind {
+	if from.Kind == "" {
+		t.logger.Debugf("From.Kind is empty for BuildConfig %s, skipping", bc.Name)
+		return nil
+	}
+
+	if from.Name == "" {
+		t.logger.Debugf("From.Name is empty for BuildConfig %s, skipping", bc.Name)
+		return nil
+	}
+
+	switch fromKind := from.Kind; fromKind {
 	case ImageStreamTag:
-		imageRef, err := t.resolveImageStreamRef(bc.Spec.Strategy.DockerStrategy.From.Name, bc.Spec.Strategy.DockerStrategy.From.Namespace)
+		imageRef, err := t.resolveImageStreamRef(from.Name, from.Namespace)
 		if err != nil {
 			return err
 		}
@@ -193,7 +210,7 @@ func (t *ConvertOptions) processStrategyFromField(bc *buildv1.BuildConfig, b *sh
 			},
 		}
 	case ImageStreamImage:
-		imageRef, err := t.resolveImageStreamRef(bc.Spec.Strategy.DockerStrategy.From.Name, bc.Spec.Strategy.DockerStrategy.From.Namespace)
+		imageRef, err := t.resolveImageStreamRef(from.Name, from.Namespace)
 		if err != nil {
 			return err
 		}
@@ -208,7 +225,7 @@ func (t *ConvertOptions) processStrategyFromField(bc *buildv1.BuildConfig, b *sh
 		b.Spec.Source = &shipwrightv1beta1.Source{
 			Type: shipwrightv1beta1.OCIArtifactType,
 			OCIArtifact: &shipwrightv1beta1.OCIArtifact{
-				Image: bc.Spec.Strategy.DockerStrategy.From.Name,
+				Image: from.Name,
 			},
 		}
 	default:
