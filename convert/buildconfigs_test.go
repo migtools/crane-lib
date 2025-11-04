@@ -236,7 +236,9 @@ func TestProcessSource(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			co := &ConvertOptions{}
+			co := &ConvertOptions{
+				logger: logrus.New(),
+			}
 			build := &shipwrightv1beta1.Build{}
 
 			co.processSource(tt.buildConfig, build)
@@ -578,14 +580,14 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 			},
 		}
 
-		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{}}
 
-		err := co.processDockerStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.Equal(t, 1, len(build.Spec.ParamValues))
-		assert.Equal(t, "from", build.Spec.ParamValues[0].Name)
-		assert.NotNil(t, build.Spec.ParamValues[0].SingleValue)
-		assert.Equal(t, "registry.example.com/image:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+		assert.NotNil(t, build.Spec.Source)
+		assert.Equal(t, shipwrightv1beta1.OCIArtifactType, build.Spec.Source.Type)
+		assert.NotNil(t, build.Spec.Source.OCIArtifact)
+		assert.Equal(t, "registry.example.com/image:latest", build.Spec.Source.OCIArtifact.Image)
 
 		mockClient.AssertExpectations(t)
 	})
@@ -610,14 +612,14 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 			},
 		}
 
-		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{}}
 
-		err := co.processDockerStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.Equal(t, 1, len(build.Spec.ParamValues))
-		assert.Equal(t, "from", build.Spec.ParamValues[0].Name)
-		assert.NotNil(t, build.Spec.ParamValues[0].SingleValue)
-		assert.Equal(t, "registry.example.com/image:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+		assert.NotNil(t, build.Spec.Source)
+		assert.Equal(t, shipwrightv1beta1.OCIArtifactType, build.Spec.Source.Type)
+		assert.NotNil(t, build.Spec.Source.OCIArtifact)
+		assert.Equal(t, "registry.example.com/image:latest", build.Spec.Source.OCIArtifact.Image)
 
 		mockClient.AssertExpectations(t)
 	})
@@ -638,14 +640,14 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 			},
 		}
 
-		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{}}
 
-		err := co.processDockerStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.Equal(t, 1, len(build.Spec.ParamValues))
-		assert.Equal(t, "from", build.Spec.ParamValues[0].Name)
-		assert.NotNil(t, build.Spec.ParamValues[0].SingleValue)
-		assert.Equal(t, "docker.io/library/nginx:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+		assert.NotNil(t, build.Spec.Source)
+		assert.Equal(t, shipwrightv1beta1.OCIArtifactType, build.Spec.Source.Type)
+		assert.NotNil(t, build.Spec.Source.OCIArtifact)
+		assert.Equal(t, "docker.io/library/nginx:latest", build.Spec.Source.OCIArtifact.Image)
 	})
 
 	t.Run("Unknown kind returns error", func(t *testing.T) {
@@ -664,15 +666,15 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 			},
 		}
 
-		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{}}
 
-		err := co.processDockerStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.Error(t, err)
-		assert.Equal(t, 0, len(build.Spec.ParamValues))
+		assert.Nil(t, build.Spec.Source)
 	})
 
 	t.Run("Nil From no-op", func(t *testing.T) {
-		co := &ConvertOptions{}
+		co := &ConvertOptions{logger: logrus.New()}
 
 		bc := &buildv1.BuildConfig{
 			Spec: buildv1.BuildConfigSpec{
@@ -685,11 +687,11 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 			},
 		}
 
-		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{}}
 
-		err := co.processDockerStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.Equal(t, 0, len(build.Spec.ParamValues))
+		assert.Nil(t, build.Spec.Source)
 	})
 }
 
@@ -715,14 +717,14 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 			},
 		}
 
-		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{}}
 
-		err := co.processSourceStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.Equal(t, 1, len(build.Spec.ParamValues))
-		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
-		assert.NotNil(t, build.Spec.ParamValues[0].SingleValue)
-		assert.Equal(t, "registry.example.com/image:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+		assert.NotNil(t, build.Spec.Source)
+		assert.Equal(t, shipwrightv1beta1.OCIArtifactType, build.Spec.Source.Type)
+		assert.NotNil(t, build.Spec.Source.OCIArtifact)
+		assert.Equal(t, "registry.example.com/image:latest", build.Spec.Source.OCIArtifact.Image)
 
 		mockClient.AssertExpectations(t)
 	})
@@ -748,14 +750,14 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 			},
 		}
 
-		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{}}
 
-		err := co.processSourceStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.Equal(t, 1, len(build.Spec.ParamValues))
-		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
-		assert.NotNil(t, build.Spec.ParamValues[0].SingleValue)
-		assert.Equal(t, "registry.example.com/image:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+		assert.NotNil(t, build.Spec.Source)
+		assert.Equal(t, shipwrightv1beta1.OCIArtifactType, build.Spec.Source.Type)
+		assert.NotNil(t, build.Spec.Source.OCIArtifact)
+		assert.Equal(t, "registry.example.com/image:latest", build.Spec.Source.OCIArtifact.Image)
 
 		mockClient.AssertExpectations(t)
 	})
@@ -777,14 +779,14 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 			},
 		}
 
-		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{}}
 
-		err := co.processSourceStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.Equal(t, 1, len(build.Spec.ParamValues))
-		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
-		assert.NotNil(t, build.Spec.ParamValues[0].SingleValue)
-		assert.Equal(t, "docker.io/library/nginx:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+		assert.NotNil(t, build.Spec.Source)
+		assert.Equal(t, shipwrightv1beta1.OCIArtifactType, build.Spec.Source.Type)
+		assert.NotNil(t, build.Spec.Source.OCIArtifact)
+		assert.Equal(t, "docker.io/library/nginx:latest", build.Spec.Source.OCIArtifact.Image)
 	})
 
 	t.Run("Unknown kind returns error", func(t *testing.T) {
@@ -804,16 +806,16 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 			},
 		}
 
-		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{}}
 
-		err := co.processSourceStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "source strategy From kind Unknown is unknown for BuildConfig test-bc")
-		assert.Equal(t, 0, len(build.Spec.ParamValues))
+		assert.Contains(t, err.Error(), "strategy 'From' kind Unknown is unknown type Source for BuildConfig test-bc")
+		assert.Nil(t, build.Spec.Source)
 	})
 
 	t.Run("Empty Name no-op", func(t *testing.T) {
-		co := &ConvertOptions{}
+		co := &ConvertOptions{logger: logrus.New()}
 
 		bc := &buildv1.BuildConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
@@ -829,11 +831,11 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 			},
 		}
 
-		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{}}
 
-		err := co.processSourceStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.Equal(t, 0, len(build.Spec.ParamValues))
+		assert.Nil(t, build.Spec.Source)
 	})
 
 	t.Run("ImageStreamTag resolve error", func(t *testing.T) {
@@ -857,9 +859,9 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 			},
 		}
 
-		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{ParamValues: []shipwrightv1beta1.ParamValue{}}}
+		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{}}
 
-		err := co.processSourceStrategyFromField(bc, build)
+		err := co.processStrategyFromField(bc, build)
 		assert.Error(t, err)
 		assert.Equal(t, "image stream not found", err.Error())
 		assert.Equal(t, 0, len(build.Spec.ParamValues))

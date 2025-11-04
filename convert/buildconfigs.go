@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	buildv1 "github.com/openshift/api/build/v1"
 	imagev1 "github.com/openshift/api/image/v1"
@@ -17,10 +18,28 @@ import (
 )
 
 const (
+	// Build Strategy Types
+	BuildStrategyDockerType = "Docker"
+	BuildStrategySourceType = "Source"
+
 	// Type of "From" image for Docker Strategy
 	ImageStreamTag   = "ImageStreamTag"
 	ImageStreamImage = "ImageStreamImage"
 	DockerImage      = "DockerImage"
+
+	// Build Source Types
+	BuildSourceGit        = "Git"
+	BuildSourceDockerfile = "Dockerfile"
+	BuildSourceBinary     = "Binary"
+	BuildSourceImage      = "Image"
+	BuildSourceNone       = "None"
+
+	// Git Proxy Environment Variables
+	GitHTTPProxy  = "HTTP_PROXY"
+	GitHTTPSProxy = "HTTPS_PROXY"
+	GitNoProxy    = "NO_PROXY"
+
+	Timeout = 10 * time.Minute
 )
 
 func (t *ConvertOptions) convertBuildConfigs() error {
@@ -43,7 +62,7 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 		b.Spec.ParamValues = []shipwrightv1beta1.ParamValue{}
 
 		switch strategyType := bc.Spec.Strategy.Type; strategyType {
-		case "Docker":
+		case BuildStrategyDockerType:
 			ClusterBuildStrategyKind := shipwrightv1beta1.ClusterBuildStrategyKind
 			b.Spec.Strategy = shipwrightv1beta1.Strategy{
 				Kind: &ClusterBuildStrategyKind,
@@ -52,7 +71,7 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 
 			// process from field
 			if bc.Spec.Strategy.DockerStrategy.From != nil {
-				err := t.processDockerStrategyFromField(&bc, b)
+				err := t.processStrategyFromField(&bc, b)
 				if err != nil {
 					return err
 				}
@@ -97,7 +116,7 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 
 			// process args
 			t.processBuildArgs(bc, b)
-		case "Source":
+		case BuildStrategySourceType:
 			ClusterBuildStrategyKind := shipwrightv1beta1.ClusterBuildStrategyKind
 			b.Spec.Strategy = shipwrightv1beta1.Strategy{
 				Kind: &ClusterBuildStrategyKind,
@@ -106,7 +125,7 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 
 			// process From field
 			if bc.Spec.Strategy.SourceStrategy.From.Name != "" {
-				err := t.processSourceStrategyFromField(&bc, b)
+				err := t.processStrategyFromField(&bc, b)
 				if err != nil {
 					return err
 				}
@@ -138,8 +157,6 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 				}
 			}
 
-		// TODO: What do we do for custom?
-		// TODO: Jenkins Pipeline?
 		default:
 			fmt.Println("Strategy type", bc.Spec.Strategy.Type, "is unknown for BuildConfig", bc.Name)
 		}
@@ -157,94 +174,62 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 	return nil
 }
 
-// processSourceStrategyFromField processes From field for Source strategy
-func (t *ConvertOptions) processSourceStrategyFromField(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
-	if bc.Spec.Strategy.SourceStrategy.From.Name == "" {
+// processStrategyFromField processes From field for any strategy
+func (t *ConvertOptions) processStrategyFromField(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
+	// Extract From field from whichever strategy is present
+	var from *corev1.ObjectReference
+	if bc.Spec.Strategy.DockerStrategy != nil && bc.Spec.Strategy.DockerStrategy.From != nil {
+		from = bc.Spec.Strategy.DockerStrategy.From
+	} else if bc.Spec.Strategy.SourceStrategy != nil && bc.Spec.Strategy.SourceStrategy.From.Name != "" {
+		from = &bc.Spec.Strategy.SourceStrategy.From
+	} else {
+		t.logger.Debugf("No From field to process for BuildConfig %s", bc.Name)
 		return nil
 	}
 
-	switch fromKind := bc.Spec.Strategy.SourceStrategy.From.Kind; fromKind {
-	case ImageStreamTag:
-		imageRef, err := t.resolveImageStreamRef(bc.Spec.Strategy.SourceStrategy.From.Name, bc.Spec.Strategy.SourceStrategy.From.Namespace)
-		if err != nil {
-			return err
-		}
-		builderImage := shipwrightv1beta1.ParamValue{
-			Name: "builder-image",
-			SingleValue: &shipwrightv1beta1.SingleValue{
-				Value: &imageRef,
-			},
-		}
-		b.Spec.ParamValues = append(b.Spec.ParamValues, builderImage)
-	case ImageStreamImage:
-		imageRef, err := t.resolveImageStreamRef(bc.Spec.Strategy.SourceStrategy.From.Name, bc.Spec.Strategy.SourceStrategy.From.Namespace)
-		if err != nil {
-			return err
-		}
-		builderImage := shipwrightv1beta1.ParamValue{
-			Name: "builder-image",
-			SingleValue: &shipwrightv1beta1.SingleValue{
-				Value: &imageRef,
-			},
-		}
-		b.Spec.ParamValues = append(b.Spec.ParamValues, builderImage)
-	case DockerImage:
-		// we can use the name directly
-		builderImage := shipwrightv1beta1.ParamValue{
-			Name: "builder-image",
-			SingleValue: &shipwrightv1beta1.SingleValue{
-				Value: &bc.Spec.Strategy.SourceStrategy.From.Name,
-			},
-		}
-		b.Spec.ParamValues = append(b.Spec.ParamValues, builderImage)
-	default:
-		return fmt.Errorf("source strategy From kind %s is unknown for BuildConfig %s", fromKind, bc.Name)
-	}
-	return nil
-}
-
-// processDockerStrategyFromField processes From field for Docker Strategy
-func (t *ConvertOptions) processDockerStrategyFromField(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
-	if bc.Spec.Strategy.DockerStrategy.From == nil {
+	if from.Kind == "" {
+		t.logger.Debugf("From.Kind is empty for BuildConfig %s, skipping", bc.Name)
 		return nil
 	}
 
-	switch fromKind := bc.Spec.Strategy.DockerStrategy.From.Kind; fromKind {
+	if from.Name == "" {
+		t.logger.Debugf("From.Name is empty for BuildConfig %s, skipping", bc.Name)
+		return nil
+	}
+
+	switch fromKind := from.Kind; fromKind {
 	case ImageStreamTag:
-		imageRef, err := t.resolveImageStreamRef(bc.Spec.Strategy.DockerStrategy.From.Name, bc.Spec.Strategy.DockerStrategy.From.Namespace)
+		imageRef, err := t.resolveImageStreamRef(from.Name, from.Namespace)
 		if err != nil {
 			return err
 		}
-		fromImage := shipwrightv1beta1.ParamValue{
-			Name: "from",
-			SingleValue: &shipwrightv1beta1.SingleValue{
-				Value: &imageRef,
+		b.Spec.Source = &shipwrightv1beta1.Source{
+			Type: shipwrightv1beta1.OCIArtifactType,
+			OCIArtifact: &shipwrightv1beta1.OCIArtifact{
+				Image: imageRef,
 			},
 		}
-		b.Spec.ParamValues = append(b.Spec.ParamValues, fromImage)
 	case ImageStreamImage:
-		imageRef, err := t.resolveImageStreamRef(bc.Spec.Strategy.DockerStrategy.From.Name, bc.Spec.Strategy.DockerStrategy.From.Namespace)
+		imageRef, err := t.resolveImageStreamRef(from.Name, from.Namespace)
 		if err != nil {
 			return err
 		}
-		fromImage := shipwrightv1beta1.ParamValue{
-			Name: "from",
-			SingleValue: &shipwrightv1beta1.SingleValue{
-				Value: &imageRef,
+		b.Spec.Source = &shipwrightv1beta1.Source{
+			Type: shipwrightv1beta1.OCIArtifactType,
+			OCIArtifact: &shipwrightv1beta1.OCIArtifact{
+				Image: imageRef,
 			},
 		}
-		b.Spec.ParamValues = append(b.Spec.ParamValues, fromImage)
 	case DockerImage:
 		// we can use the name directly
-		fromImage := shipwrightv1beta1.ParamValue{
-			Name: "from",
-			SingleValue: &shipwrightv1beta1.SingleValue{
-				Value: &bc.Spec.Strategy.DockerStrategy.From.Name,
+		b.Spec.Source = &shipwrightv1beta1.Source{
+			Type: shipwrightv1beta1.OCIArtifactType,
+			OCIArtifact: &shipwrightv1beta1.OCIArtifact{
+				Image: from.Name,
 			},
 		}
-		b.Spec.ParamValues = append(b.Spec.ParamValues, fromImage)
 	default:
-		return fmt.Errorf("docker strategy From kind %s is unknown for BuildConfig %s", fromKind, bc.Name)
+		return fmt.Errorf("strategy 'From' kind %s is unknown type %s for BuildConfig %s", fromKind, bc.Spec.Strategy.Type, bc.Name)
 	}
 	return nil
 }
@@ -406,27 +391,216 @@ func (t *ConvertOptions) convertBuildVolumeSource(bcSource buildv1.BuildVolumeSo
 	return volumeSource, nil
 }
 
+// processSource processes the source for the Buildah and Souce Strategies
+// Shipwright allows building source only from one type in a single build - Either Git, Local or OCI Images.
 func (t *ConvertOptions) processSource(bc buildv1.BuildConfig, b *shipwrightv1beta1.Build) {
-	switch stype := bc.Spec.Source.Type; stype {
-	case "Git":
-		git := &shipwrightv1beta1.Git{
-			Revision: &bc.Spec.Source.Git.Ref,
-			URL:      bc.Spec.Source.Git.URI,
+	// all possible sources
+	git := bc.Spec.Source.Git
+	binary := bc.Spec.Source.Binary
+	images := bc.Spec.Source.Images
+	dockerfile := bc.Spec.Source.Dockerfile
+
+	// Inline dockerfiles are not supported in buildah strategy
+	// And this field is not relevant for source strategy
+	if dockerfile != nil && bc.Spec.Strategy.Type == BuildStrategyDockerType {
+		t.logger.Errorf("Inline Dockerfiles are not supported in buildah strategy. BuildConfig: %s, Filename: %v", bc.Name, dockerfile)
+	}
+
+	sourceCount := 0
+	if git != nil {
+		sourceCount++
+	}
+	if binary != nil {
+		sourceCount++
+	}
+	if len(images) > 0 {
+		sourceCount++
+	}
+
+	if sourceCount > 1 {
+		t.logger.Errorf("Multiple source types are not supported in a single build in Shipwright. BuildConfig: %s", bc.Name)
+		return
+		// TODO: May be provide a default Git path to handle this case
+	}
+
+	if sourceCount == 0 {
+		t.logger.Warnf("No source type is specified for the build in Shipwright. BuildConfig: %s", bc.Name)
+		return
+	}
+
+	if git != nil {
+		var cloneSecret *string
+		if bc.Spec.Source.SourceSecret != nil {
+			cloneSecret = &bc.Spec.Source.SourceSecret.Name
 		}
+
+		git := &shipwrightv1beta1.Git{
+			URL:         bc.Spec.Source.Git.URI,
+			Revision:    &bc.Spec.Source.Git.Ref,
+			CloneSecret: cloneSecret,
+		}
+
 		source := &shipwrightv1beta1.Source{
-			Git:        git,
-			Type:       "Git",
-			ContextDir: &bc.Spec.Source.ContextDir,
+			Git:  git,
+			Type: shipwrightv1beta1.GitType,
+		}
+		b.Spec.Source = source
+		t.processGitProxyConfig(bc, b)
+
+	} else if binary != nil {
+		source := &shipwrightv1beta1.Source{
+			Type: shipwrightv1beta1.LocalType,
+			Local: &shipwrightv1beta1.Local{
+				Name: "local-copy",
+				Timeout: &metav1.Duration{
+					Duration: Timeout,
+				},
+			},
+		}
+
+		if bc.Spec.Source.ContextDir != "" {
+			source.ContextDir = &bc.Spec.Source.ContextDir
+		}
+
+		// BuildConfig supports both archive and single file as binary source
+		// Shipwright does not support archive
+		if bc.Spec.Source.Binary.AsFile != "" {
+			t.logger.Errorf("Archive Source is not supported in Shipwright. BuildConfig: %s", bc.Name)
+			return
+		}
+
+		t.logger.Infof("Stream files to build pod using 'shp build upload' command. BuildConfig: %s", bc.Name)
+		b.Spec.Source = source
+
+	} else if len(images) != 0 {
+		if len(images) > 1 {
+			t.logger.Errorf("Multiple image sources are not supported in a single build in Shipwright. BuildConfig: %s", bc.Name)
+			return
+		}
+
+		image := images[0]
+
+		if image.As != nil {
+			t.logger.Errorf("Image Source 'As' field is not supported in Shipwright. BuildConfig: %s, Image: %s", bc.Name, image.From.Name)
+			return
+		}
+
+		if image.Paths != nil {
+			t.logger.Errorf("Image Source 'Paths' field is not supported in Shipwright. BuildConfig: %s, Image: %s", bc.Name, image.From.Name)
+			return
+		}
+
+		err := t.processBuildSourceFromField(&bc, b, 0)
+		if err != nil {
+			t.logger.Errorf("Failed to process image source for BuildConfig %s: Err: %v", bc.Name, err)
+			return
+		}
+
+		source := &shipwrightv1beta1.Source{
+			Type: shipwrightv1beta1.OCIArtifactType,
+			OCIArtifact: &shipwrightv1beta1.OCIArtifact{
+				Image: image.From.Name,
+			},
+		}
+
+		if image.PullSecret != nil {
+			source.OCIArtifact.PullSecret = &image.PullSecret.Name
 		}
 
 		b.Spec.Source = source
-	// TODO: Dockerfile
-	// TODO: Binary
-	// TODO: Image
-	// TODO: None
-	default:
-		fmt.Println("Source type", bc.Spec.Source.Type, "is unknown for BuildConfig", bc.Name)
 	}
+
+	var contextDir *string
+	if bc.Spec.Source.ContextDir != "" {
+		contextDir = &bc.Spec.Source.ContextDir
+	}
+
+	b.Spec.Source.ContextDir = contextDir
+}
+
+// processGitProxyConfig processes Git proxy configuration from BuildConfig and adds it as environment variables to Shipwright Build
+func (t *ConvertOptions) processGitProxyConfig(bc buildv1.BuildConfig, b *shipwrightv1beta1.Build) {
+	// Check if Git source has proxy configuration
+	if bc.Spec.Source.Git == nil {
+		return
+	}
+
+	proxyConfig := bc.Spec.Source.Git.ProxyConfig
+	proxyEnvVars := []corev1.EnvVar{}
+
+	// Add HTTP proxy if specified
+	if proxyConfig.HTTPProxy != nil && *proxyConfig.HTTPProxy != "" {
+		proxyEnvVars = append(proxyEnvVars, corev1.EnvVar{
+			Name:  GitHTTPProxy,
+			Value: *proxyConfig.HTTPProxy,
+		})
+	}
+
+	// Add HTTPS proxy if specified
+	if proxyConfig.HTTPSProxy != nil && *proxyConfig.HTTPSProxy != "" {
+		proxyEnvVars = append(proxyEnvVars, corev1.EnvVar{
+			Name:  GitHTTPSProxy,
+			Value: *proxyConfig.HTTPSProxy,
+		})
+	}
+
+	// Add NO_PROXY if specified
+	if proxyConfig.NoProxy != nil && *proxyConfig.NoProxy != "" {
+		proxyEnvVars = append(proxyEnvVars, corev1.EnvVar{
+			Name:  GitNoProxy,
+			Value: *proxyConfig.NoProxy,
+		})
+	}
+
+	// Add proxy environment variables to the Build spec
+	if len(proxyEnvVars) > 0 {
+		b.Spec.Env = append(b.Spec.Env, proxyEnvVars...)
+		t.logger.Debugf("Added %d proxy environment variables for BuildConfig %s", len(proxyEnvVars), bc.Name)
+	}
+}
+
+// processBuildSourceFromField processes From field for any strategy
+func (t *ConvertOptions) processBuildSourceFromField(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build, index int) error {
+	fromImage := bc.Spec.Source.Images[index].From
+	if fromImage.Name == "" {
+		return fmt.Errorf("image name is empty")
+	}
+
+	switch fromKind := fromImage.Kind; fromKind {
+	case ImageStreamTag:
+		imageRef, err := t.resolveImageStreamRef(fromImage.Name, fromImage.Namespace)
+		if err != nil {
+			return fmt.Errorf("failed to resolve image stream tag: %v", err)
+		}
+		b.Spec.Source = &shipwrightv1beta1.Source{
+			Type: shipwrightv1beta1.OCIArtifactType,
+			OCIArtifact: &shipwrightv1beta1.OCIArtifact{
+				Image: imageRef,
+			},
+		}
+	case ImageStreamImage:
+		imageRef, err := t.resolveImageStreamRef(fromImage.Name, fromImage.Namespace)
+		if err != nil {
+			return fmt.Errorf("failed to resolve image stream image: %v", err)
+		}
+		b.Spec.Source = &shipwrightv1beta1.Source{
+			Type: shipwrightv1beta1.OCIArtifactType,
+			OCIArtifact: &shipwrightv1beta1.OCIArtifact{
+				Image: imageRef,
+			},
+		}
+	case DockerImage:
+		// we can use the name directly
+		b.Spec.Source = &shipwrightv1beta1.Source{
+			Type: shipwrightv1beta1.OCIArtifactType,
+			OCIArtifact: &shipwrightv1beta1.OCIArtifact{
+				Image: fromImage.Name,
+			},
+		}
+	default:
+		return fmt.Errorf("BuildSource 'From' kind %s is unknown type %s for BuildConfig %s", fromKind, bc.Spec.Source.Type, bc.Name)
+	}
+	return nil
 }
 
 func (t *ConvertOptions) processOutput(bc buildv1.BuildConfig, b *shipwrightv1beta1.Build) {
