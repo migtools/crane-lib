@@ -9,7 +9,7 @@ require (
 	github.com/evanphx/json-patch v5.9.11+incompatible
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/go-logr/logr v1.4.3
-	github.com/openshift/api v0.0.0-20210625082935-ad54d363d274
+	github.com/openshift/api v0.0.0-20220525145417-ee5b62754c68
 	github.com/pkg/errors v0.9.1
 	github.com/shipwright-io/build v0.17.0
 	github.com/sirupsen/logrus v1.9.3

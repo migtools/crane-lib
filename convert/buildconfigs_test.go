@@ -237,7 +237,7 @@ func TestProcessSource(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			co := &ConvertOptions{
-				logger: logrus.New(),
+				Logger: logrus.New(),
 			}
 			build := &shipwrightv1beta1.Build{}
 
@@ -450,7 +450,9 @@ func TestProcessBuildArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			co := &ConvertOptions{}
+			co := &ConvertOptions{
+				Logger: logrus.New(),
+			}
 			build := &shipwrightv1beta1.Build{
 				Spec: shipwrightv1beta1.BuildSpec{
 					ParamValues: []shipwrightv1beta1.ParamValue{},
@@ -562,7 +564,10 @@ func TestResolveImageStreamRef(t *testing.T) {
 func TestProcessDockerStrategyFromField(t *testing.T) {
 	t.Run("ImageStreamTag success", func(t *testing.T) {
 		mockClient := &MockClient{}
-		co := &ConvertOptions{Client: mockClient}
+		co := &ConvertOptions{
+			Client: mockClient,
+			Logger: logrus.New(),
+		}
 
 		// Mock Get to succeed and populate ImageStreamTag
 		mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
@@ -594,7 +599,10 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 
 	t.Run("ImageStreamImage success", func(t *testing.T) {
 		mockClient := &MockClient{}
-		co := &ConvertOptions{Client: mockClient}
+		co := &ConvertOptions{
+			Client: mockClient,
+			Logger: logrus.New(),
+		}
 
 		// Mock Get to succeed and populate ImageStreamTag (resolveImageStreamRef uses ImageStreamTag)
 		mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
@@ -625,7 +633,9 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 	})
 
 	t.Run("DockerImage direct", func(t *testing.T) {
-		co := &ConvertOptions{}
+		co := &ConvertOptions{
+			Logger: logrus.New(),
+		}
 
 		bc := &buildv1.BuildConfig{
 			Spec: buildv1.BuildConfigSpec{
@@ -651,7 +661,9 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 	})
 
 	t.Run("Unknown kind returns error", func(t *testing.T) {
-		co := &ConvertOptions{}
+		co := &ConvertOptions{
+			Logger: logrus.New(),
+		}
 
 		bc := &buildv1.BuildConfig{
 			Spec: buildv1.BuildConfigSpec{
@@ -674,7 +686,7 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 	})
 
 	t.Run("Nil From no-op", func(t *testing.T) {
-		co := &ConvertOptions{logger: logrus.New()}
+		co := &ConvertOptions{Logger: logrus.New()}
 
 		bc := &buildv1.BuildConfig{
 			Spec: buildv1.BuildConfigSpec{
@@ -698,7 +710,10 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 func TestProcessSourceStrategyFromField(t *testing.T) {
 	t.Run("ImageStreamTag success", func(t *testing.T) {
 		mockClient := &MockClient{}
-		co := &ConvertOptions{Client: mockClient}
+		co := &ConvertOptions{
+			Client: mockClient,
+			Logger: logrus.New(),
+		}
 
 		// Mock Get to succeed and populate ImageStreamTag
 		mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
@@ -731,7 +746,10 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 
 	t.Run("ImageStreamImage success", func(t *testing.T) {
 		mockClient := &MockClient{}
-		co := &ConvertOptions{Client: mockClient}
+		co := &ConvertOptions{
+			Client: mockClient,
+			Logger: logrus.New(),
+		}
 
 		// Mock Get to succeed and populate ImageStreamTag (resolveImageStreamRef uses ImageStreamTag)
 		mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
@@ -763,7 +781,9 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 	})
 
 	t.Run("DockerImage direct", func(t *testing.T) {
-		co := &ConvertOptions{}
+		co := &ConvertOptions{
+			Logger: logrus.New(),
+		}
 
 		bc := &buildv1.BuildConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
@@ -790,7 +810,9 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 	})
 
 	t.Run("Unknown kind returns error", func(t *testing.T) {
-		co := &ConvertOptions{}
+		co := &ConvertOptions{
+			Logger: logrus.New(),
+		}
 
 		bc := &buildv1.BuildConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
@@ -815,7 +837,7 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 	})
 
 	t.Run("Empty Name no-op", func(t *testing.T) {
-		co := &ConvertOptions{logger: logrus.New()}
+		co := &ConvertOptions{Logger: logrus.New()}
 
 		bc := &buildv1.BuildConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
@@ -840,7 +862,10 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 
 	t.Run("ImageStreamTag resolve error", func(t *testing.T) {
 		mockClient := &MockClient{}
-		co := &ConvertOptions{Client: mockClient}
+		co := &ConvertOptions{
+			Client: mockClient,
+			Logger: logrus.New(),
+		}
 
 		// Mock Get to return an error
 		mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("image stream not found"))
@@ -895,7 +920,7 @@ func TestWriteBuildConfigs(t *testing.T) {
 	co := &ConvertOptions{
 		ExportDir: tempDir,
 		Namespace: "test-namespace",
-		logger:    logrus.New(),
+		Logger:    logrus.New(),
 	}
 
 	err = co.writeBuildConfigs(bcList)
@@ -928,7 +953,7 @@ func TestWriteBuild(t *testing.T) {
 	co := &ConvertOptions{
 		ExportDir: tempDir,
 		Namespace: "test-namespace",
-		logger:    logrus.New(),
+		Logger:    logrus.New(),
 	}
 
 	err = co.writeBuild(build)
@@ -1172,7 +1197,7 @@ func TestProcessStrategyVolumes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			co := &ConvertOptions{
-				logger: logrus.New(),
+				Logger: logrus.New(),
 			}
 			build := &shipwrightv1beta1.Build{
 				Spec: shipwrightv1beta1.BuildSpec{
@@ -1470,7 +1495,7 @@ func TestGenerateServiceAccountForPullSecret(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			co := &ConvertOptions{
 				ExportDir: tempDir,
-				logger:    logrus.New(),
+				Logger:    logrus.New(),
 			}
 
 			err := co.generateServiceAccountForPullSecret(tt.buildConfig)

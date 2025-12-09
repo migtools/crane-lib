@@ -11,7 +11,6 @@ import (
 type ConvertOptions struct {
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
-	logger logrus.FieldLogger
 
 	Client             client.Client
 	Namespace          string
@@ -20,6 +19,7 @@ type ConvertOptions struct {
 	InsecureRegistries []string
 	BlockRegistries    []string
 	ExportDir          string
+	Logger             logrus.FieldLogger
 }
 
 func (t *ConvertOptions) Convert() error {
