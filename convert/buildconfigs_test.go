@@ -327,7 +327,9 @@ func TestProcessOutput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			co := &ConvertOptions{}
+			co := &ConvertOptions{
+				Logger: logrus.New(),
+			}
 			build := &shipwrightv1beta1.Build{}
 
 			co.processOutput(tt.buildConfig, build)
@@ -589,10 +591,14 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 
 		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.NotNil(t, build.Spec.Source)
-		assert.Equal(t, shipwrightv1beta1.OCIArtifactType, build.Spec.Source.Type)
-		assert.NotNil(t, build.Spec.Source.OCIArtifact)
-		assert.Equal(t, "registry.example.com/image:latest", build.Spec.Source.OCIArtifact.Image)
+		assert.Nil(t, build.Spec.Source)
+		assert.Len(t, build.Spec.ParamValues, 1)
+		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
+		if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue) {
+			if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue.Value) {
+				assert.Equal(t, "registry.example.com/image:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+			}
+		}
 
 		mockClient.AssertExpectations(t)
 	})
@@ -624,10 +630,14 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 
 		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.NotNil(t, build.Spec.Source)
-		assert.Equal(t, shipwrightv1beta1.OCIArtifactType, build.Spec.Source.Type)
-		assert.NotNil(t, build.Spec.Source.OCIArtifact)
-		assert.Equal(t, "registry.example.com/image:latest", build.Spec.Source.OCIArtifact.Image)
+		assert.Nil(t, build.Spec.Source)
+		assert.Len(t, build.Spec.ParamValues, 1)
+		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
+		if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue) {
+			if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue.Value) {
+				assert.Equal(t, "registry.example.com/image:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+			}
+		}
 
 		mockClient.AssertExpectations(t)
 	})
@@ -654,10 +664,14 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 
 		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.NotNil(t, build.Spec.Source)
-		assert.Equal(t, shipwrightv1beta1.OCIArtifactType, build.Spec.Source.Type)
-		assert.NotNil(t, build.Spec.Source.OCIArtifact)
-		assert.Equal(t, "docker.io/library/nginx:latest", build.Spec.Source.OCIArtifact.Image)
+		assert.Nil(t, build.Spec.Source)
+		assert.Len(t, build.Spec.ParamValues, 1)
+		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
+		if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue) {
+			if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue.Value) {
+				assert.Equal(t, "docker.io/library/nginx:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+			}
+		}
 	})
 
 	t.Run("Unknown kind returns error", func(t *testing.T) {
@@ -683,6 +697,7 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 		err := co.processStrategyFromField(bc, build)
 		assert.Error(t, err)
 		assert.Nil(t, build.Spec.Source)
+		assert.Empty(t, build.Spec.ParamValues)
 	})
 
 	t.Run("Nil From no-op", func(t *testing.T) {
@@ -704,6 +719,7 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
 		assert.Nil(t, build.Spec.Source)
+		assert.Empty(t, build.Spec.ParamValues)
 	})
 }
 
@@ -736,10 +752,14 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 
 		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.NotNil(t, build.Spec.Source)
-		assert.Equal(t, shipwrightv1beta1.OCIArtifactType, build.Spec.Source.Type)
-		assert.NotNil(t, build.Spec.Source.OCIArtifact)
-		assert.Equal(t, "registry.example.com/image:latest", build.Spec.Source.OCIArtifact.Image)
+		assert.Nil(t, build.Spec.Source)
+		assert.Len(t, build.Spec.ParamValues, 1)
+		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
+		if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue) {
+			if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue.Value) {
+				assert.Equal(t, "registry.example.com/image:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+			}
+		}
 
 		mockClient.AssertExpectations(t)
 	})
@@ -772,10 +792,14 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 
 		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.NotNil(t, build.Spec.Source)
-		assert.Equal(t, shipwrightv1beta1.OCIArtifactType, build.Spec.Source.Type)
-		assert.NotNil(t, build.Spec.Source.OCIArtifact)
-		assert.Equal(t, "registry.example.com/image:latest", build.Spec.Source.OCIArtifact.Image)
+		assert.Nil(t, build.Spec.Source)
+		assert.Len(t, build.Spec.ParamValues, 1)
+		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
+		if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue) {
+			if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue.Value) {
+				assert.Equal(t, "registry.example.com/image:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+			}
+		}
 
 		mockClient.AssertExpectations(t)
 	})
@@ -803,10 +827,14 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 
 		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.NotNil(t, build.Spec.Source)
-		assert.Equal(t, shipwrightv1beta1.OCIArtifactType, build.Spec.Source.Type)
-		assert.NotNil(t, build.Spec.Source.OCIArtifact)
-		assert.Equal(t, "docker.io/library/nginx:latest", build.Spec.Source.OCIArtifact.Image)
+		assert.Nil(t, build.Spec.Source)
+		assert.Len(t, build.Spec.ParamValues, 1)
+		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
+		if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue) {
+			if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue.Value) {
+				assert.Equal(t, "docker.io/library/nginx:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+			}
+		}
 	})
 
 	t.Run("Unknown kind returns error", func(t *testing.T) {
@@ -834,6 +862,7 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "strategy 'From' kind Unknown is unknown type Source for BuildConfig test-bc")
 		assert.Nil(t, build.Spec.Source)
+		assert.Empty(t, build.Spec.ParamValues)
 	})
 
 	t.Run("Empty Name no-op", func(t *testing.T) {
@@ -858,6 +887,7 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 		err := co.processStrategyFromField(bc, build)
 		assert.NoError(t, err)
 		assert.Nil(t, build.Spec.Source)
+		assert.Empty(t, build.Spec.ParamValues)
 	})
 
 	t.Run("ImageStreamTag resolve error", func(t *testing.T) {
@@ -1485,7 +1515,7 @@ func TestGenerateServiceAccountForPullSecret(t *testing.T) {
 					},
 				},
 			},
-			expectedSAName:     "test-bc-sa",
+			expectedSAName:     "test-bc",
 			expectedSecretName: "my-secret",
 			expectError:        false,
 		},
@@ -1509,8 +1539,8 @@ func TestGenerateServiceAccountForPullSecret(t *testing.T) {
 				assert.NoError(t, err)
 
 				// Verify ServiceAccount file was created
-				expectedPath := filepath.Join(tempDir, "serviceaccounts", tt.buildConfig.Namespace,
-					fmt.Sprintf("ServiceAccount__v1_%s_%s.yaml", tt.buildConfig.Namespace, tt.expectedSAName))
+				expectedPath := filepath.Join(tempDir, "builds", tt.buildConfig.Namespace,
+					fmt.Sprintf("ServiceAccount_v1_%s_%s.yaml", tt.buildConfig.Namespace, tt.expectedSAName))
 				_, err = os.Stat(expectedPath)
 				assert.NoError(t, err, "ServiceAccount file should be created")
 
@@ -1700,7 +1730,7 @@ func TestGetServiceAccountFilePath(t *testing.T) {
 					Namespace: "test-ns",
 				},
 			},
-			expectedPath: "ServiceAccount__v1_test-ns_test-sa.yaml",
+			expectedPath: "ServiceAccount_v1_test-ns_test-sa.yaml",
 		},
 		{
 			name: "service account with group",
@@ -1714,7 +1744,7 @@ func TestGetServiceAccountFilePath(t *testing.T) {
 					Namespace: "complex-ns",
 				},
 			},
-			expectedPath: "ServiceAccount__v1_complex-ns_complex-sa.yaml",
+			expectedPath: "ServiceAccount_v1_complex-ns_complex-sa.yaml",
 		},
 	}
 
