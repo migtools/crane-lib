@@ -68,6 +68,7 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 		t.Logger.Infof("--------------------------------------------------------")
 		t.Logger.Infof("Processing BuildConfig: %s at index %d", bc.Name, i)
 		t.Logger.Infof("--------------------------------------------------------")
+
 		b := &shipwrightv1beta1.Build{}
 		b.Name = bc.Name
 		b.Kind = "Build"
@@ -91,17 +92,17 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 			}
 
 			// process PullSecret field
-			pullSecret := bc.Spec.Strategy.DockerStrategy.PullSecret
+			pullSecret := t.getPullSecret(&bc)
 			if pullSecret != nil {
 				// Validate pull secret
 				if err := t.validatePullSecret(&bc, pullSecret); err != nil {
-					t.Logger.Errorf("Error validating registry PullSecret")
+					t.Logger.Error("Error validating registry PullSecret")
 					return err
 				}
 
 				// Generate ServiceAccount for pull secret
 				if err := t.generateServiceAccountForPullSecret(&bc); err != nil {
-					t.Logger.Errorf("Error generating service account for registry PullSecret")
+					t.Logger.Error("Error generating service account for registry PullSecret")
 					return err
 				}
 				saName := t.getServiceAccountName(&bc)
@@ -165,31 +166,36 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 			}
 
 			// process pull secret
-			pullSecret := bc.Spec.Strategy.SourceStrategy.PullSecret
+			pullSecret := t.getPullSecret(&bc)
 			if pullSecret != nil {
-				// Validate pull secret
-				if err := t.validatePullSecret(&bc, pullSecret); err != nil {
-					return err
-				}
-
-				// Generate ServiceAccount for pull secret
-				if err := t.generateServiceAccountForPullSecret(&bc); err != nil {
-					return err
-				}
+				t.Logger.Warnf("PullSecret is not yet supported in the built-in Source-to-Image ClusterBuildStrategy in Shipwright. RFE: %s", PullSecretS2IRFE)
 			}
 
 			// process env fields
 			if bc.Spec.Strategy.SourceStrategy.Env != nil {
+				t.Logger.Infof("Processing Environment Variables")
 				b.Spec.Env = append(b.Spec.Env, bc.Spec.Strategy.SourceStrategy.Env...)
+			}
+
+			// process custom scripts
+			if bc.Spec.Strategy.SourceStrategy.Scripts != "" {
+				t.Logger.Warnf("Custom scripts are not yet supported in the built-in Source-to-Image ClusterBuildStrategy in Shipwright. RFE: %s", CustomScriptsRFE)
+			}
+
+			// process incremental build
+			if bc.Spec.Strategy.SourceStrategy.Incremental != nil {
+				t.Logger.Warnf("Incremental build is not yet supported in the built-in Source-to-Image ClusterBuildStrategy in Shipwright. RFE: %s", IncrementalBuildRFE)
+			}
+
+			// process force pull field
+			if bc.Spec.Strategy.SourceStrategy.ForcePull {
+				t.Logger.Warnf("ForcePull flag is not yet supported in the built-in Source-to-Image ClusterBuildStrategy in Shipwright. RFE: %s", ForcePullFlagS2iRFE)
 			}
 
 			// process volumes
 			if len(bc.Spec.Strategy.SourceStrategy.Volumes) > 0 {
-				if err := t.processSourceStrategyVolumes(&bc, b); err != nil {
-					return err
-				}
+				t.Logger.Warnf("Unlike BuildConfig, Volumes have to be supported in the Source-to-Image Strategy first in Shipwright. Please raise your requirements here: %s", DockerStrategyVolumesRFE)
 			}
-
 		default:
 			fmt.Println("Strategy type", bc.Spec.Strategy.Type, "is unknown for BuildConfig", bc.Name)
 		}
@@ -207,7 +213,7 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 	return nil
 }
 
-// processStrategyFromField processes From field for any strategy
+// processStrategyFromField processes From field for Source-to-Image strategy
 func (t *ConvertOptions) processStrategyFromField(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
 	// Extract From field from whichever strategy is present
 	var from *corev1.ObjectReference
@@ -236,37 +242,44 @@ func (t *ConvertOptions) processStrategyFromField(bc *buildv1.BuildConfig, b *sh
 		from.Namespace = ns
 	}
 
+	if b.Spec.ParamValues == nil {
+		b.Spec.ParamValues = []shipwrightv1beta1.ParamValue{}
+	}
+
 	switch fromKind := from.Kind; fromKind {
 	case ImageStreamTag:
 		imageRef, err := t.resolveImageStreamRef(from.Name, from.Namespace)
 		if err != nil {
 			return err
 		}
-		b.Spec.Source = &shipwrightv1beta1.Source{
-			Type: shipwrightv1beta1.OCIArtifactType,
-			OCIArtifact: &shipwrightv1beta1.OCIArtifact{
-				Image: imageRef,
+		paramValue := shipwrightv1beta1.ParamValue{
+			Name: "builder-image",
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &imageRef,
 			},
 		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, paramValue)
 	case ImageStreamImage:
 		imageRef, err := t.resolveImageStreamRef(from.Name, from.Namespace)
 		if err != nil {
 			return err
 		}
-		b.Spec.Source = &shipwrightv1beta1.Source{
-			Type: shipwrightv1beta1.OCIArtifactType,
-			OCIArtifact: &shipwrightv1beta1.OCIArtifact{
-				Image: imageRef,
+		paramValue := shipwrightv1beta1.ParamValue{
+			Name: "builder-image",
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &imageRef,
 			},
 		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, paramValue)
 	case DockerImage:
 		// we can use the name directly
-		b.Spec.Source = &shipwrightv1beta1.Source{
-			Type: shipwrightv1beta1.OCIArtifactType,
-			OCIArtifact: &shipwrightv1beta1.OCIArtifact{
-				Image: from.Name,
+		paramValue := shipwrightv1beta1.ParamValue{
+			Name: "builder-image",
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &from.Name,
 			},
 		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, paramValue)
 	default:
 		return fmt.Errorf("strategy 'From' kind %s is unknown type %s for BuildConfig %s", fromKind, bc.Spec.Strategy.Type, bc.Name)
 	}
@@ -313,7 +326,24 @@ func (t *ConvertOptions) validatePullSecret(bc *buildv1.BuildConfig, secretRef *
 	return nil
 }
 
+// getPullSecret returns the PullSecret from either DockerStrategy or SourceStrategy
+func (t *ConvertOptions) getPullSecret(bc *buildv1.BuildConfig) *corev1.LocalObjectReference {
+	if bc.Spec.Strategy.DockerStrategy != nil && bc.Spec.Strategy.DockerStrategy.PullSecret != nil {
+		return bc.Spec.Strategy.DockerStrategy.PullSecret
+	}
+	if bc.Spec.Strategy.SourceStrategy != nil && bc.Spec.Strategy.SourceStrategy.PullSecret != nil {
+		return bc.Spec.Strategy.SourceStrategy.PullSecret
+	}
+	return nil
+}
+
 func (t *ConvertOptions) generateServiceAccountForPullSecret(bc *buildv1.BuildConfig) error {
+	// Get PullSecret from either strategy type
+	pullSecret := t.getPullSecret(bc)
+	if pullSecret == nil {
+		return fmt.Errorf("no PullSecret found for BuildConfig %s", bc.Name)
+	}
+
 	// Determine ServiceAccount name
 	saName := t.getServiceAccountName(bc)
 
@@ -329,10 +359,17 @@ func (t *ConvertOptions) generateServiceAccountForPullSecret(bc *buildv1.BuildCo
 		},
 		ImagePullSecrets: []corev1.LocalObjectReference{
 			{
-				Name: bc.Spec.Strategy.DockerStrategy.PullSecret.Name,
+				Name: pullSecret.Name,
+			},
+		},
+		Secrets: []corev1.ObjectReference{
+			{
+				Name: pullSecret.Name,
 			},
 		},
 	}
+
+	serviceAccount.CreationTimestamp = metav1.Now()
 
 	// Write ServiceAccount YAML
 	return t.writeServiceAccount(serviceAccount)
@@ -341,13 +378,13 @@ func (t *ConvertOptions) generateServiceAccountForPullSecret(bc *buildv1.BuildCo
 func (t *ConvertOptions) getServiceAccountName(bc *buildv1.BuildConfig) string {
 	saName := bc.Spec.ServiceAccount
 	if saName == "" {
-		saName = bc.Name + "-sa"
+		saName = bc.Name
 	}
 	return saName
 }
 
 func (t *ConvertOptions) writeServiceAccount(sa *corev1.ServiceAccount) error {
-	targetDir := filepath.Join(t.ExportDir, "serviceaccounts", sa.Namespace)
+	targetDir := filepath.Join(t.ExportDir, "builds", sa.Namespace)
 	err := os.MkdirAll(targetDir, 0700)
 	switch {
 	case os.IsExist(err):
@@ -373,7 +410,7 @@ func (t *ConvertOptions) writeServiceAccount(sa *corev1.ServiceAccount) error {
 }
 
 func getServiceAccountFilePath(sa corev1.ServiceAccount) string {
-	return strings.Join([]string{sa.GetObjectKind().GroupVersionKind().GroupKind().Kind, sa.GetObjectKind().GroupVersionKind().GroupKind().Group, sa.GetObjectKind().GroupVersionKind().Version, sa.Namespace, sa.Name}, "_") + ".yaml"
+	return strings.Join([]string{sa.GroupVersionKind().Kind, sa.GroupVersionKind().Version, sa.Namespace, sa.Name}, "_") + ".yaml"
 }
 
 // processStrategyVolumes is a generic function that processes volumes for any build strategy
@@ -573,8 +610,6 @@ func (t *ConvertOptions) processSource(bc buildv1.BuildConfig, b *shipwrightv1be
 	if bc.Spec.Source.Secrets != nil {
 		t.Logger.Warnf("Secrets are not yet supported in Shipwright build environment. RFE: %s", SecretsRFE)
 	}
-
-	t.Logger.Infof("--------------------------------------------------------")
 }
 
 // processGitProxyConfig processes Git proxy configuration from BuildConfig and adds it as environment variables to Shipwright Build
@@ -671,6 +706,7 @@ func (t *ConvertOptions) processOutput(bc buildv1.BuildConfig, b *shipwrightv1be
 			namespace = bc.Namespace
 		}
 		b.Spec.Output.Image = "image-registry.openshift-image-registry.svc:5000/" + namespace + "/" + bc.Spec.Output.To.Name
+		t.Logger.Warnf("Push to Openshift ImageStreams is not yet supported in Shipwright. RFE: %s", ImageStreamsPushRFE)
 	} else {
 		b.Spec.Output.Image = bc.Spec.Output.To.Name
 	}
@@ -782,7 +818,7 @@ func (t *ConvertOptions) writeBuildConfigs(bcList buildv1.BuildConfigList) error
 }
 
 func getBuildConfigFilePath(bc buildv1.BuildConfig) string {
-	return strings.Join([]string{bc.GetObjectKind().GroupVersionKind().GroupKind().Kind, bc.GetObjectKind().GroupVersionKind().GroupKind().Group, bc.GetObjectKind().GroupVersionKind().Version, bc.Namespace, bc.Name}, "_") + ".yaml"
+	return strings.Join([]string{bc.GroupVersionKind().Kind, bc.GroupVersionKind().Group, bc.GroupVersionKind().Version, bc.Namespace, bc.Name}, "_") + ".yaml"
 }
 
 func (t *ConvertOptions) writeBuild(b *shipwrightv1beta1.Build) error {
@@ -841,5 +877,5 @@ func (t *ConvertOptions) processBuildArgs(bc buildv1.BuildConfig, b *shipwrightv
 }
 
 func getBuildFilePath(b shipwrightv1beta1.Build) string {
-	return strings.Join([]string{b.GetObjectKind().GroupVersionKind().GroupKind().Kind, b.GetObjectKind().GroupVersionKind().GroupKind().Group, b.GetObjectKind().GroupVersionKind().Version, b.Namespace, b.Name}, "_") + ".yaml"
+	return strings.Join([]string{b.GroupVersionKind().Kind, b.GroupVersionKind().Group, b.GroupVersionKind().Version, b.Namespace, b.Name}, "_") + ".yaml"
 }
