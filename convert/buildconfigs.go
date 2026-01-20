@@ -165,10 +165,22 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 				}
 			}
 
-			// process pull secret
+			// process PullSecret field
 			pullSecret := t.getPullSecret(&bc)
 			if pullSecret != nil {
-				t.Logger.Warnf("PullSecret is not yet supported in the built-in Source-to-Image ClusterBuildStrategy in Shipwright. RFE: %s", PullSecretS2IRFE)
+				// Validate pull secret
+				if err := t.validatePullSecret(&bc, pullSecret); err != nil {
+					t.Logger.Error("Error validating registry PullSecret")
+					return err
+				}
+
+				// Generate ServiceAccount for pull secret
+				if err := t.generateServiceAccountForPullSecret(&bc); err != nil {
+					t.Logger.Error("Error generating service account for registry PullSecret")
+					return err
+				}
+				saName := t.getServiceAccountName(&bc)
+				t.Logger.Infof("Registry PullSecret validated and service account %q generated", saName)
 			}
 
 			// process env fields
