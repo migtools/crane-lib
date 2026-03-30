@@ -95,12 +95,26 @@ var (
 	secretGK                = schema.GroupKind{Group: "", Kind: "Secret"}
 	serviceAccountGK        = schema.GroupKind{Group: "", Kind: "ServiceAccount"}
 	statefulSetGK           = schema.GroupKind{Group: "apps", Kind: "StatefulSet"}
+
+	// OLM / Operator Lifecycle Manager (operators.coreos.com) — lifecycle artifacts;
+	subscriptionGK          = schema.GroupKind{Group: "operators.coreos.com", Kind: "Subscription"}
+	installPlanGK           = schema.GroupKind{Group: "operators.coreos.com", Kind: "InstallPlan"}
+	clusterServiceVersionGK = schema.GroupKind{Group: "operators.coreos.com", Kind: "ClusterServiceVersion"}
+	catalogSourceGK         = schema.GroupKind{Group: "operators.coreos.com", Kind: "CatalogSource"}
+	operatorGroupGK         = schema.GroupKind{Group: "operators.coreos.com", Kind: "OperatorGroup"}
+	operatorConditionGK     = schema.GroupKind{Group: "operators.coreos.com", Kind: "OperatorCondition"}
 )
 
 var gksToWhiteout = []schema.GroupKind{
 	endpointGK,
 	endpointSliceGK,
 	pvcGK,
+	subscriptionGK,
+	installPlanGK,
+	clusterServiceVersionGK,
+	catalogSourceGK,
+	operatorGroupGK,
+	operatorConditionGK,
 }
 
 type KubernetesTransformPlugin struct {
