@@ -208,7 +208,7 @@ func TestRun(t *testing.T) {
 							map[string]interface{}{
 								"apiVersion": "apps/v1",
 								"kind":       "ReplicaSet",
-								"ame":        "PodOwner",
+								"name":        "PodOwner",
 								"uid":        "1de6b4d2-ea5b-11eb-b902-021bddcaf6e4",
 							},
 						},
@@ -231,7 +231,7 @@ func TestRun(t *testing.T) {
 							map[string]interface{}{
 								"apiVersion": "apps/v1",
 								"kind":       "ReplicaSet",
-								"ame":        "PodOwner",
+								"name":        "PodOwner",
 								"uid":        "1de6b4d2-ea5b-11eb-b902-021bddcaf6e4",
 							},
 						},
@@ -270,7 +270,7 @@ func TestRun(t *testing.T) {
 							map[string]interface{}{
 								"apiVersion": "apps/v1",
 								"kind":       "ReplicaSet",
-								"ame":        "PodOwner",
+								"name":        "PodOwner",
 								"uid":        "1de6b4d2-ea5b-11eb-b902-021bddcaf6e4",
 							},
 						},
@@ -294,7 +294,7 @@ func TestRun(t *testing.T) {
 							map[string]interface{}{
 								"apiVersion": "apps/v1",
 								"kind":       "ReplicaSet",
-								"ame":        "PodOwner",
+								"name":        "PodOwner",
 								"uid":        "1de6b4d2-ea5b-11eb-b902-021bddcaf6e4",
 							},
 						},
