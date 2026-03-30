@@ -1,7 +1,7 @@
 package kubernetes_test
 
 import (
-        "encoding/json"
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -69,6 +69,84 @@ func TestRun(t *testing.T) {
 			},
 		},
 		{
+			Name: "SubscriptionWhiteOut",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Subscription",
+					"apiVersion": "operators.coreos.com/v1alpha1",
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: true,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "InstallPlanWhiteOut",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "InstallPlan",
+					"apiVersion": "operators.coreos.com/v1alpha1",
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: true,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "ClusterServiceVersionWhiteOut",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "ClusterServiceVersion",
+					"apiVersion": "operators.coreos.com/v1alpha1",
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: true,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "CatalogSourceWhiteOut",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "CatalogSource",
+					"apiVersion": "operators.coreos.com/v1alpha1",
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: true,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "OperatorGroupWhiteOut",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "OperatorGroup",
+					"apiVersion": "operators.coreos.com/v1",
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: true,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "OperatorConditionWhiteOut",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "OperatorCondition",
+					"apiVersion": "operators.coreos.com/v2",
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: true,
+				Version:    "v1",
+			},
+		},
+		{
 			Name: "NoDeploymentWhiteoutByDefault",
 			Object: &unstructured.Unstructured{
 				Object: map[string]interface{}{
@@ -89,7 +167,7 @@ func TestRun(t *testing.T) {
 					"apiVersion": "apps/v1",
 				},
 			},
-			ExtraWhiteouts: []schema.GroupKind {
+			ExtraWhiteouts: []schema.GroupKind{
 				{
 					Group: "apps",
 					Kind:  "Deployment",
@@ -108,7 +186,7 @@ func TestRun(t *testing.T) {
 					"apiVersion": "apps/v1",
 				},
 			},
-			IncludeOnly: []schema.GroupKind {
+			IncludeOnly: []schema.GroupKind{
 				{
 					Group: "",
 					Kind:  "Pod",
@@ -130,7 +208,7 @@ func TestRun(t *testing.T) {
 							map[string]interface{}{
 								"apiVersion": "apps/v1",
 								"kind":       "ReplicaSet",
-								"ame":       "PodOwner",
+								"ame":        "PodOwner",
 								"uid":        "1de6b4d2-ea5b-11eb-b902-021bddcaf6e4",
 							},
 						},
@@ -153,7 +231,7 @@ func TestRun(t *testing.T) {
 							map[string]interface{}{
 								"apiVersion": "apps/v1",
 								"kind":       "ReplicaSet",
-								"ame":       "PodOwner",
+								"ame":        "PodOwner",
 								"uid":        "1de6b4d2-ea5b-11eb-b902-021bddcaf6e4",
 							},
 						},
@@ -192,7 +270,7 @@ func TestRun(t *testing.T) {
 							map[string]interface{}{
 								"apiVersion": "apps/v1",
 								"kind":       "ReplicaSet",
-								"ame":       "PodOwner",
+								"ame":        "PodOwner",
 								"uid":        "1de6b4d2-ea5b-11eb-b902-021bddcaf6e4",
 							},
 						},
@@ -216,7 +294,7 @@ func TestRun(t *testing.T) {
 							map[string]interface{}{
 								"apiVersion": "apps/v1",
 								"kind":       "ReplicaSet",
-								"ame":       "PodOwner",
+								"ame":        "PodOwner",
 								"uid":        "1de6b4d2-ea5b-11eb-b902-021bddcaf6e4",
 							},
 						},
@@ -432,7 +510,7 @@ func TestRun(t *testing.T) {
 					"kind":       "Service",
 					"apiVersion": "v1",
 					"spec": map[string]interface{}{
-						"type": "LoadBalancer",
+						"type":      "LoadBalancer",
 						"clusterIP": "1.2.3.4",
 					},
 				},
@@ -470,7 +548,7 @@ func TestRun(t *testing.T) {
 					"kind":       "Service",
 					"apiVersion": "v1",
 					"spec": map[string]interface{}{
-						"type": "LoadBalancer",
+						"type":      "LoadBalancer",
 						"clusterIP": "None",
 					},
 				},
@@ -592,7 +670,7 @@ func TestRun(t *testing.T) {
 				ExtraWhiteouts:       c.ExtraWhiteouts,
 				IncludeOnly:          c.IncludeOnly,
 			}
-			resp, err := p.Run(transform.PluginRequest{Unstructured:*c.Object})
+			resp, err := p.Run(transform.PluginRequest{Unstructured: *c.Object})
 			if err != nil && !c.ShouldError {
 				t.Error(err)
 			}
