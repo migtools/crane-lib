@@ -99,6 +99,11 @@ func ReadResourceTypeFile(filename string) ([]unstructured.Unstructured, error) 
 			return nil, fmt.Errorf("failed to unmarshal document %d in %s: %w", i, filename, err)
 		}
 
+		// Skip nil or empty objects (e.g., YAML null or separator-only documents)
+		if len(obj) == 0 {
+			continue
+		}
+
 		resource := unstructured.Unstructured{Object: obj}
 		resources = append(resources, resource)
 	}
