@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"sort"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/yaml"
@@ -29,6 +30,11 @@ func GroupResourcesByType(resources []unstructured.Unstructured) []ResourceGroup
 			Resources: resources,
 		})
 	}
+
+	// Sort groups by TypeKey for deterministic output
+	sort.Slice(groups, func(i, j int) bool {
+		return groups[i].TypeKey < groups[j].TypeKey
+	})
 
 	return groups
 }
