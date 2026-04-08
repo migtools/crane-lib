@@ -66,7 +66,7 @@ func WriteResourceTypeFile(filename string, resources []unstructured.Unstructure
 	}
 
 	// Write to file
-	if err := os.WriteFile(filename, buf.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(filename, buf.Bytes(), 0600); err != nil {
 		return fmt.Errorf("failed to write resource type file %s: %w", filename, err)
 	}
 
