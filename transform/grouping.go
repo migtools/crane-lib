@@ -119,6 +119,7 @@ func splitYAMLDocuments(data []byte) [][]byte {
 	for len(remaining) > 0 {
 		// Find next separator
 		idx := bytes.Index(remaining, separator)
+		matchedSeparator := separator
 
 		if idx == -1 {
 			// No more separators - check for alternative patterns
@@ -133,12 +134,7 @@ func splitYAMLDocuments(data []byte) [][]byte {
 				docs = append(docs, remaining)
 				break
 			}
-		}
-
-		if idx == -1 {
-			// No separator found, this is the last document
-			docs = append(docs, remaining)
-			break
+			matchedSeparator = altSeparator
 		}
 
 		// Extract document before separator
@@ -148,8 +144,8 @@ func splitYAMLDocuments(data []byte) [][]byte {
 		}
 
 		// Move past separator
-		if idx+len(separator) <= len(remaining) {
-			remaining = remaining[idx+len(separator):]
+		if idx+len(matchedSeparator) <= len(remaining) {
+			remaining = remaining[idx+len(matchedSeparator):]
 		} else {
 			break
 		}
