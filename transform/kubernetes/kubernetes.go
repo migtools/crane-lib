@@ -73,6 +73,7 @@ var fieldsToStrip = [...][]string{
 	{metadata, "creationTimestamp"},
 	{metadata, "generation"},
 	{metadata, "managedFields"},
+	{metadata, "annotations", "kubectl.kubernetes.io/last-applied-configuration"},
 	{"status"},
 }
 
