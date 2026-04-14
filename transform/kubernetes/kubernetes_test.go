@@ -466,7 +466,7 @@ func TestRun(t *testing.T) {
 				IsWhiteOut: false,
 				Version:    "v1",
 			},
-			PatchResponseJson: `[{"op":"remove","path":"/metadata/annotations/kubectl.kubernetes.io/last-applied-configuration"}]`,
+			PatchResponseJson: `[{"op":"remove","path":"/metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration"}]`,
 		},
 		{
 			Name: "HandlePod",
@@ -641,7 +641,7 @@ func TestRun(t *testing.T) {
 				IsWhiteOut: false,
 				Version:    "v1",
 			},
-			PatchResponseJson: `[{"op":"remove","path":"/metadata/annotations/kubectl.kubernetes.io/last-applied-configuration"},{"op": "remove", "path": "/spec/ports/0/nodePort"}]`,
+			PatchResponseJson: `[{"op":"remove","path":"/metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration"},{"op": "remove", "path": "/spec/ports/0/nodePort"}]`,
 		},
 		{
 			Name: "HandleNodePortNamedAnnotation",
@@ -678,7 +678,7 @@ func TestRun(t *testing.T) {
 				IsWhiteOut: false,
 				Version:    "v1",
 			},
-			PatchResponseJson: `[{"op":"remove","path":"/metadata/annotations/kubectl.kubernetes.io/last-applied-configuration"},{"op": "remove", "path": "/spec/ports/1/nodePort"}]`,
+			PatchResponseJson: `[{"op":"remove","path":"/metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration"},{"op": "remove", "path": "/spec/ports/1/nodePort"}]`,
 		},
 	}
 
