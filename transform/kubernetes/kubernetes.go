@@ -73,6 +73,7 @@ var fieldsToStrip = [...][]string{
 	{metadata, "creationTimestamp"},
 	{metadata, "generation"},
 	{metadata, "managedFields"},
+	{metadata, "annotations", "kubectl.kubernetes.io/last-applied-configuration"},
 	{"status"},
 }
 
@@ -569,12 +570,13 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 	return jsonPatch, nil
 }
 
-func interfaceSlice(inStrings []string) []interface{} {
-	var outSlice []interface{}
-	for _, str := range inStrings {
-		outSlice = append(outSlice, str)
-	}
-	return outSlice
+// escapeJSONPointer escapes a string for use in a JSON Pointer path according to RFC 6901
+// ~ must be escaped as ~0
+// / must be escaped as ~1
+func escapeJSONPointer(s string) string {
+	s = strings.ReplaceAll(s, "~", "~0")
+	s = strings.ReplaceAll(s, "/", "~1")
+	return s
 }
 
 func stripFields(obj unstructured.Unstructured) (jsonpatch.Patch, error) {
@@ -585,7 +587,13 @@ func stripFields(obj unstructured.Unstructured) (jsonpatch.Patch, error) {
 			return patches, err
 		}
 		if found {
-			patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opRemove, fmt.Sprintf(strings.Repeat("/%v", len(field)), interfaceSlice(field)...))))
+			// Build the JSON Pointer path with proper escaping
+			var pathParts []string
+			for _, f := range field {
+				pathParts = append(pathParts, escapeJSONPointer(f))
+			}
+			path := "/" + strings.Join(pathParts, "/")
+			patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opRemove, path)))
 			if err != nil {
 				return nil, err
 			}
