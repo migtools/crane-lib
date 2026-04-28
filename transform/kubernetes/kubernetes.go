@@ -74,6 +74,8 @@ var fieldsToStrip = [...][]string{
 	{metadata, "generation"},
 	{metadata, "managedFields"},
 	{metadata, "annotations", "kubectl.kubernetes.io/last-applied-configuration"},
+	{metadata, "annotations", "batch.kubernetes.io/controller-uid"},
+	{metadata, "labels", "batch.kubernetes.io/controller-uid"},
 	{"status"},
 }
 
@@ -417,6 +419,12 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 		}
 
 		patches, err := util.RenamePVCs(job.Spec.Template.Spec.Volumes, k.PVCRenameMap, util.PVCPathGenericString)
+		if err != nil {
+			return nil, err
+		}
+		jsonPatch = append(jsonPatch, patches...)
+
+		patches, err = removeJobControllerUID(obj)
 		if err != nil {
 			return nil, err
 		}
@@ -912,4 +920,60 @@ func getNodePortInt(nodePort interface{}) (int, error) {
 		}
 	}
 	return nodePortInt, nil
+}
+
+func removeJobControllerUID(obj unstructured.Unstructured) (jsonpatch.Patch, error) {
+	var patches jsonpatch.Patch
+
+	// Check manualSelector value
+	manualSelector, found, err := unstructured.NestedBool(obj.Object, "spec", "manualSelector")
+	if err != nil {
+		return patches, err
+	}
+
+	// If manualSelector is false or not set, remove the entire spec.selector
+	// Kubernetes will auto-generate it
+	if !found || !manualSelector {
+		_, selectorFound, err := unstructured.NestedMap(obj.Object, "spec", "selector")
+		if err != nil {
+			return patches, err
+		}
+		if selectorFound {
+			patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opRemove, "/spec/selector")))
+			if err != nil {
+				return nil, err
+			}
+			patches = append(patches, patch...)
+		}
+	} else {
+		// If manualSelector is true, only remove the controller-uid from matchLabels
+		_, found, err := unstructured.NestedString(obj.Object, "spec", "selector", "matchLabels", "batch.kubernetes.io/controller-uid")
+		if err != nil {
+			return patches, err
+		}
+		if found {
+			path := "/spec/selector/matchLabels/" + escapeJSONPointer("batch.kubernetes.io/controller-uid")
+			patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opRemove, path)))
+			if err != nil {
+				return nil, err
+			}
+			patches = append(patches, patch...)
+		}
+	}
+
+	// Remove controller-uid from spec.template.metadata.labels
+	_, found, err = unstructured.NestedString(obj.Object, "spec", "template", "metadata", "labels", "batch.kubernetes.io/controller-uid")
+	if err != nil {
+		return patches, err
+	}
+	if found {
+		path := "/spec/template/metadata/labels/" + escapeJSONPointer("batch.kubernetes.io/controller-uid")
+		patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opRemove, path)))
+		if err != nil {
+			return nil, err
+		}
+		patches = append(patches, patch...)
+	}
+
+	return patches, nil
 }
