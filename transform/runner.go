@@ -21,6 +21,15 @@ type Runner struct {
 	Log              *logrus.Logger
 }
 
+// NewRunner creates a new Runner with the required logger.
+func NewRunner(logger *logrus.Logger, pluginPriorities map[string]int, optionalFlags map[string]string) *Runner {
+	return &Runner{
+		Log:              logger,
+		PluginPriorities: pluginPriorities,
+		OptionalFlags:    optionalFlags,
+	}
+}
+
 // RunnerResponse will be responsble for
 // TransformFile is a marshaled jsonpatch.Patch
 // IgnoredPatches is a marshaled []PluginOperation

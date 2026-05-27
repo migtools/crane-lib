@@ -499,11 +499,7 @@ func TestRunnerRun(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
-			runner := Runner{
-				Log:              logrus.New(),
-				PluginPriorities: c.PluginPriorities,
-				OptionalFlags:    c.OptionalFlags,
-			}
+			runner := NewRunner(logrus.New(), c.PluginPriorities, c.OptionalFlags)
 			response, err := runner.Run(c.Object, c.Plugins)
 			if err != nil && !c.ShouldError {
 				t.Error(err)
@@ -551,4 +547,22 @@ func TestRunnerRun(t *testing.T) {
 		})
 	}
 
+}
+
+func TestNewRunner(t *testing.T) {
+	logger := logrus.New()
+	priorities := map[string]int{"plugin1": 1}
+	flags := map[string]string{"flag1": "value1"}
+
+	runner := NewRunner(logger, priorities, flags)
+
+	if runner.Log != logger {
+		t.Error("Log was not set correctly")
+	}
+	if runner.PluginPriorities["plugin1"] != 1 {
+		t.Error("PluginPriorities was not set correctly")
+	}
+	if runner.OptionalFlags["flag1"] != "value1" {
+		t.Error("OptionalFlags was not set correctly")
+	}
 }
