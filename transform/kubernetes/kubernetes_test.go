@@ -804,6 +804,94 @@ func TestRun(t *testing.T) {
 			},
 			PatchResponseJson: `[{"op":"remove","path":"/metadata/labels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/spec/selector"},{"op":"remove","path":"/spec/template/metadata/labels/batch.kubernetes.io~1controller-uid"}]`,
 		},
+		{
+			Name: "RemoveLegacyControllerUIDFromJob",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Job",
+					"apiVersion": "batch/v1",
+					"metadata": map[string]interface{}{
+						"name":      "legacy-job",
+						"namespace": "test-namespace",
+						"labels": map[string]interface{}{
+							"controller-uid": "be719474-856d-4d84-80ad-4f4ab9ecdd30",
+							"job-name":       "legacy-job",
+						},
+						"annotations": map[string]interface{}{
+							"controller-uid": "be719474-856d-4d84-80ad-4f4ab9ecdd30",
+						},
+					},
+					"spec": map[string]interface{}{
+						"manualSelector": true,
+						"selector": map[string]interface{}{
+							"matchLabels": map[string]interface{}{
+								"controller-uid": "be719474-856d-4d84-80ad-4f4ab9ecdd30",
+								"job-name":       "legacy-job",
+							},
+						},
+						"template": map[string]interface{}{
+							"metadata": map[string]interface{}{
+								"labels": map[string]interface{}{
+									"controller-uid": "be719474-856d-4d84-80ad-4f4ab9ecdd30",
+									"job-name":       "legacy-job",
+								},
+							},
+						},
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+			PatchResponseJson: `[{"op":"remove","path":"/metadata/annotations/controller-uid"},{"op":"remove","path":"/metadata/labels/controller-uid"},{"op":"remove","path":"/spec/selector/matchLabels/controller-uid"},{"op":"remove","path":"/spec/template/metadata/labels/controller-uid"}]`,
+		},
+		{
+			Name: "RemoveBothControllerUIDKeysFromJob",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Job",
+					"apiVersion": "batch/v1",
+					"metadata": map[string]interface{}{
+						"name":      "mixed-job",
+						"namespace": "test-namespace",
+						"labels": map[string]interface{}{
+							"batch.kubernetes.io/controller-uid": "be719474-856d-4d84-80ad-4f4ab9ecdd30",
+							"controller-uid":                     "be719474-856d-4d84-80ad-4f4ab9ecdd30",
+							"app":                                "test",
+						},
+						"annotations": map[string]interface{}{
+							"batch.kubernetes.io/controller-uid": "be719474-856d-4d84-80ad-4f4ab9ecdd30",
+							"controller-uid":                     "be719474-856d-4d84-80ad-4f4ab9ecdd30",
+						},
+					},
+					"spec": map[string]interface{}{
+						"manualSelector": true,
+						"selector": map[string]interface{}{
+							"matchLabels": map[string]interface{}{
+								"batch.kubernetes.io/controller-uid": "be719474-856d-4d84-80ad-4f4ab9ecdd30",
+								"controller-uid":                     "be719474-856d-4d84-80ad-4f4ab9ecdd30",
+								"app":                                "test",
+							},
+						},
+						"template": map[string]interface{}{
+							"metadata": map[string]interface{}{
+								"labels": map[string]interface{}{
+									"batch.kubernetes.io/controller-uid": "be719474-856d-4d84-80ad-4f4ab9ecdd30",
+									"controller-uid":                     "be719474-856d-4d84-80ad-4f4ab9ecdd30",
+									"app":                                "test",
+								},
+							},
+						},
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+			PatchResponseJson: `[{"op":"remove","path":"/metadata/annotations/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/metadata/annotations/controller-uid"},{"op":"remove","path":"/metadata/labels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/metadata/labels/controller-uid"},{"op":"remove","path":"/spec/selector/matchLabels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/spec/selector/matchLabels/controller-uid"},{"op":"remove","path":"/spec/template/metadata/labels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/spec/template/metadata/labels/controller-uid"}]`,
+		},
 	}
 
 	for _, c := range cases {
