@@ -550,19 +550,55 @@ func TestRunnerRun(t *testing.T) {
 }
 
 func TestNewRunner(t *testing.T) {
-	logger := logrus.New()
-	priorities := map[string]int{"plugin1": 1}
-	flags := map[string]string{"flag1": "value1"}
+	t.Run("WithLogger", func(t *testing.T) {
+		logger := logrus.New()
+		priorities := map[string]int{"plugin1": 1}
+		flags := map[string]string{"flag1": "value1"}
 
-	runner := NewRunner(logger, priorities, flags)
+		runner := NewRunner(logger, priorities, flags)
 
-	if runner.Log != logger {
-		t.Error("Log was not set correctly")
-	}
-	if runner.PluginPriorities["plugin1"] != 1 {
-		t.Error("PluginPriorities was not set correctly")
-	}
-	if runner.OptionalFlags["flag1"] != "value1" {
-		t.Error("OptionalFlags was not set correctly")
-	}
+		if runner.Log != logger {
+			t.Error("Log was not set correctly")
+		}
+		if runner.PluginPriorities["plugin1"] != 1 {
+			t.Error("PluginPriorities was not set correctly")
+		}
+		if runner.OptionalFlags["flag1"] != "value1" {
+			t.Error("OptionalFlags was not set correctly")
+		}
+	})
+
+	t.Run("WithNilLogger", func(t *testing.T) {
+		runner := NewRunner(nil, nil, nil)
+
+		if runner.Log == nil {
+			t.Error("Log should not be nil when nil logger is passed")
+		}
+
+		// Verify runner can execute without panic
+		plugin := fakePlugin{
+			Func: func(request PluginRequest) (PluginResponse, error) {
+				newResource := unstructured.Unstructured{
+					Object: map[string]interface{}{
+						"apiVersion": "v1",
+						"kind":       "ConfigMap",
+						"metadata": map[string]interface{}{
+							"name": "test",
+						},
+					},
+				}
+				return PluginResponse{
+					NewResources: []unstructured.Unstructured{newResource},
+				}, nil
+			},
+			name: "test-plugin",
+		}
+		response, err := runner.Run(unstructured.Unstructured{}, []Plugin{plugin})
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if len(response.NewResources) != 1 {
+			t.Errorf("expected 1 new resource, got %d", len(response.NewResources))
+		}
+	})
 }

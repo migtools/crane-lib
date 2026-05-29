@@ -22,7 +22,11 @@ type Runner struct {
 }
 
 // NewRunner creates a new Runner with the required logger.
+// If logger is nil, a new default logger is created.
 func NewRunner(logger *logrus.Logger, pluginPriorities map[string]int, optionalFlags map[string]string) *Runner {
+	if logger == nil {
+		logger = logrus.New()
+	}
 	return &Runner{
 		Log:              logger,
 		PluginPriorities: pluginPriorities,
