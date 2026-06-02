@@ -26,6 +26,11 @@ func (fp fakePlugin) Metadata() PluginMetadata {
 }
 
 func TestRunnerRun(t *testing.T) {
+	type expectedResource struct {
+		APIVersion string
+		Kind       string
+		Name       string
+	}
 	cases := []struct {
 		Name                 string
 		Plugins              []Plugin
@@ -37,6 +42,7 @@ func TestRunnerRun(t *testing.T) {
 		IsWhiteOut           bool
 		ShouldError          bool
 		ExpectedNewResources int
+		ExpectedResources    []expectedResource
 	}{
 		{
 			Name:   "RunWithNoPlugins",
@@ -351,6 +357,9 @@ func TestRunnerRun(t *testing.T) {
 				},
 			},
 			ExpectedNewResources: 1,
+			ExpectedResources: []expectedResource{
+				{APIVersion: "shipwright.io/v1beta1", Kind: "Build", Name: "myapp-build"},
+			},
 		},
 		{
 			Name:   "RunWithPluginGeneratingMultipleNewResources",
@@ -393,6 +402,11 @@ func TestRunnerRun(t *testing.T) {
 				},
 			},
 			ExpectedNewResources: 3,
+			ExpectedResources: []expectedResource{
+				{APIVersion: "shipwright.io/v1beta1", Kind: "Build", Name: "build-1"},
+				{APIVersion: "tekton.dev/v1", Kind: "Pipeline", Name: "pipeline-1"},
+				{APIVersion: "v1", Kind: "ConfigMap", Name: "config-1"},
+			},
 		},
 		{
 			Name:   "RunWithWhiteoutAndNewResource",
@@ -480,6 +494,10 @@ func TestRunnerRun(t *testing.T) {
 				},
 			},
 			ExpectedNewResources: 2,
+			ExpectedResources: []expectedResource{
+				{APIVersion: "v1", Kind: "Service", Name: "service-1"},
+				{APIVersion: "v1", Kind: "ConfigMap", Name: "configmap-1"},
+			},
 		},
 		{
 			Name:   "RunWithPluginEmptyNewResources",
@@ -543,6 +561,27 @@ func TestRunnerRun(t *testing.T) {
 			// Verify NewResources count
 			if len(response.NewResources) != c.ExpectedNewResources {
 				t.Errorf("incorrect new resources count, actual: %v expected: %v", len(response.NewResources), c.ExpectedNewResources)
+			}
+			// Verify specific resource fields (APIVersion, Kind, Name)
+			if len(c.ExpectedResources) > 0 {
+				if len(response.NewResources) != len(c.ExpectedResources) {
+					t.Errorf("expected %d resources, got %d", len(c.ExpectedResources), len(response.NewResources))
+				}
+				for i, expected := range c.ExpectedResources {
+					if i >= len(response.NewResources) {
+						break
+					}
+					actual := response.NewResources[i]
+					if actual.GetAPIVersion() != expected.APIVersion {
+						t.Errorf("resource[%d]: expected APIVersion %q, got %q", i, expected.APIVersion, actual.GetAPIVersion())
+					}
+					if actual.GetKind() != expected.Kind {
+						t.Errorf("resource[%d]: expected Kind %q, got %q", i, expected.Kind, actual.GetKind())
+					}
+					if actual.GetName() != expected.Name {
+						t.Errorf("resource[%d]: expected Name %q, got %q", i, expected.Name, actual.GetName())
+					}
+				}
 			}
 		})
 	}
