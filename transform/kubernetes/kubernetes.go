@@ -1035,7 +1035,7 @@ func suspendStandaloneJob(obj unstructured.Unstructured) (jsonpatch.Patch, error
 		return patches, err
 	}
 
-	// If already suspended (true) or suspend field doesn't exist, add/set suspend: true
+	// If suspend field doesn't exist or is currently false, set it to true
 	if !found || !suspended {
 		patch, err := jsonpatch.DecodePatch([]byte(`[{"op": "add", "path": "/spec/suspend", "value": true}]`))
 		if err != nil {
