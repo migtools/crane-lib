@@ -33,6 +33,7 @@ const (
 	StripDefaultRBACFlag     = "strip-default-rbac"
 	StripDefaultCABundleFlag = "strip-default-cabundle"
 	PVCRenameMap             = "pvc-rename-map"
+	CraneJobIdempotentAnnotation = "crane.konveyor.io/job-idempotent"
 )
 
 const (
@@ -427,6 +428,12 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 		jsonPatch = append(jsonPatch, patches...)
 
 		patches, err = removeJobControllerUID(obj)
+		if err != nil {
+			return nil, err
+		}
+		jsonPatch = append(jsonPatch, patches...)
+
+		patches, err = suspendStandaloneJob(obj)
 		if err != nil {
 			return nil, err
 		}
@@ -985,6 +992,56 @@ func removeJobControllerUID(obj unstructured.Unstructured) (jsonpatch.Patch, err
 			}
 			patches = append(patches, patch...)
 		}
+	}
+
+	return patches, nil
+}
+
+// suspendStandaloneJob suspends standalone Jobs by default to prevent unintended re-execution
+// on the target cluster after migration.
+//
+// Behavior:
+//   - Jobs with ownerReferences (e.g., created by CronJob) are NOT suspended - they are whited out
+//   - Jobs with annotation "crane.konveyor.io/job-idempotent: true" are NOT suspended
+//   - All other standalone Jobs are suspended (spec.suspend: true)
+//
+// Rationale:
+// Kubernetes best practices expect Jobs to be idempotent, but in practice many Jobs are not
+// (e.g., one-shot data imports, billing operations). Re-running such Jobs on migration can cause
+// data corruption or duplicate charges. By suspending Jobs by default, we provide a safe migration
+// path where users can explicitly opt-in idempotent Jobs via annotation, or manually unsuspend
+// Jobs on the target cluster after reviewing their purpose.
+//
+// Related: https://github.com/migtools/crane/issues/482
+func suspendStandaloneJob(obj unstructured.Unstructured) (jsonpatch.Patch, error) {
+	var patches jsonpatch.Patch
+
+	// Check if this is a standalone Job (no ownerReferences)
+	if len(obj.GetOwnerReferences()) > 0 {
+		// Job has owner (e.g., created by CronJob) - don't suspend
+		return patches, nil
+	}
+
+	// Check if Job is explicitly marked as idempotent
+	annotations := obj.GetAnnotations()
+	if annotations[CraneJobIdempotentAnnotation] == "true" {
+		// Job is idempotent, safe to run - don't suspend
+		return patches, nil
+	}
+
+	// Check if Job is already suspended
+	suspended, found, err := unstructured.NestedBool(obj.Object, "spec", "suspend")
+	if err != nil {
+		return patches, err
+	}
+
+	// If already suspended (true) or suspend field doesn't exist, add/set suspend: true
+	if !found || !suspended {
+		patch, err := jsonpatch.DecodePatch([]byte(`[{"op": "add", "path": "/spec/suspend", "value": true}]`))
+		if err != nil {
+			return nil, err
+		}
+		patches = append(patches, patch...)
 	}
 
 	return patches, nil

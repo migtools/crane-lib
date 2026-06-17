@@ -723,7 +723,7 @@ func TestRun(t *testing.T) {
 				IsWhiteOut: false,
 				Version:    "v1",
 			},
-			PatchResponseJson: `[{"op":"remove","path":"/metadata/annotations/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/metadata/labels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/spec/selector"},{"op":"remove","path":"/spec/template/metadata/labels/batch.kubernetes.io~1controller-uid"}]`,
+			PatchResponseJson: `[{"op":"remove","path":"/metadata/annotations/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/metadata/labels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/spec/selector"},{"op":"remove","path":"/spec/template/metadata/labels/batch.kubernetes.io~1controller-uid"},{"op":"add","path":"/spec/suspend","value":true}]`,
 		},
 		{
 			Name: "RemoveBatchControllerUIDFromJobWithManualSelectorTrue",
@@ -765,7 +765,7 @@ func TestRun(t *testing.T) {
 				IsWhiteOut: false,
 				Version:    "v1",
 			},
-			PatchResponseJson: `[{"op":"remove","path":"/metadata/annotations/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/metadata/labels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/spec/selector/matchLabels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/spec/template/metadata/labels/batch.kubernetes.io~1controller-uid"}]`,
+			PatchResponseJson: `[{"op":"remove","path":"/metadata/annotations/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/metadata/labels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/spec/selector/matchLabels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/spec/template/metadata/labels/batch.kubernetes.io~1controller-uid"},{"op":"add","path":"/spec/suspend","value":true}]`,
 		},
 		{
 			Name: "RemoveBatchControllerUIDFromJobWithoutManualSelector",
@@ -802,7 +802,7 @@ func TestRun(t *testing.T) {
 				IsWhiteOut: false,
 				Version:    "v1",
 			},
-			PatchResponseJson: `[{"op":"remove","path":"/metadata/labels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/spec/selector"},{"op":"remove","path":"/spec/template/metadata/labels/batch.kubernetes.io~1controller-uid"}]`,
+			PatchResponseJson: `[{"op":"remove","path":"/metadata/labels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/spec/selector"},{"op":"remove","path":"/spec/template/metadata/labels/batch.kubernetes.io~1controller-uid"},{"op":"add","path":"/spec/suspend","value":true}]`,
 		},
 		{
 			Name: "RemoveLegacyControllerUIDFromJob",
@@ -844,7 +844,7 @@ func TestRun(t *testing.T) {
 				IsWhiteOut: false,
 				Version:    "v1",
 			},
-			PatchResponseJson: `[{"op":"remove","path":"/metadata/annotations/controller-uid"},{"op":"remove","path":"/metadata/labels/controller-uid"},{"op":"remove","path":"/spec/selector/matchLabels/controller-uid"},{"op":"remove","path":"/spec/template/metadata/labels/controller-uid"}]`,
+			PatchResponseJson: `[{"op":"remove","path":"/metadata/annotations/controller-uid"},{"op":"remove","path":"/metadata/labels/controller-uid"},{"op":"remove","path":"/spec/selector/matchLabels/controller-uid"},{"op":"remove","path":"/spec/template/metadata/labels/controller-uid"},{"op":"add","path":"/spec/suspend","value":true}]`,
 		},
 		{
 			Name: "RemoveBothControllerUIDKeysFromJob",
@@ -890,7 +890,136 @@ func TestRun(t *testing.T) {
 				IsWhiteOut: false,
 				Version:    "v1",
 			},
-			PatchResponseJson: `[{"op":"remove","path":"/metadata/annotations/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/metadata/annotations/controller-uid"},{"op":"remove","path":"/metadata/labels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/metadata/labels/controller-uid"},{"op":"remove","path":"/spec/selector/matchLabels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/spec/selector/matchLabels/controller-uid"},{"op":"remove","path":"/spec/template/metadata/labels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/spec/template/metadata/labels/controller-uid"}]`,
+			PatchResponseJson: `[{"op":"remove","path":"/metadata/annotations/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/metadata/annotations/controller-uid"},{"op":"remove","path":"/metadata/labels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/metadata/labels/controller-uid"},{"op":"remove","path":"/spec/selector/matchLabels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/spec/selector/matchLabels/controller-uid"},{"op":"remove","path":"/spec/template/metadata/labels/batch.kubernetes.io~1controller-uid"},{"op":"remove","path":"/spec/template/metadata/labels/controller-uid"},{"op":"add","path":"/spec/suspend","value":true}]`,
+		},
+		{
+			Name: "SuspendStandaloneJobWithoutIdempotentAnnotation",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Job",
+					"apiVersion": "batch/v1",
+					"metadata": map[string]interface{}{
+						"name":      "standalone-job",
+						"namespace": "test-namespace",
+						"labels": map[string]interface{}{
+							"app": "test",
+						},
+						"annotations": map[string]interface{}{
+							"some-annotation": "some-value",
+						},
+					},
+					"spec": map[string]interface{}{
+						"template": map[string]interface{}{
+							"metadata": map[string]interface{}{
+								"labels": map[string]interface{}{
+									"app": "test",
+								},
+							},
+						},
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+			PatchResponseJson: `[{"op":"add","path":"/spec/suspend","value":true}]`,
+		},
+		{
+			Name: "DoNotSuspendStandaloneJobWithIdempotentAnnotation",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Job",
+					"apiVersion": "batch/v1",
+					"metadata": map[string]interface{}{
+						"name":      "idempotent-job",
+						"namespace": "test-namespace",
+						"labels": map[string]interface{}{
+							"app": "database-migration",
+						},
+						"annotations": map[string]interface{}{
+							"crane.konveyor.io/job-idempotent": "true",
+						},
+					},
+					"spec": map[string]interface{}{
+						"template": map[string]interface{}{
+							"metadata": map[string]interface{}{
+								"labels": map[string]interface{}{
+									"app": "database-migration",
+								},
+							},
+						},
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "DoNotSuspendJobWithOwnerReferences",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Job",
+					"apiVersion": "batch/v1",
+					"metadata": map[string]interface{}{
+						"name":      "cronjob-spawned-job",
+						"namespace": "test-namespace",
+						"labels": map[string]interface{}{
+							"app": "test",
+						},
+						"ownerReferences": []interface{}{
+							map[string]interface{}{
+								"apiVersion": "batch/v1",
+								"kind":       "CronJob",
+								"name":       "my-cronjob",
+								"uid":        "12345",
+							},
+						},
+					},
+					"spec": map[string]interface{}{
+						"template": map[string]interface{}{
+							"metadata": map[string]interface{}{
+								"labels": map[string]interface{}{
+									"app": "test",
+								},
+							},
+						},
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: true,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "SuspendStandaloneJobAlreadySuspended",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Job",
+					"apiVersion": "batch/v1",
+					"metadata": map[string]interface{}{
+						"name":      "already-suspended-job",
+						"namespace": "test-namespace",
+					},
+					"spec": map[string]interface{}{
+						"suspend": true,
+						"template": map[string]interface{}{
+							"metadata": map[string]interface{}{
+								"labels": map[string]interface{}{
+									"app": "test",
+								},
+							},
+						},
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
 		},
 	}
 
