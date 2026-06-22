@@ -21,6 +21,19 @@ type Runner struct {
 	Log              *logrus.Logger
 }
 
+// NewRunner creates a new Runner with the required logger.
+// If logger is nil, a new default logger is created.
+func NewRunner(logger *logrus.Logger, pluginPriorities map[string]int, optionalFlags map[string]string) *Runner {
+	if logger == nil {
+		logger = logrus.New()
+	}
+	return &Runner{
+		Log:              logger,
+		PluginPriorities: pluginPriorities,
+		OptionalFlags:    optionalFlags,
+	}
+}
+
 // RunnerResponse will be responsble for
 // TransformFile is a marshaled jsonpatch.Patch
 // IgnoredPatches is a marshaled []PluginOperation
@@ -28,6 +41,7 @@ type RunnerResponse struct {
 	TransformFile  []byte
 	HaveWhiteOut   bool
 	IgnoredPatches []byte
+	NewResources   []unstructured.Unstructured
 }
 
 type PluginOperation struct {
@@ -63,6 +77,7 @@ func (r *Runner) Run(object unstructured.Unstructured, plugins []Plugin) (Runner
 	haveWhiteOut := false
 	havePatches := false
 	patches := []PluginOperation{}
+	newResources := []unstructured.Unstructured{}
 	errs := []error{}
 
 	for _, plugin := range plugins {
@@ -82,11 +97,17 @@ func (r *Runner) Run(object unstructured.Unstructured, plugins []Plugin) (Runner
 			havePatches = true
 			patches = append(patches, PluginOperationsFromPatch(plugin.Metadata().Name, resp.Patches)...)
 		}
+		if len(resp.NewResources) > 0 {
+			newResources = append(newResources, resp.NewResources...)
+			r.Log.Debugf("Plugin %s generated %d new resource(s)",
+				plugin.Metadata().Name, len(resp.NewResources))
+		}
 	}
 	response := RunnerResponse{
 		TransformFile:  []byte(`[]`),
 		HaveWhiteOut:   haveWhiteOut,
 		IgnoredPatches: []byte(`[]`),
+		NewResources:   newResources,
 	}
 
 	// TODO: in the future we should consider a way to speed this up with go routines.

@@ -26,6 +26,11 @@ func (fp fakePlugin) Metadata() PluginMetadata {
 }
 
 func TestRunnerRun(t *testing.T) {
+	type expectedResource struct {
+		APIVersion string
+		Kind       string
+		Name       string
+	}
 	cases := []struct {
 		Name                 string
 		Plugins              []Plugin
@@ -36,6 +41,8 @@ func TestRunnerRun(t *testing.T) {
 		OptionalFlags        map[string]string
 		IsWhiteOut           bool
 		ShouldError          bool
+		ExpectedNewResources int
+		ExpectedResources    []expectedResource
 	}{
 		{
 			Name:   "RunWithNoPlugins",
@@ -326,15 +333,191 @@ func TestRunnerRun(t *testing.T) {
 			},
 			PatchesString: `[{"op": "add", "path": "/spec/testing", "value": "testFlagValue"}]`,
 		},
+		{
+			Name:   "RunWithPluginGeneratingSingleNewResource",
+			Object: unstructured.Unstructured{},
+			Plugins: []Plugin{
+				fakePlugin{
+					Func: func(request PluginRequest) (PluginResponse, error) {
+						newResource := unstructured.Unstructured{
+							Object: map[string]interface{}{
+								"apiVersion": "shipwright.io/v1beta1",
+								"kind":       "Build",
+								"metadata": map[string]interface{}{
+									"name": "myapp-build",
+								},
+								"spec": map[string]interface{}{},
+							},
+						}
+						return PluginResponse{
+							NewResources: []unstructured.Unstructured{newResource},
+						}, nil
+					},
+					name: "buildconfig-converter",
+				},
+			},
+			ExpectedNewResources: 1,
+			ExpectedResources: []expectedResource{
+				{APIVersion: "shipwright.io/v1beta1", Kind: "Build", Name: "myapp-build"},
+			},
+		},
+		{
+			Name:   "RunWithPluginGeneratingMultipleNewResources",
+			Object: unstructured.Unstructured{},
+			Plugins: []Plugin{
+				fakePlugin{
+					Func: func(request PluginRequest) (PluginResponse, error) {
+						resource1 := unstructured.Unstructured{
+							Object: map[string]interface{}{
+								"apiVersion": "shipwright.io/v1beta1",
+								"kind":       "Build",
+								"metadata": map[string]interface{}{
+									"name": "build-1",
+								},
+							},
+						}
+						resource2 := unstructured.Unstructured{
+							Object: map[string]interface{}{
+								"apiVersion": "tekton.dev/v1",
+								"kind":       "Pipeline",
+								"metadata": map[string]interface{}{
+									"name": "pipeline-1",
+								},
+							},
+						}
+						resource3 := unstructured.Unstructured{
+							Object: map[string]interface{}{
+								"apiVersion": "v1",
+								"kind":       "ConfigMap",
+								"metadata": map[string]interface{}{
+									"name": "config-1",
+								},
+							},
+						}
+						return PluginResponse{
+							NewResources: []unstructured.Unstructured{resource1, resource2, resource3},
+						}, nil
+					},
+					name: "multi-resource-generator",
+				},
+			},
+			ExpectedNewResources: 3,
+			ExpectedResources: []expectedResource{
+				{APIVersion: "shipwright.io/v1beta1", Kind: "Build", Name: "build-1"},
+				{APIVersion: "tekton.dev/v1", Kind: "Pipeline", Name: "pipeline-1"},
+				{APIVersion: "v1", Kind: "ConfigMap", Name: "config-1"},
+			},
+		},
+		{
+			Name:   "RunWithWhiteoutAndNewResource",
+			Object: unstructured.Unstructured{},
+			Plugins: []Plugin{
+				fakePlugin{
+					Func: func(request PluginRequest) (PluginResponse, error) {
+						replacement := unstructured.Unstructured{
+							Object: map[string]interface{}{
+								"apiVersion": "apps/v1",
+								"kind":       "Deployment",
+								"metadata": map[string]interface{}{
+									"name": "replacement-deployment",
+								},
+							},
+						}
+						return PluginResponse{
+							IsWhiteOut:   true,
+							NewResources: []unstructured.Unstructured{replacement},
+						}, nil
+					},
+					name: "replacement-plugin",
+				},
+			},
+			IsWhiteOut:           true,
+			ExpectedNewResources: 1,
+		},
+		{
+			Name:   "RunWithOldPluginBackwardCompatibility",
+			Object: unstructured.Unstructured{},
+			Plugins: []Plugin{
+				fakePlugin{
+					Func: func(request PluginRequest) (PluginResponse, error) {
+						p, err := jsonpatch.DecodePatch([]byte(`[{"op": "add", "path": "/spec/replicas", "value": 3}]`))
+						if err != nil {
+							return PluginResponse{}, err
+						}
+						return PluginResponse{
+							Version: "v1",
+							Patches: p,
+						}, nil
+					},
+					name: "old-plugin",
+				},
+			},
+			PatchesString: `[{"op": "add", "path": "/spec/replicas", "value": 3}]`,
+		},
+		{
+			Name:   "RunWithMultiplePluginsGeneratingResources",
+			Object: unstructured.Unstructured{},
+			Plugins: []Plugin{
+				fakePlugin{
+					Func: func(request PluginRequest) (PluginResponse, error) {
+						resource := unstructured.Unstructured{
+							Object: map[string]interface{}{
+								"apiVersion": "v1",
+								"kind":       "Service",
+								"metadata": map[string]interface{}{
+									"name": "service-1",
+								},
+							},
+						}
+						return PluginResponse{
+							NewResources: []unstructured.Unstructured{resource},
+						}, nil
+					},
+					name: "plugin1",
+				},
+				fakePlugin{
+					Func: func(request PluginRequest) (PluginResponse, error) {
+						resource := unstructured.Unstructured{
+							Object: map[string]interface{}{
+								"apiVersion": "v1",
+								"kind":       "ConfigMap",
+								"metadata": map[string]interface{}{
+									"name": "configmap-1",
+								},
+							},
+						}
+						return PluginResponse{
+							NewResources: []unstructured.Unstructured{resource},
+						}, nil
+					},
+					name: "plugin2",
+				},
+			},
+			ExpectedNewResources: 2,
+			ExpectedResources: []expectedResource{
+				{APIVersion: "v1", Kind: "Service", Name: "service-1"},
+				{APIVersion: "v1", Kind: "ConfigMap", Name: "configmap-1"},
+			},
+		},
+		{
+			Name:   "RunWithPluginEmptyNewResources",
+			Object: unstructured.Unstructured{},
+			Plugins: []Plugin{
+				fakePlugin{
+					Func: func(request PluginRequest) (PluginResponse, error) {
+						return PluginResponse{
+							NewResources: []unstructured.Unstructured{},
+						}, nil
+					},
+					name: "empty-resources-plugin",
+				},
+			},
+		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
-			runner := Runner{
-				Log:              logrus.New(),
-				PluginPriorities: c.PluginPriorities,
-				OptionalFlags:    c.OptionalFlags,
-			}
+			runner := NewRunner(logrus.New(), c.PluginPriorities, c.OptionalFlags)
 			response, err := runner.Run(c.Object, c.Plugins)
 			if err != nil && !c.ShouldError {
 				t.Error(err)
@@ -375,7 +558,86 @@ func TestRunnerRun(t *testing.T) {
 					t.Errorf("incorrect plugin operations, actual: %v expected: %v", string(response.IgnoredPatches), c.IgnoredPatchesString)
 				}
 			}
+			// Verify NewResources count
+			if len(response.NewResources) != c.ExpectedNewResources {
+				t.Errorf("incorrect new resources count, actual: %v expected: %v", len(response.NewResources), c.ExpectedNewResources)
+			}
+			// Verify specific resource fields (APIVersion, Kind, Name)
+			if len(c.ExpectedResources) > 0 {
+				if len(response.NewResources) != len(c.ExpectedResources) {
+					t.Errorf("expected %d resources, got %d", len(c.ExpectedResources), len(response.NewResources))
+				}
+				for i, expected := range c.ExpectedResources {
+					if i >= len(response.NewResources) {
+						break
+					}
+					actual := response.NewResources[i]
+					if actual.GetAPIVersion() != expected.APIVersion {
+						t.Errorf("resource[%d]: expected APIVersion %q, got %q", i, expected.APIVersion, actual.GetAPIVersion())
+					}
+					if actual.GetKind() != expected.Kind {
+						t.Errorf("resource[%d]: expected Kind %q, got %q", i, expected.Kind, actual.GetKind())
+					}
+					if actual.GetName() != expected.Name {
+						t.Errorf("resource[%d]: expected Name %q, got %q", i, expected.Name, actual.GetName())
+					}
+				}
+			}
 		})
 	}
 
+}
+
+func TestNewRunner(t *testing.T) {
+	t.Run("WithLogger", func(t *testing.T) {
+		logger := logrus.New()
+		priorities := map[string]int{"plugin1": 1}
+		flags := map[string]string{"flag1": "value1"}
+
+		runner := NewRunner(logger, priorities, flags)
+
+		if runner.Log != logger {
+			t.Error("Log was not set correctly")
+		}
+		if runner.PluginPriorities["plugin1"] != 1 {
+			t.Error("PluginPriorities was not set correctly")
+		}
+		if runner.OptionalFlags["flag1"] != "value1" {
+			t.Error("OptionalFlags was not set correctly")
+		}
+	})
+
+	t.Run("WithNilLogger", func(t *testing.T) {
+		runner := NewRunner(nil, nil, nil)
+
+		if runner.Log == nil {
+			t.Error("Log should not be nil when nil logger is passed")
+		}
+
+		// Verify runner can execute without panic
+		plugin := fakePlugin{
+			Func: func(request PluginRequest) (PluginResponse, error) {
+				newResource := unstructured.Unstructured{
+					Object: map[string]interface{}{
+						"apiVersion": "v1",
+						"kind":       "ConfigMap",
+						"metadata": map[string]interface{}{
+							"name": "test",
+						},
+					},
+				}
+				return PluginResponse{
+					NewResources: []unstructured.Unstructured{newResource},
+				}, nil
+			},
+			name: "test-plugin",
+		}
+		response, err := runner.Run(unstructured.Unstructured{}, []Plugin{plugin})
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if len(response.NewResources) != 1 {
+			t.Errorf("expected 1 new resource, got %d", len(response.NewResources))
+		}
+	})
 }

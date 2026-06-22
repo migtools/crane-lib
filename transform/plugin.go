@@ -27,9 +27,10 @@ type PluginRequest struct {
 }
 
 type PluginResponse struct {
-	Version    string          `json:"version,omitempty"`
-	IsWhiteOut bool            `json:"isWhiteOut,omitempty"`
-	Patches    jsonpatch.Patch `json:"patches,omitempty"`
+	Version      string                        `json:"version,omitempty"`
+	IsWhiteOut   bool                          `json:"isWhiteOut,omitempty"`
+	Patches      jsonpatch.Patch               `json:"patches,omitempty"`
+	NewResources []unstructured.Unstructured   `json:"newResources,omitempty"`
 }
 
 type PluginMetadata struct {
