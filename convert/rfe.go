@@ -11,5 +11,4 @@ const (
 	IncrementalBuildRFE      = "https://issues.redhat.com/browse/BUILD-1607"
 	ForcePullFlagS2iRFE      = "https://issues.redhat.com/browse/BUILD-1606"
 	PullSecretS2IRFE         = "https://issues.redhat.com/browse/BUILD-1749"
-	ImageStreamsPushRFE      = "https://issues.redhat.com/browse/BUILD-1756"
 )
