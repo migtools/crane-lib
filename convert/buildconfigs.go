@@ -111,7 +111,15 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 
 			// process NoCache field
 			if bc.Spec.Strategy.DockerStrategy.NoCache {
-				t.Logger.Warnf("NoCache flag is not yet supported in the built-in Buildah ClusterBuildStrategy in Shipwright. RFE: %s", NoCacheFlagRFE)
+				t.Logger.Infof("Mapping NoCache flag to no-cache param for BuildConfig %s", bc.Name)
+				noCacheValue := "true"
+				noCacheParam := shipwrightv1beta1.ParamValue{
+					Name: "no-cache",
+					SingleValue: &shipwrightv1beta1.SingleValue{
+						Value: &noCacheValue,
+					},
+				}
+				b.Spec.ParamValues = append(b.Spec.ParamValues, noCacheParam)
 			}
 
 			// process env fields

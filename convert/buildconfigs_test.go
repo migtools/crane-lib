@@ -1756,6 +1756,58 @@ func TestGetServiceAccountFilePath(t *testing.T) {
 	}
 }
 
+func TestProcessDockerStrategyNoCache(t *testing.T) {
+	tests := []struct {
+		name           string
+		noCache        bool
+		expectedParams int
+		expectedValue  string
+	}{
+		{
+			name:           "NoCache true adds param",
+			noCache:        true,
+			expectedParams: 1,
+			expectedValue:  "true",
+		},
+		{
+			name:           "NoCache false adds no param",
+			noCache:        false,
+			expectedParams: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			build := &shipwrightv1beta1.Build{
+				Spec: shipwrightv1beta1.BuildSpec{
+					ParamValues: []shipwrightv1beta1.ParamValue{},
+				},
+			}
+
+			if tt.noCache {
+				noCacheValue := "true"
+				noCacheParam := shipwrightv1beta1.ParamValue{
+					Name: "no-cache",
+					SingleValue: &shipwrightv1beta1.SingleValue{
+						Value: &noCacheValue,
+					},
+				}
+				build.Spec.ParamValues = append(build.Spec.ParamValues, noCacheParam)
+			}
+
+			assert.Equal(t, tt.expectedParams, len(build.Spec.ParamValues))
+
+			if tt.expectedParams > 0 {
+				param := build.Spec.ParamValues[0]
+				assert.Equal(t, "no-cache", param.Name)
+				assert.NotNil(t, param.SingleValue)
+				assert.NotNil(t, param.SingleValue.Value)
+				assert.Equal(t, tt.expectedValue, *param.SingleValue.Value)
+			}
+		})
+	}
+}
+
 // Helper function to create string pointers
 func stringPtr(s string) *string {
 	return &s
