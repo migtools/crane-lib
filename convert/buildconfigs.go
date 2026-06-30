@@ -91,7 +91,10 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 
 			// process From field
 			if bc.Spec.Strategy.DockerStrategy.From != nil {
-				t.Logger.Warnf("From Field in BuildConfig's Docker strategy is not yet supported in built-in Buildah ClusterBuildStrategy in Shipwright. RFE: %s", RuntimeStageFromRFE)
+				if err := t.processDockerStrategyFromField(&bc, b); err != nil {
+					t.Logger.Errorf("Error processing From field for Docker strategy: %v", err)
+					return err
+				}
 			}
 
 			// process PullSecret field
@@ -296,6 +299,66 @@ func (t *ConvertOptions) processStrategyFromField(bc *buildv1.BuildConfig, b *sh
 	default:
 		return fmt.Errorf("strategy 'From' kind %s is unknown type %s for BuildConfig %s", fromKind, bc.Spec.Strategy.Type, bc.Name)
 	}
+	return nil
+}
+
+// processDockerStrategyFromField processes the From field for Docker strategy
+func (t *ConvertOptions) processDockerStrategyFromField(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
+	from := bc.Spec.Strategy.DockerStrategy.From
+	if from == nil {
+		return nil
+	}
+
+	if from.Kind == "" || from.Name == "" {
+		return nil
+	}
+
+	if from.Namespace == "" {
+		from.Namespace = bc.Namespace
+	}
+
+	if b.Spec.ParamValues == nil {
+		b.Spec.ParamValues = []shipwrightv1beta1.ParamValue{}
+	}
+
+	switch fromKind := from.Kind; fromKind {
+	case ImageStreamTag:
+		imageRef, err := t.resolveImageStreamRef(from.Name, from.Namespace)
+		if err != nil {
+			return err
+		}
+		paramValue := shipwrightv1beta1.ParamValue{
+			Name: "runtime-stage-from",
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &imageRef,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, paramValue)
+	case ImageStreamImage:
+		imageRef, err := t.resolveImageStreamRef(from.Name, from.Namespace)
+		if err != nil {
+			return err
+		}
+		paramValue := shipwrightv1beta1.ParamValue{
+			Name: "runtime-stage-from",
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &imageRef,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, paramValue)
+	case DockerImage:
+		paramValue := shipwrightv1beta1.ParamValue{
+			Name: "runtime-stage-from",
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &from.Name,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, paramValue)
+	default:
+		return fmt.Errorf("docker strategy 'From' kind %s is unknown for BuildConfig %s", fromKind, bc.Name)
+	}
+
+	t.Logger.Infof("Docker strategy From field mapped to runtime-stage-from param for BuildConfig %s", bc.Name)
 	return nil
 }
 
