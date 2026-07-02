@@ -39,8 +39,9 @@ const (
 	GitHTTPSProxy = "HTTPS_PROXY"
 	GitNoProxy    = "NO_PROXY"
 
-	// Docker Strategy Parameters
-	NoCacheParamName = "no-cache"
+	// Buildah Strategy Param Names
+	NoCacheParamName          = "no-cache"
+	RuntimeStageFromParamName = "runtime-stage-from"
 
 	Timeout = 10 * time.Minute
 )
@@ -322,25 +323,13 @@ func (t *ConvertOptions) processDockerStrategyFromField(bc *buildv1.BuildConfig,
 	}
 
 	switch fromKind := from.Kind; fromKind {
-	case ImageStreamTag:
+	case ImageStreamTag, ImageStreamImage:
 		imageRef, err := t.resolveImageStreamRef(from.Name, from.Namespace)
 		if err != nil {
 			return err
 		}
 		paramValue := shipwrightv1beta1.ParamValue{
-			Name: "runtime-stage-from",
-			SingleValue: &shipwrightv1beta1.SingleValue{
-				Value: &imageRef,
-			},
-		}
-		b.Spec.ParamValues = append(b.Spec.ParamValues, paramValue)
-	case ImageStreamImage:
-		imageRef, err := t.resolveImageStreamRef(from.Name, from.Namespace)
-		if err != nil {
-			return err
-		}
-		paramValue := shipwrightv1beta1.ParamValue{
-			Name: "runtime-stage-from",
+			Name: RuntimeStageFromParamName,
 			SingleValue: &shipwrightv1beta1.SingleValue{
 				Value: &imageRef,
 			},
@@ -348,7 +337,7 @@ func (t *ConvertOptions) processDockerStrategyFromField(bc *buildv1.BuildConfig,
 		b.Spec.ParamValues = append(b.Spec.ParamValues, paramValue)
 	case DockerImage:
 		paramValue := shipwrightv1beta1.ParamValue{
-			Name: "runtime-stage-from",
+			Name: RuntimeStageFromParamName,
 			SingleValue: &shipwrightv1beta1.SingleValue{
 				Value: &from.Name,
 			},
@@ -358,7 +347,7 @@ func (t *ConvertOptions) processDockerStrategyFromField(bc *buildv1.BuildConfig,
 		return fmt.Errorf("docker strategy 'From' kind %s is unknown for BuildConfig %s", fromKind, bc.Name)
 	}
 
-	t.Logger.Infof("Docker strategy From field mapped to runtime-stage-from param for BuildConfig %s", bc.Name)
+	t.Logger.Infof("Docker strategy From field mapped to %s param for BuildConfig %s", RuntimeStageFromParamName, bc.Name)
 	return nil
 }
 

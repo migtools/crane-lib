@@ -636,7 +636,7 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 		err := co.processDockerStrategyFromField(bc, build)
 		assert.NoError(t, err)
 		assert.Len(t, build.Spec.ParamValues, 1)
-		assert.Equal(t, "runtime-stage-from", build.Spec.ParamValues[0].Name)
+		assert.Equal(t, RuntimeStageFromParamName, build.Spec.ParamValues[0].Name)
 		if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue) {
 			if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue.Value) {
 				assert.Equal(t, "registry.example.com/image:latest", *build.Spec.ParamValues[0].SingleValue.Value)
@@ -674,7 +674,7 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 		err := co.processDockerStrategyFromField(bc, build)
 		assert.NoError(t, err)
 		assert.Len(t, build.Spec.ParamValues, 1)
-		assert.Equal(t, "runtime-stage-from", build.Spec.ParamValues[0].Name)
+		assert.Equal(t, RuntimeStageFromParamName, build.Spec.ParamValues[0].Name)
 		if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue) {
 			if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue.Value) {
 				assert.Equal(t, "registry.example.com/image:latest", *build.Spec.ParamValues[0].SingleValue.Value)
@@ -707,7 +707,7 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 		err := co.processDockerStrategyFromField(bc, build)
 		assert.NoError(t, err)
 		assert.Len(t, build.Spec.ParamValues, 1)
-		assert.Equal(t, "runtime-stage-from", build.Spec.ParamValues[0].Name)
+		assert.Equal(t, RuntimeStageFromParamName, build.Spec.ParamValues[0].Name)
 		if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue) {
 			if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue.Value) {
 				assert.Equal(t, "docker.io/library/nginx:latest", *build.Spec.ParamValues[0].SingleValue.Value)
