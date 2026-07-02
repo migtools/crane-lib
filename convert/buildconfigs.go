@@ -42,6 +42,7 @@ const (
 	// Buildah Strategy Param Names
 	NoCacheParamName          = "no-cache"
 	SquashParamName           = "squash"
+	ForcePullParamName        = "pull"
 	RuntimeStageFromParamName = "runtime-stage-from"
 
 	Timeout = 10 * time.Minute
@@ -127,9 +128,7 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 			}
 
 			// process force pull field
-			if bc.Spec.Strategy.DockerStrategy.ForcePull {
-				t.Logger.Warnf("ForcePull flag is not yet supported in the built-in Buildah ClusterBuildStrategy in Shipwright. RFE: %s", ForcePullFlagRFE)
-			}
+			t.processDockerStrategyForcePull(&bc, b)
 
 			// process docker file path
 			if bc.Spec.Strategy.DockerStrategy.DockerfilePath != "" {
@@ -1004,6 +1003,20 @@ func (t *ConvertOptions) processDockerStrategySquash(bc *buildv1.BuildConfig, b 
 		t.Logger.Infof("ImageOptimizationPolicy is None for BuildConfig %s, no squash param needed", bc.Name)
 	default:
 		t.Logger.Warnf("Unknown ImageOptimizationPolicy %q for BuildConfig %s", policy, bc.Name)
+	}
+}
+
+func (t *ConvertOptions) processDockerStrategyForcePull(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) {
+	if bc.Spec.Strategy.DockerStrategy.ForcePull {
+		t.Logger.Infof("Mapping ForcePull flag to pull param for BuildConfig %s", bc.Name)
+		pullValue := "always"
+		pullParam := shipwrightv1beta1.ParamValue{
+			Name: ForcePullParamName,
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &pullValue,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, pullParam)
 	}
 }
 
