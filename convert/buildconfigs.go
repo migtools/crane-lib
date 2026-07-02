@@ -39,6 +39,9 @@ const (
 	GitHTTPSProxy = "HTTPS_PROXY"
 	GitNoProxy    = "NO_PROXY"
 
+	// Docker Strategy Parameters
+	NoCacheParamName = "no-cache"
+
 	Timeout = 10 * time.Minute
 )
 
@@ -110,17 +113,7 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 			}
 
 			// process NoCache field
-			if bc.Spec.Strategy.DockerStrategy.NoCache {
-				t.Logger.Infof("Mapping NoCache flag to no-cache param for BuildConfig %s", bc.Name)
-				noCacheValue := "true"
-				noCacheParam := shipwrightv1beta1.ParamValue{
-					Name: "no-cache",
-					SingleValue: &shipwrightv1beta1.SingleValue{
-						Value: &noCacheValue,
-					},
-				}
-				b.Spec.ParamValues = append(b.Spec.ParamValues, noCacheParam)
-			}
+			t.processDockerStrategyNoCache(&bc, b)
 
 			// process env fields
 			if bc.Spec.Strategy.DockerStrategy.Env != nil {
@@ -895,6 +888,21 @@ func (t *ConvertOptions) processBuildArgs(bc buildv1.BuildConfig, b *shipwrightv
 		b.Spec.ParamValues = append(b.Spec.ParamValues, buildArgsParam)
 	}
 }
+
+func (t *ConvertOptions) processDockerStrategyNoCache(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) {
+	if bc.Spec.Strategy.DockerStrategy.NoCache {
+		t.Logger.Infof("Mapping NoCache flag to no-cache param for BuildConfig %s", bc.Name)
+		noCacheValue := "true"
+		noCacheParam := shipwrightv1beta1.ParamValue{
+			Name: NoCacheParamName,
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &noCacheValue,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, noCacheParam)
+	}
+}
+
 
 func getBuildFilePath(b shipwrightv1beta1.Build) string {
 	return strings.Join([]string{b.GroupVersionKind().Kind, b.GroupVersionKind().Group, b.GroupVersionKind().Version, b.Namespace, b.Name}, "_") + ".yaml"

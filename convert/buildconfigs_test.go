@@ -304,6 +304,50 @@ func TestProcessOutput(t *testing.T) {
 			expectedImage: "image-registry.openshift-image-registry.svc:5000/default/output-image:latest",
 		},
 		{
+			name: "ImageStreamTag output with pushSecret",
+			buildConfig: buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-bc",
+					Namespace: "default",
+				},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Output: buildv1.BuildOutput{
+							To: &corev1.ObjectReference{
+								Kind: "ImageStreamTag",
+								Name: "output-image:latest",
+							},
+							PushSecret: &corev1.LocalObjectReference{
+								Name: "my-push-secret",
+							},
+						},
+					},
+				},
+			},
+			expectedImage: "image-registry.openshift-image-registry.svc:5000/default/output-image:latest",
+		},
+		{
+			name: "ImageStreamTag output without pushSecret",
+			buildConfig: buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-bc",
+					Namespace: "default",
+				},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Output: buildv1.BuildOutput{
+							To: &corev1.ObjectReference{
+								Kind: "ImageStreamTag",
+								Name: "output-image:latest",
+							},
+							PushSecret: nil,
+						},
+					},
+				},
+			},
+			expectedImage: "image-registry.openshift-image-registry.svc:5000/default/output-image:latest",
+		},
+		{
 			name: "Direct image output",
 			buildConfig: buildv1.BuildConfig{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1759,54 +1803,85 @@ func TestGetServiceAccountFilePath(t *testing.T) {
 func TestProcessDockerStrategyNoCache(t *testing.T) {
 	tests := []struct {
 		name           string
-		noCache        bool
+		buildConfig    buildv1.BuildConfig
 		expectedParams int
+		expectedName   string
 		expectedValue  string
 	}{
 		{
-			name:           "NoCache true adds param",
-			noCache:        true,
+			name: "NoCache true adds param",
+			buildConfig: buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-bc",
+					Namespace: "default",
+				},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								NoCache: true,
+							},
+						},
+					},
+				},
+			},
 			expectedParams: 1,
+			expectedName:   NoCacheParamName,
 			expectedValue:  "true",
 		},
 		{
-			name:           "NoCache false adds no param",
-			noCache:        false,
+			name: "NoCache false adds no param",
+			buildConfig: buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-bc",
+					Namespace: "default",
+				},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.DockerBuildStrategyType,
+							DockerStrategy: &buildv1.DockerBuildStrategy{
+								NoCache: false,
+							},
+						},
+					},
+				},
+			},
 			expectedParams: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			co := &ConvertOptions{
+				Logger: logrus.New(),
+			}
 			build := &shipwrightv1beta1.Build{
 				Spec: shipwrightv1beta1.BuildSpec{
 					ParamValues: []shipwrightv1beta1.ParamValue{},
 				},
 			}
 
-			if tt.noCache {
-				noCacheValue := "true"
-				noCacheParam := shipwrightv1beta1.ParamValue{
-					Name: "no-cache",
-					SingleValue: &shipwrightv1beta1.SingleValue{
-						Value: &noCacheValue,
-					},
-				}
-				build.Spec.ParamValues = append(build.Spec.ParamValues, noCacheParam)
-			}
+			// Call the actual conversion logic
+			co.processDockerStrategyNoCache(&tt.buildConfig, build)
 
+			// Assertions
 			assert.Equal(t, tt.expectedParams, len(build.Spec.ParamValues))
 
 			if tt.expectedParams > 0 {
 				param := build.Spec.ParamValues[0]
-				assert.Equal(t, "no-cache", param.Name)
-				assert.NotNil(t, param.SingleValue)
-				assert.NotNil(t, param.SingleValue.Value)
-				assert.Equal(t, tt.expectedValue, *param.SingleValue.Value)
+				assert.Equal(t, tt.expectedName, param.Name)
+				if assert.NotNil(t, param.SingleValue) {
+					if assert.NotNil(t, param.SingleValue.Value) {
+						assert.Equal(t, tt.expectedValue, *param.SingleValue.Value)
+					}
+				}
 			}
 		})
 	}
 }
+
 
 // Helper function to create string pointers
 func stringPtr(s string) *string {
