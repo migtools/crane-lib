@@ -51,6 +51,11 @@ func (m *MockClient) Get(ctx context.Context, key client.ObjectKey, obj client.O
 	return nil
 }
 
+func (m *MockClient) Apply(ctx context.Context, obj runtime.ApplyConfiguration, opts ...client.ApplyOption) error {
+	args := m.Called(ctx, obj, opts)
+	return args.Error(0)
+}
+
 func (m *MockClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
 	args := m.Called(ctx, list, opts)
 	if args.Get(0) != nil {
@@ -2072,6 +2077,81 @@ func TestProcessSourceStrategyIncremental(t *testing.T) {
 			}
 
 			co.processSourceStrategyIncremental(tt.buildConfig, build)
+
+			assert.Equal(t, tt.expectedParams, len(build.Spec.ParamValues))
+
+			if tt.expectedParams > 0 {
+				assert.Equal(t, tt.expectedName, build.Spec.ParamValues[0].Name)
+				assert.Equal(t, tt.expectedValue, *build.Spec.ParamValues[0].SingleValue.Value)
+			}
+		})
+	}
+}
+
+func TestProcessSourceStrategyForcePull(t *testing.T) {
+	tests := []struct {
+		name           string
+		buildConfig    *buildv1.BuildConfig
+		expectedParams int
+		expectedName   string
+		expectedValue  string
+	}{
+		{
+			name: "ForcePull true - maps to pull-policy=always",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.SourceBuildStrategyType,
+							SourceStrategy: &buildv1.SourceBuildStrategy{
+								ForcePull: true,
+								From: corev1.ObjectReference{
+									Kind: "DockerImage",
+									Name: "registry.access.redhat.com/ubi9/nodejs-18:latest",
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedParams: 1,
+			expectedName:   "pull-policy",
+			expectedValue:  "always",
+		},
+		{
+			name: "ForcePull false - no param added",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.SourceBuildStrategyType,
+							SourceStrategy: &buildv1.SourceBuildStrategy{
+								ForcePull: false,
+								From: corev1.ObjectReference{
+									Kind: "DockerImage",
+									Name: "registry.access.redhat.com/ubi9/nodejs-18:latest",
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedParams: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			co := &ConvertOptions{
+				Logger: logrus.New(),
+			}
+			build := &shipwrightv1beta1.Build{
+				Spec: shipwrightv1beta1.BuildSpec{},
+			}
+
+			co.processSourceStrategyForcePull(tt.buildConfig, build)
 
 			assert.Equal(t, tt.expectedParams, len(build.Spec.ParamValues))
 
