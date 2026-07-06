@@ -1909,6 +1909,81 @@ func TestProcessDockerStrategyForcePull(t *testing.T) {
 	}
 }
 
+func TestProcessSourceStrategyScripts(t *testing.T) {
+	tests := []struct {
+		name           string
+		buildConfig    *buildv1.BuildConfig
+		expectedParams int
+		expectedName   string
+		expectedValue  string
+	}{
+		{
+			name: "Scripts URL set - maps to scripts-url param",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.SourceBuildStrategyType,
+							SourceStrategy: &buildv1.SourceBuildStrategy{
+								Scripts: "https://example.com/s2i/scripts",
+								From: corev1.ObjectReference{
+									Kind: "DockerImage",
+									Name: "registry.access.redhat.com/ubi9/nodejs-18:latest",
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedParams: 1,
+			expectedName:   "scripts-url",
+			expectedValue:  "https://example.com/s2i/scripts",
+		},
+		{
+			name: "Scripts URL empty - no param added",
+			buildConfig: &buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-bc"},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type: buildv1.SourceBuildStrategyType,
+							SourceStrategy: &buildv1.SourceBuildStrategy{
+								Scripts: "",
+								From: corev1.ObjectReference{
+									Kind: "DockerImage",
+									Name: "registry.access.redhat.com/ubi9/nodejs-18:latest",
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedParams: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			co := &ConvertOptions{
+				Logger: logrus.New(),
+			}
+			build := &shipwrightv1beta1.Build{
+				Spec: shipwrightv1beta1.BuildSpec{},
+			}
+
+			co.processSourceStrategyScripts(tt.buildConfig, build)
+
+			assert.Equal(t, tt.expectedParams, len(build.Spec.ParamValues))
+
+			if tt.expectedParams > 0 {
+				assert.Equal(t, tt.expectedName, build.Spec.ParamValues[0].Name)
+				assert.Equal(t, tt.expectedValue, *build.Spec.ParamValues[0].SingleValue.Value)
+			}
+		})
+	}
+}
+
 func TestGetServiceAccountFilePath(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -2034,7 +2109,6 @@ func TestProcessDockerStrategyNoCache(t *testing.T) {
 		})
 	}
 }
-
 
 func TestProcessDockerStrategySquash(t *testing.T) {
 	skipLayers := buildv1.ImageOptimizationSkipLayers
