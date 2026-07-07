@@ -214,7 +214,7 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 				t.Logger.Warnf("Unlike BuildConfig, Volumes have to be supported in the Source-to-Image Strategy first in Shipwright. Please raise your requirements here: %s", DockerStrategyVolumesRFE)
 			}
 		default:
-			fmt.Println("Strategy type", bc.Spec.Strategy.Type, "is unknown for BuildConfig", bc.Name)
+			t.Logger.Errorf("Unsupported strategy type '%s' for BuildConfig '%s'. Only Docker and Source strategies can be migrated to Shipwright. Custom and JenkinsPipeline strategies have no Shipwright equivalent.", bc.Spec.Strategy.Type, bc.Name)
 		}
 
 		if bc.Spec.Output.PushSecret != nil && bc.Spec.Output.PushSecret.Name != "" {
