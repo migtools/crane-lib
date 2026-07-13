@@ -277,7 +277,7 @@ func (t *ConvertOptions) processStrategyFromField(bc *buildv1.BuildConfig, b *sh
 		}
 		b.Spec.ParamValues = append(b.Spec.ParamValues, paramValue)
 	case ImageStreamImage:
-		imageRef, err := t.resolveImageStreamRef(from.Name, from.Namespace)
+		imageRef, err := t.resolveImageStreamImageRef(from.Name, from.Namespace)
 		if err != nil {
 			return err
 		}
@@ -323,8 +323,20 @@ func (t *ConvertOptions) processDockerStrategyFromField(bc *buildv1.BuildConfig,
 	}
 
 	switch fromKind := from.Kind; fromKind {
-	case ImageStreamTag, ImageStreamImage:
+	case ImageStreamTag:
 		imageRef, err := t.resolveImageStreamRef(from.Name, from.Namespace)
+		if err != nil {
+			return err
+		}
+		paramValue := shipwrightv1beta1.ParamValue{
+			Name: RuntimeStageFromParamName,
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &imageRef,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, paramValue)
+	case ImageStreamImage:
+		imageRef, err := t.resolveImageStreamImageRef(from.Name, from.Namespace)
 		if err != nil {
 			return err
 		}
@@ -738,7 +750,7 @@ func (t *ConvertOptions) processBuildSourceFromField(bc *buildv1.BuildConfig, b 
 			},
 		}
 	case ImageStreamImage:
-		imageRef, err := t.resolveImageStreamRef(fromImage.Name, fromImage.Namespace)
+		imageRef, err := t.resolveImageStreamImageRef(fromImage.Name, fromImage.Namespace)
 		if err != nil {
 			return fmt.Errorf("failed to resolve image stream image: %v", err)
 		}
@@ -837,6 +849,20 @@ func (t *ConvertOptions) resolveImageStreamRef(name string, namespace string) (s
 	imageRef := imageStreamTag.Tag.From.Name
 
 	return imageRef, nil
+}
+
+func (t *ConvertOptions) resolveImageStreamImageRef(name string, namespace string) (string, error) {
+	imageStreamImage := imagev1.ImageStreamImage{}
+
+	err := t.Client.Get(context.Background(), client.ObjectKey{
+		Namespace: namespace,
+		Name:      name,
+	}, &imageStreamImage)
+	if err != nil {
+		return "", err
+	}
+
+	return imageStreamImage.Image.DockerImageReference, nil
 }
 
 func (t *ConvertOptions) writeBuildConfigs(bcList buildv1.BuildConfigList) error {
