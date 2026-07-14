@@ -1,7 +1,6 @@
 package convert
 
 const (
-	NoCacheFlagRFE           = "https://issues.redhat.com/browse/BUILD-1578"
 	ForcePullFlagRFE         = "https://issues.redhat.com/browse/BUILD-1580"
 	SqashFlagRFE             = "https://issues.redhat.com/browse/BUILD-1581"
 	ConfigMapsRFE            = "https://issues.redhat.com/browse/BUILD-1745"
