@@ -232,11 +232,8 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 
 // processStrategyFromField processes From field for Source-to-Image strategy
 func (t *ConvertOptions) processStrategyFromField(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
-	// Extract From field from whichever strategy is present
 	var from *corev1.ObjectReference
-	if bc.Spec.Strategy.DockerStrategy != nil && bc.Spec.Strategy.DockerStrategy.From != nil {
-		from = bc.Spec.Strategy.DockerStrategy.From
-	} else if bc.Spec.Strategy.SourceStrategy != nil && bc.Spec.Strategy.SourceStrategy.From.Name != "" {
+	if bc.Spec.Strategy.SourceStrategy != nil && bc.Spec.Strategy.SourceStrategy.From.Name != "" {
 		from = &bc.Spec.Strategy.SourceStrategy.From
 	} else {
 		t.Logger.Debugf("No From field to process for BuildConfig %s", bc.Name)
@@ -322,42 +319,31 @@ func (t *ConvertOptions) processDockerStrategyFromField(bc *buildv1.BuildConfig,
 		b.Spec.ParamValues = []shipwrightv1beta1.ParamValue{}
 	}
 
+	var imageRef string
+	var err error
+
 	switch fromKind := from.Kind; fromKind {
 	case ImageStreamTag:
-		imageRef, err := t.resolveImageStreamRef(from.Name, from.Namespace)
-		if err != nil {
-			return err
-		}
-		paramValue := shipwrightv1beta1.ParamValue{
-			Name: RuntimeStageFromParamName,
-			SingleValue: &shipwrightv1beta1.SingleValue{
-				Value: &imageRef,
-			},
-		}
-		b.Spec.ParamValues = append(b.Spec.ParamValues, paramValue)
+		imageRef, err = t.resolveImageStreamRef(from.Name, from.Namespace)
 	case ImageStreamImage:
-		imageRef, err := t.resolveImageStreamImageRef(from.Name, from.Namespace)
-		if err != nil {
-			return err
-		}
-		paramValue := shipwrightv1beta1.ParamValue{
-			Name: RuntimeStageFromParamName,
-			SingleValue: &shipwrightv1beta1.SingleValue{
-				Value: &imageRef,
-			},
-		}
-		b.Spec.ParamValues = append(b.Spec.ParamValues, paramValue)
+		imageRef, err = t.resolveImageStreamImageRef(from.Name, from.Namespace)
 	case DockerImage:
-		paramValue := shipwrightv1beta1.ParamValue{
-			Name: RuntimeStageFromParamName,
-			SingleValue: &shipwrightv1beta1.SingleValue{
-				Value: &from.Name,
-			},
-		}
-		b.Spec.ParamValues = append(b.Spec.ParamValues, paramValue)
+		imageRef = from.Name
 	default:
 		return fmt.Errorf("docker strategy 'From' kind %s is unknown for BuildConfig %s", fromKind, bc.Name)
 	}
+
+	if err != nil {
+		return err
+	}
+
+	paramValue := shipwrightv1beta1.ParamValue{
+		Name: RuntimeStageFromParamName,
+		SingleValue: &shipwrightv1beta1.SingleValue{
+			Value: &imageRef,
+		},
+	}
+	b.Spec.ParamValues = append(b.Spec.ParamValues, paramValue)
 
 	t.Logger.Infof("Docker strategy From field mapped to %s param for BuildConfig %s", RuntimeStageFromParamName, bc.Name)
 	return nil
