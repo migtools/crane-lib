@@ -368,7 +368,7 @@ func TestProcessOutput(t *testing.T) {
 			expectedImage: "registry.example.com/image:tag",
 		},
 		{
-			name: "ImageStreamTag output without pushSecret",
+			name: "ImageStreamTag output without pushSecret - custom namespace",
 			buildConfig: buildv1.BuildConfig{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-bc",
@@ -403,6 +403,47 @@ func TestProcessOutput(t *testing.T) {
 							},
 							PushSecret: &corev1.LocalObjectReference{
 								Name: "my-push-secret",
+							},
+						},
+					},
+				},
+			},
+			expectedImage: "image-registry.openshift-image-registry.svc:5000/test-ns/myimage:latest",
+		},
+		{
+			name: "ImageStreamTag output with cross-namespace reference",
+			buildConfig: buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-bc",
+					Namespace: "test-ns",
+				},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Output: buildv1.BuildOutput{
+							To: &corev1.ObjectReference{
+								Kind:      "ImageStreamTag",
+								Name:      "myimage:v1",
+								Namespace: "other-ns",
+							},
+						},
+					},
+				},
+			},
+			expectedImage: "image-registry.openshift-image-registry.svc:5000/other-ns/myimage:v1",
+		},
+		{
+			name: "ImageStreamTag output without tag defaults to latest",
+			buildConfig: buildv1.BuildConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-bc",
+					Namespace: "test-ns",
+				},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Output: buildv1.BuildOutput{
+							To: &corev1.ObjectReference{
+								Kind: "ImageStreamTag",
+								Name: "myimage",
 							},
 						},
 					},
