@@ -768,8 +768,15 @@ func (t *ConvertOptions) processOutput(bc buildv1.BuildConfig, b *shipwrightv1be
 		} else {
 			namespace = bc.Namespace
 		}
-		b.Spec.Output.Image = "image-registry.openshift-image-registry.svc:5000/" + namespace + "/" + bc.Spec.Output.To.Name
-		t.Logger.Warnf("Push to Openshift ImageStreams is not yet supported in Shipwright. RFE: %s", ImageStreamsPushRFE)
+		name := bc.Spec.Output.To.Name
+		if !strings.Contains(name, ":") {
+			name = name + ":latest"
+		}
+		b.Spec.Output.Image = "image-registry.openshift-image-registry.svc:5000/" + namespace + "/" + name
+		t.Logger.Infof("ImageStreamTag output converted to internal registry URL: %s", b.Spec.Output.Image)
+		if bc.Spec.Output.PushSecret == nil || bc.Spec.Output.PushSecret.Name == "" {
+			t.Logger.Warnf("No explicit pushSecret found for ImageStreamTag output. Ensure the BuildRun uses a ServiceAccount with internal registry push access (e.g., 'pipeline' SA managed by OpenShift Pipelines).")
+		}
 	} else {
 		b.Spec.Output.Image = bc.Spec.Output.To.Name
 	}
