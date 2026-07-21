@@ -41,6 +41,7 @@ const (
 
 	// Buildah Strategy Param Names
 	NoCacheParamName          = "no-cache"
+	SquashParamName           = "squash"
 	RuntimeStageFromParamName = "runtime-stage-from"
 
 	Timeout = 10 * time.Minute
@@ -146,9 +147,7 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 			t.processBuildArgs(bc, b)
 
 			// process ImageOptimizationPolicy field
-			if bc.Spec.Strategy.DockerStrategy.ImageOptimizationPolicy != nil {
-				t.Logger.Warnf("ImageOptimizationPolicy (--squash) flag is not yet supported in the built-in Buildah ClusterBuildStrategy in Shipwright. RFE: %s", SqashFlagRFE)
-			}
+			t.processDockerStrategySquash(&bc, b)
 
 			// process volumes
 			if len(bc.Spec.Strategy.DockerStrategy.Volumes) > 0 {
@@ -974,6 +973,39 @@ func (t *ConvertOptions) processDockerStrategyNoCache(bc *buildv1.BuildConfig, b
 	}
 }
 
+func (t *ConvertOptions) processDockerStrategySquash(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) {
+	if bc.Spec.Strategy.DockerStrategy.ImageOptimizationPolicy == nil {
+		return
+	}
+
+	policy := *bc.Spec.Strategy.DockerStrategy.ImageOptimizationPolicy
+	switch policy {
+	case buildv1.ImageOptimizationSkipLayers:
+		t.Logger.Infof("Mapping ImageOptimizationPolicy SkipLayers to squash param for BuildConfig %s", bc.Name)
+		squashValue := "true"
+		squashParam := shipwrightv1beta1.ParamValue{
+			Name: SquashParamName,
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &squashValue,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, squashParam)
+	case buildv1.ImageOptimizationSkipLayersAndWarn:
+		t.Logger.Infof("Mapping ImageOptimizationPolicy SkipLayersAndWarn to squash param for BuildConfig %s (warn variant has no equivalent in buildah, treating as squash)", bc.Name)
+		squashValue := "true"
+		squashParam := shipwrightv1beta1.ParamValue{
+			Name: SquashParamName,
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &squashValue,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, squashParam)
+	case buildv1.ImageOptimizationNone:
+		t.Logger.Infof("ImageOptimizationPolicy is None for BuildConfig %s, no squash param needed", bc.Name)
+	default:
+		t.Logger.Warnf("Unknown ImageOptimizationPolicy %q for BuildConfig %s", policy, bc.Name)
+	}
+}
 
 func getBuildFilePath(b shipwrightv1beta1.Build) string {
 	return strings.Join([]string{b.GroupVersionKind().Kind, b.GroupVersionKind().Group, b.GroupVersionKind().Version, b.Namespace, b.Name}, "_") + ".yaml"
