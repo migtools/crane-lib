@@ -39,8 +39,9 @@ const (
 	GitHTTPSProxy = "HTTPS_PROXY"
 	GitNoProxy    = "NO_PROXY"
 
-	// Docker Strategy Parameters
-	NoCacheParamName = "no-cache"
+	// Buildah Strategy Param Names
+	NoCacheParamName          = "no-cache"
+	RuntimeStageFromParamName = "runtime-stage-from"
 
 	Timeout = 10 * time.Minute
 )
@@ -91,7 +92,10 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 
 			// process From field
 			if bc.Spec.Strategy.DockerStrategy.From != nil {
-				t.Logger.Warnf("From Field in BuildConfig's Docker strategy is not yet supported in built-in Buildah ClusterBuildStrategy in Shipwright. RFE: %s", RuntimeStageFromRFE)
+				if err := t.processDockerStrategyFromField(&bc, b); err != nil {
+					t.Logger.Errorf("Error processing From field for Docker strategy: %v", err)
+					return err
+				}
 			}
 
 			// process PullSecret field
@@ -228,11 +232,8 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 
 // processStrategyFromField processes From field for Source-to-Image strategy
 func (t *ConvertOptions) processStrategyFromField(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
-	// Extract From field from whichever strategy is present
 	var from *corev1.ObjectReference
-	if bc.Spec.Strategy.DockerStrategy != nil && bc.Spec.Strategy.DockerStrategy.From != nil {
-		from = bc.Spec.Strategy.DockerStrategy.From
-	} else if bc.Spec.Strategy.SourceStrategy != nil && bc.Spec.Strategy.SourceStrategy.From.Name != "" {
+	if bc.Spec.Strategy.SourceStrategy != nil && bc.Spec.Strategy.SourceStrategy.From.Name != "" {
 		from = &bc.Spec.Strategy.SourceStrategy.From
 	} else {
 		t.Logger.Debugf("No From field to process for BuildConfig %s", bc.Name)
@@ -273,7 +274,7 @@ func (t *ConvertOptions) processStrategyFromField(bc *buildv1.BuildConfig, b *sh
 		}
 		b.Spec.ParamValues = append(b.Spec.ParamValues, paramValue)
 	case ImageStreamImage:
-		imageRef, err := t.resolveImageStreamRef(from.Name, from.Namespace)
+		imageRef, err := t.resolveImageStreamImageRef(from.Name, from.Namespace)
 		if err != nil {
 			return err
 		}
@@ -296,6 +297,55 @@ func (t *ConvertOptions) processStrategyFromField(bc *buildv1.BuildConfig, b *sh
 	default:
 		return fmt.Errorf("strategy 'From' kind %s is unknown type %s for BuildConfig %s", fromKind, bc.Spec.Strategy.Type, bc.Name)
 	}
+	return nil
+}
+
+// processDockerStrategyFromField processes the From field for Docker strategy
+func (t *ConvertOptions) processDockerStrategyFromField(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) error {
+	from := bc.Spec.Strategy.DockerStrategy.From
+	if from == nil {
+		return nil
+	}
+
+	if from.Kind == "" || from.Name == "" {
+		return nil
+	}
+
+	if from.Namespace == "" {
+		from.Namespace = bc.Namespace
+	}
+
+	if b.Spec.ParamValues == nil {
+		b.Spec.ParamValues = []shipwrightv1beta1.ParamValue{}
+	}
+
+	var imageRef string
+	var err error
+
+	switch fromKind := from.Kind; fromKind {
+	case ImageStreamTag:
+		imageRef, err = t.resolveImageStreamRef(from.Name, from.Namespace)
+	case ImageStreamImage:
+		imageRef, err = t.resolveImageStreamImageRef(from.Name, from.Namespace)
+	case DockerImage:
+		imageRef = from.Name
+	default:
+		return fmt.Errorf("docker strategy 'From' kind %s is unknown for BuildConfig %s", fromKind, bc.Name)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	paramValue := shipwrightv1beta1.ParamValue{
+		Name: RuntimeStageFromParamName,
+		SingleValue: &shipwrightv1beta1.SingleValue{
+			Value: &imageRef,
+		},
+	}
+	b.Spec.ParamValues = append(b.Spec.ParamValues, paramValue)
+
+	t.Logger.Infof("Docker strategy From field mapped to %s param for BuildConfig %s", RuntimeStageFromParamName, bc.Name)
 	return nil
 }
 
@@ -686,7 +736,7 @@ func (t *ConvertOptions) processBuildSourceFromField(bc *buildv1.BuildConfig, b 
 			},
 		}
 	case ImageStreamImage:
-		imageRef, err := t.resolveImageStreamRef(fromImage.Name, fromImage.Namespace)
+		imageRef, err := t.resolveImageStreamImageRef(fromImage.Name, fromImage.Namespace)
 		if err != nil {
 			return fmt.Errorf("failed to resolve image stream image: %v", err)
 		}
@@ -785,6 +835,20 @@ func (t *ConvertOptions) resolveImageStreamRef(name string, namespace string) (s
 	imageRef := imageStreamTag.Tag.From.Name
 
 	return imageRef, nil
+}
+
+func (t *ConvertOptions) resolveImageStreamImageRef(name string, namespace string) (string, error) {
+	imageStreamImage := imagev1.ImageStreamImage{}
+
+	err := t.Client.Get(context.Background(), client.ObjectKey{
+		Namespace: namespace,
+		Name:      name,
+	}, &imageStreamImage)
+	if err != nil {
+		return "", err
+	}
+
+	return imageStreamImage.Image.DockerImageReference, nil
 }
 
 func (t *ConvertOptions) writeBuildConfigs(bcList buildv1.BuildConfigList) error {

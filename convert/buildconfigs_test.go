@@ -41,6 +41,13 @@ func (m *MockClient) Get(ctx context.Context, key client.ObjectKey, obj client.O
 			},
 		}
 	}
+
+	// Handle ImageStreamImage mock response
+	if isi, ok := obj.(*imagev1.ImageStreamImage); ok {
+		isi.Image = imagev1.Image{
+			DockerImageReference: "registry.example.com/image@sha256:deadbeef",
+		}
+	}
 	return nil
 }
 
@@ -633,11 +640,10 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 
 		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{}}
 
-		err := co.processStrategyFromField(bc, build)
+		err := co.processDockerStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.Nil(t, build.Spec.Source)
 		assert.Len(t, build.Spec.ParamValues, 1)
-		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
+		assert.Equal(t, RuntimeStageFromParamName, build.Spec.ParamValues[0].Name)
 		if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue) {
 			if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue.Value) {
 				assert.Equal(t, "registry.example.com/image:latest", *build.Spec.ParamValues[0].SingleValue.Value)
@@ -654,7 +660,7 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 			Logger: logrus.New(),
 		}
 
-		// Mock Get to succeed and populate ImageStreamTag (resolveImageStreamRef uses ImageStreamTag)
+		// Mock Get to succeed and populate ImageStreamImage
 		mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 		bc := &buildv1.BuildConfig{
@@ -672,14 +678,13 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 
 		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{}}
 
-		err := co.processStrategyFromField(bc, build)
+		err := co.processDockerStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.Nil(t, build.Spec.Source)
 		assert.Len(t, build.Spec.ParamValues, 1)
-		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
+		assert.Equal(t, RuntimeStageFromParamName, build.Spec.ParamValues[0].Name)
 		if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue) {
 			if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue.Value) {
-				assert.Equal(t, "registry.example.com/image:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+				assert.Equal(t, "registry.example.com/image@sha256:deadbeef", *build.Spec.ParamValues[0].SingleValue.Value)
 			}
 		}
 
@@ -706,11 +711,10 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 
 		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{}}
 
-		err := co.processStrategyFromField(bc, build)
+		err := co.processDockerStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.Nil(t, build.Spec.Source)
 		assert.Len(t, build.Spec.ParamValues, 1)
-		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
+		assert.Equal(t, RuntimeStageFromParamName, build.Spec.ParamValues[0].Name)
 		if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue) {
 			if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue.Value) {
 				assert.Equal(t, "docker.io/library/nginx:latest", *build.Spec.ParamValues[0].SingleValue.Value)
@@ -738,9 +742,8 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 
 		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{}}
 
-		err := co.processStrategyFromField(bc, build)
+		err := co.processDockerStrategyFromField(bc, build)
 		assert.Error(t, err)
-		assert.Nil(t, build.Spec.Source)
 		assert.Empty(t, build.Spec.ParamValues)
 	})
 
@@ -760,9 +763,8 @@ func TestProcessDockerStrategyFromField(t *testing.T) {
 
 		build := &shipwrightv1beta1.Build{Spec: shipwrightv1beta1.BuildSpec{}}
 
-		err := co.processStrategyFromField(bc, build)
+		err := co.processDockerStrategyFromField(bc, build)
 		assert.NoError(t, err)
-		assert.Nil(t, build.Spec.Source)
 		assert.Empty(t, build.Spec.ParamValues)
 	})
 }
@@ -815,7 +817,7 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 			Logger: logrus.New(),
 		}
 
-		// Mock Get to succeed and populate ImageStreamTag (resolveImageStreamRef uses ImageStreamTag)
+		// Mock Get to succeed and populate ImageStreamImage
 		mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 		bc := &buildv1.BuildConfig{
@@ -841,7 +843,7 @@ func TestProcessSourceStrategyFromField(t *testing.T) {
 		assert.Equal(t, "builder-image", build.Spec.ParamValues[0].Name)
 		if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue) {
 			if assert.NotNil(t, build.Spec.ParamValues[0].SingleValue.Value) {
-				assert.Equal(t, "registry.example.com/image:latest", *build.Spec.ParamValues[0].SingleValue.Value)
+				assert.Equal(t, "registry.example.com/image@sha256:deadbeef", *build.Spec.ParamValues[0].SingleValue.Value)
 			}
 		}
 
