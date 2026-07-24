@@ -1,7 +1,6 @@
 package convert
 
 const (
-	ForcePullFlagRFE         = "https://issues.redhat.com/browse/BUILD-1580"
 	ConfigMapsRFE            = "https://issues.redhat.com/browse/BUILD-1745"
 	SecretsRFE               = "https://issues.redhat.com/browse/BUILD-1744"
 	DockerStrategyVolumesRFE = "https://issues.redhat.com/browse/BUILD-1747"
