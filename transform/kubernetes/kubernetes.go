@@ -268,6 +268,13 @@ func (k *KubernetesTransformPlugin) getWhiteOuts(obj unstructured.Unstructured) 
 			return true
 		}
 	}
+	if groupKind == secretGK {
+		secretType, _, _ := unstructured.NestedString(obj.Object, "type")
+		switch secretType {
+		case "kubernetes.io/service-account-token", "kubernetes.io/dockercfg":
+			return true
+		}
+	}
 	if k.DisableWhiteoutOwned {
 		return false
 	}
@@ -517,6 +524,15 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 			return nil, err
 		}
 		jsonPatch = append(jsonPatch, patches...)
+	}
+	if serviceAccountGK == obj.GetObjectKind().GroupVersionKind().GroupKind() {
+		if _, found, _ := unstructured.NestedSlice(obj.Object, "secrets"); found {
+			patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opRemove, "/secrets")))
+			if err != nil {
+				return nil, err
+			}
+			jsonPatch = append(jsonPatch, patch...)
+		}
 	}
 	if k.RegistryReplacement != nil && len(k.RegistryReplacement) > 0 {
 		if podGK == obj.GetObjectKind().GroupVersionKind().GroupKind() {
