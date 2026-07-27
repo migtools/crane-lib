@@ -51,11 +51,6 @@ func (m *MockClient) Get(ctx context.Context, key client.ObjectKey, obj client.O
 	return nil
 }
 
-func (m *MockClient) Apply(ctx context.Context, obj runtime.ApplyConfiguration, opts ...client.ApplyOption) error {
-	args := m.Called(ctx, obj, opts)
-	return args.Error(0)
-}
-
 func (m *MockClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
 	args := m.Called(ctx, list, opts)
 	if args.Get(0) != nil {
