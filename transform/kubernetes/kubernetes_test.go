@@ -28,6 +28,7 @@ func TestRun(t *testing.T) {
 		ShouldError          bool
 		Response             transform.PluginResponse
 		PatchResponseJson    string
+		ExpectNoPatches      bool
 	}{
 		{
 			Name: "EnpointWhiteOut",
@@ -1021,6 +1022,128 @@ func TestRun(t *testing.T) {
 				Version:    "v1",
 			},
 		},
+		{
+			Name: "SATokenSecretWhiteOut",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Secret",
+					"apiVersion": "v1",
+					"type":       "kubernetes.io/service-account-token",
+					"metadata": map[string]interface{}{
+						"name":      "app-sa-token-xwzl7",
+						"namespace": "myapp",
+						"annotations": map[string]interface{}{
+							"kubernetes.io/service-account.name": "app-sa",
+						},
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: true,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "DockercfgSecretWhiteOut",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Secret",
+					"apiVersion": "v1",
+					"type":       "kubernetes.io/dockercfg",
+					"metadata": map[string]interface{}{
+						"name":      "builder-dockercfg-abc12",
+						"namespace": "myapp",
+						"annotations": map[string]interface{}{
+							"kubernetes.io/service-account.name": "builder",
+						},
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: true,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "OpaqueSecretNotWhiteOut",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Secret",
+					"apiVersion": "v1",
+					"type":       "Opaque",
+					"metadata": map[string]interface{}{
+						"name":      "my-app-secret",
+						"namespace": "myapp",
+					},
+					"data": map[string]interface{}{
+						"password": "c2VjcmV0",
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "TLSSecretNotWhiteOut",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Secret",
+					"apiVersion": "v1",
+					"type":       "kubernetes.io/tls",
+					"metadata": map[string]interface{}{
+						"name":      "my-tls-cert",
+						"namespace": "myapp",
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+		},
+		{
+			Name: "ServiceAccountSecretsFieldStripped",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "ServiceAccount",
+					"apiVersion": "v1",
+					"metadata": map[string]interface{}{
+						"name":      "app-sa",
+						"namespace": "myapp",
+					},
+					"secrets": []interface{}{
+						map[string]interface{}{
+							"name": "app-sa-token-xwzl7",
+						},
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+			PatchResponseJson: `[{"op": "remove", "path": "/secrets"}]`,
+		},
+		{
+			Name: "ServiceAccountWithoutSecretsFieldUntouched",
+			Object: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "ServiceAccount",
+					"apiVersion": "v1",
+					"metadata": map[string]interface{}{
+						"name":      "app-sa",
+						"namespace": "myapp",
+					},
+				},
+			},
+			Response: transform.PluginResponse{
+				IsWhiteOut: false,
+				Version:    "v1",
+			},
+			ExpectNoPatches: true,
+		},
 	}
 
 	for _, c := range cases {
@@ -1059,6 +1182,10 @@ func TestRun(t *testing.T) {
 				} else {
 					t.Error(fmt.Sprintf("Patches Expected: %#v, none found", expectPatch))
 				}
+			}
+			if c.ExpectNoPatches && len(resp.Patches) != 0 {
+				actual, _ := json.Marshal(resp.Patches)
+				t.Errorf("Expected no patches but got: %s", actual)
 			}
 		})
 	}
