@@ -28,6 +28,7 @@ func TestRun(t *testing.T) {
 		ShouldError          bool
 		Response             transform.PluginResponse
 		PatchResponseJson    string
+		ExpectNoPatches      bool
 	}{
 		{
 			Name: "EnpointWhiteOut",
@@ -1141,6 +1142,7 @@ func TestRun(t *testing.T) {
 				IsWhiteOut: false,
 				Version:    "v1",
 			},
+			ExpectNoPatches: true,
 		},
 	}
 
@@ -1180,6 +1182,10 @@ func TestRun(t *testing.T) {
 				} else {
 					t.Error(fmt.Sprintf("Patches Expected: %#v, none found", expectPatch))
 				}
+			}
+			if c.ExpectNoPatches && len(resp.Patches) != 0 {
+				actual, _ := json.Marshal(resp.Patches)
+				t.Errorf("Expected no patches but got: %s", actual)
 			}
 		})
 	}

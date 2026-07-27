@@ -269,10 +269,11 @@ func (k *KubernetesTransformPlugin) getWhiteOuts(obj unstructured.Unstructured) 
 		}
 	}
 	if groupKind == secretGK {
-		secretType, _, _ := unstructured.NestedString(obj.Object, "type")
-		switch secretType {
-		case "kubernetes.io/service-account-token", "kubernetes.io/dockercfg":
-			return true
+		if secretType, found, _ := unstructured.NestedString(obj.Object, "type"); found {
+			switch secretType {
+			case "kubernetes.io/service-account-token", "kubernetes.io/dockercfg":
+				return true
+			}
 		}
 	}
 	if k.DisableWhiteoutOwned {
