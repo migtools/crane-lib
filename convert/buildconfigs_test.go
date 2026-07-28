@@ -12,6 +12,7 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 	shipwrightv1beta1 "github.com/shipwright-io/build/pkg/apis/build/v1beta1"
 	"github.com/sirupsen/logrus"
+	logrustest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	corev1 "k8s.io/api/core/v1"
@@ -1968,8 +1969,69 @@ func TestProcessDockerStrategyNoCache(t *testing.T) {
 	}
 }
 
-
 // Helper function to create string pointers
 func stringPtr(s string) *string {
 	return &s
+}
+
+// jenkinsStrategyClient overrides MockClient.List to return a BuildConfig
+// with a JenkinsPipeline strategy, which has no Shipwright equivalent.
+type jenkinsStrategyClient struct {
+	MockClient
+}
+
+func (c *jenkinsStrategyClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if bcList, ok := list.(*buildv1.BuildConfigList); ok {
+		bcList.Items = []buildv1.BuildConfig{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "jenkins-bc",
+					Namespace: "test-namespace",
+				},
+				Spec: buildv1.BuildConfigSpec{
+					CommonSpec: buildv1.CommonSpec{
+						Strategy: buildv1.BuildStrategy{
+							Type:                    buildv1.JenkinsPipelineBuildStrategyType,
+							JenkinsPipelineStrategy: &buildv1.JenkinsPipelineBuildStrategy{},
+						},
+						Output: buildv1.BuildOutput{
+							To: &corev1.ObjectReference{
+								Kind: "DockerImage",
+								Name: "quay.io/example/output:latest",
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+	return nil
+}
+
+// TestConvertBuildConfigsUnsupportedStrategy verifies that an unsupported
+// build strategy (e.g. JenkinsPipeline) logs an explicit error naming the
+// BuildConfig instead of being silently skipped (BUILD-2268).
+func TestConvertBuildConfigsUnsupportedStrategy(t *testing.T) {
+	logger, hook := logrustest.NewNullLogger()
+	co := &ConvertOptions{
+		Client:    &jenkinsStrategyClient{},
+		Namespace: "test-namespace",
+		ExportDir: t.TempDir(),
+		Logger:    logger,
+	}
+
+	err := co.convertBuildConfigs()
+	assert.NoError(t, err)
+
+	var errorEntry *logrus.Entry
+	for _, e := range hook.AllEntries() {
+		if e.Level == logrus.ErrorLevel {
+			errorEntry = e
+			break
+		}
+	}
+	if assert.NotNil(t, errorEntry, "expected an error-level log for unsupported strategy") {
+		assert.Contains(t, errorEntry.Message, "Unsupported strategy type 'JenkinsPipeline'")
+		assert.Contains(t, errorEntry.Message, "jenkins-bc")
+	}
 }
