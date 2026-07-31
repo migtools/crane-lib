@@ -2,6 +2,7 @@ package transform
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -259,6 +260,116 @@ func TestSplitNewResourceToSkeletonAndPatch_ComplexSpec(t *testing.T) {
 	strategyName, _, _ := unstructured.NestedString(result.Object, "spec", "strategy", "name")
 	if strategyName != "buildpacks-v3" {
 		t.Errorf("expected strategy name 'buildpacks-v3', got %q", strategyName)
+	}
+}
+
+func TestSplitNewResourceToSkeletonAndPatch_JSONPointerEscaping(t *testing.T) {
+	resource := unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata": map[string]interface{}{
+				"name":      "escape-test",
+				"namespace": "default",
+				"annotations": map[string]interface{}{
+					"example.com/foo":  "slash-value",
+					"tilde~annotation": "tilde-value",
+					"both~/combined":   "both-value",
+				},
+			},
+			"data": map[string]interface{}{
+				"key": "value",
+			},
+		},
+	}
+
+	skeleton, patch, err := SplitNewResourceToSkeletonAndPatch(resource)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if patch == nil {
+		t.Fatal("patch should not be nil")
+	}
+
+	skelJSON, _ := skeleton.MarshalJSON()
+	patched, err := patch.Apply(skelJSON)
+	if err != nil {
+		t.Fatalf("failed to apply patch to skeleton: %v", err)
+	}
+
+	var result unstructured.Unstructured
+	if err := result.UnmarshalJSON(patched); err != nil {
+		t.Fatalf("failed to unmarshal patched resource: %v", err)
+	}
+
+	annotations := result.GetAnnotations()
+	if annotations["example.com/foo"] != "slash-value" {
+		t.Errorf("annotation with / not preserved, got %v", annotations)
+	}
+	if annotations["tilde~annotation"] != "tilde-value" {
+		t.Errorf("annotation with ~ not preserved, got %v", annotations)
+	}
+	if annotations["both~/combined"] != "both-value" {
+		t.Errorf("annotation with ~ and / not preserved, got %v", annotations)
+	}
+}
+
+func TestSplitNewResourceToSkeletonAndPatch_RoundtripEquality(t *testing.T) {
+	resource := unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "shipwright.io/v1beta1",
+			"kind":       "Build",
+			"metadata": map[string]interface{}{
+				"name":      "roundtrip-build",
+				"namespace": "prod",
+				"labels": map[string]interface{}{
+					"app":     "roundtrip",
+					"version": "v1",
+				},
+				"annotations": map[string]interface{}{
+					"source-kind": "BuildConfig",
+				},
+			},
+			"spec": map[string]interface{}{
+				"source": map[string]interface{}{
+					"type": "Git",
+					"git": map[string]interface{}{
+						"url": "https://github.com/example/repo",
+					},
+				},
+				"output": map[string]interface{}{
+					"image": "quay.io/example/roundtrip:latest",
+				},
+			},
+		},
+	}
+
+	skeleton, patch, err := SplitNewResourceToSkeletonAndPatch(resource)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	skelJSON, _ := skeleton.MarshalJSON()
+	patched, err := patch.Apply(skelJSON)
+	if err != nil {
+		t.Fatalf("failed to apply patch: %v", err)
+	}
+
+	var result unstructured.Unstructured
+	if err := result.UnmarshalJSON(patched); err != nil {
+		t.Fatalf("failed to unmarshal patched resource: %v", err)
+	}
+
+	originalJSON, _ := json.Marshal(resource.Object)
+	resultJSON, _ := json.Marshal(result.Object)
+
+	var originalNormalized, resultNormalized interface{}
+	json.Unmarshal(originalJSON, &originalNormalized)
+	json.Unmarshal(resultJSON, &resultNormalized)
+
+	if !reflect.DeepEqual(originalNormalized, resultNormalized) {
+		t.Errorf("roundtrip mismatch:\noriginal: %s\nresult:   %s", originalJSON, resultJSON)
 	}
 }
 
