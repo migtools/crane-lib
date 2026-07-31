@@ -174,7 +174,9 @@ func TestSplitNewResourceToSkeletonAndPatch_ClusterScoped(t *testing.T) {
 		t.Fatalf("failed to apply patch: %v", err)
 	}
 	var result map[string]interface{}
-	json.Unmarshal(patched, &result)
+	if err := json.Unmarshal(patched, &result); err != nil {
+		t.Fatalf("failed to unmarshal patched resource: %v", err)
+	}
 	rules, ok := result["rules"].([]interface{})
 	if !ok || len(rules) != 1 {
 		t.Errorf("patched resource should have 1 rule")
@@ -249,7 +251,9 @@ func TestSplitNewResourceToSkeletonAndPatch_ComplexSpec(t *testing.T) {
 	}
 
 	var result unstructured.Unstructured
-	result.UnmarshalJSON(patched)
+	if err := result.UnmarshalJSON(patched); err != nil {
+		t.Fatalf("failed to unmarshal patched resource: %v", err)
+	}
 
 	// Check complex nested values survived
 	env, _, _ := unstructured.NestedSlice(result.Object, "spec", "env")
@@ -365,8 +369,12 @@ func TestSplitNewResourceToSkeletonAndPatch_RoundtripEquality(t *testing.T) {
 	resultJSON, _ := json.Marshal(result.Object)
 
 	var originalNormalized, resultNormalized interface{}
-	json.Unmarshal(originalJSON, &originalNormalized)
-	json.Unmarshal(resultJSON, &resultNormalized)
+	if err := json.Unmarshal(originalJSON, &originalNormalized); err != nil {
+		t.Fatalf("failed to unmarshal original JSON: %v", err)
+	}
+	if err := json.Unmarshal(resultJSON, &resultNormalized); err != nil {
+		t.Fatalf("failed to unmarshal result JSON: %v", err)
+	}
 
 	if !reflect.DeepEqual(originalNormalized, resultNormalized) {
 		t.Errorf("roundtrip mismatch:\noriginal: %s\nresult:   %s", originalJSON, resultJSON)
