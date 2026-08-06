@@ -8,6 +8,9 @@ import (
 )
 
 func (t *IndirectTransfer) Download(ctx context.Context, pvc *corev1.PersistentVolumeClaim, remotePVCName string) (*corev1.Pod, error) {
+	if err := t.options.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid options for download: %w", err)
+	}
 	remotePath := fmt.Sprintf("%s/%s/%s", t.options.CloudStorage, pvc.Namespace, remotePVCName)
 	command := buildRcloneCommand("sync", remotePath, dataMountPath)
 

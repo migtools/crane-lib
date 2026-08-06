@@ -10,6 +10,9 @@ import (
 )
 
 func (t *IndirectTransfer) Cleanup(ctx context.Context, c client.Client, namespace string) error {
+	if len(t.options.Labels) == 0 {
+		return fmt.Errorf("refusing to cleanup with empty labels: would match all pods in namespace %s", namespace)
+	}
 	podList := &corev1.PodList{}
 	if err := c.List(ctx, podList,
 		client.InNamespace(namespace),

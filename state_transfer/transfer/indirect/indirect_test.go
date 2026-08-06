@@ -109,8 +109,19 @@ func TestTruncatePodName(t *testing.T) {
 	}
 
 	long := "rclone-upload-a-very-long-pvc-name-that-exceeds-sixty-three-characters-limit"
-	if got := truncatePodName(long); len(got) > maxPodNameLen {
+	got := truncatePodName(long)
+	if len(got) > maxPodNameLen {
 		t.Errorf("long name should be truncated to %d, got %d", maxPodNameLen, len(got))
+	}
+
+	endsWithHyphen := "rclone-upload-a-very-long-pvc-name-that-exceeds-sixty-three-cha"
+	if len(endsWithHyphen) <= maxPodNameLen {
+		endsWithHyphen = endsWithHyphen + "racters-and-ends-with-hyphen-"
+	}
+	got = truncatePodName(endsWithHyphen)
+	lastChar := got[len(got)-1]
+	if lastChar == '-' || lastChar == '.' {
+		t.Errorf("truncated name should not end with hyphen or dot, got %q", got)
 	}
 }
 

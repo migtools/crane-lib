@@ -3,6 +3,7 @@ package indirect
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,7 +49,7 @@ func New(srcClient, destClient client.Client, opts Options) *IndirectTransfer {
 	if opts.Image == "" {
 		opts.Image = defaultImage
 	}
-	if opts.Labels == nil {
+	if len(opts.Labels) == 0 {
 		opts.Labels = map[string]string{
 			"app.kubernetes.io/name":      "crane",
 			"app.kubernetes.io/component": "indirect-transfer",
@@ -88,7 +89,8 @@ func truncatePodName(name string) string {
 	if len(name) <= maxPodNameLen {
 		return name
 	}
-	return name[:maxPodNameLen]
+	name = name[:maxPodNameLen]
+	return strings.TrimRight(name, "-.")
 }
 
 func (t *IndirectTransfer) buildPod(name, namespace, pvcName string, command []string) *corev1.Pod {
