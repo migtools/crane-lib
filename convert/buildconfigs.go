@@ -46,7 +46,8 @@ const (
 	RuntimeStageFromParamName = "runtime-stage-from"
 
 	// S2I Strategy Parameters
-	S2iScriptsURLParamName = "scripts-url"
+	S2iScriptsURLParamName  = "scripts-url"
+	S2iIncrementalParamName = "incremental"
 
 	Timeout = 10 * time.Minute
 )
@@ -197,10 +198,7 @@ func (t *ConvertOptions) convertBuildConfigs() error {
 
 			t.processSourceStrategyScripts(&bc, b)
 
-			// process incremental build
-			if bc.Spec.Strategy.SourceStrategy.Incremental != nil {
-				t.Logger.Warnf("Incremental build is not yet supported in the built-in Source-to-Image ClusterBuildStrategy in Shipwright. RFE: %s", IncrementalBuildRFE)
-			}
+			t.processSourceStrategyIncremental(&bc, b)
 
 			// process force pull field
 			if bc.Spec.Strategy.SourceStrategy.ForcePull {
@@ -1031,6 +1029,20 @@ func (t *ConvertOptions) processDockerStrategyForcePull(bc *buildv1.BuildConfig,
 			},
 		}
 		b.Spec.ParamValues = append(b.Spec.ParamValues, pullParam)
+	}
+}
+
+func (t *ConvertOptions) processSourceStrategyIncremental(bc *buildv1.BuildConfig, b *shipwrightv1beta1.Build) {
+	if bc.Spec.Strategy.SourceStrategy.Incremental != nil && *bc.Spec.Strategy.SourceStrategy.Incremental {
+		t.Logger.Infof("Mapping Incremental flag to incremental param for BuildConfig %s", bc.Name)
+		incrementalValue := "true"
+		incrementalParam := shipwrightv1beta1.ParamValue{
+			Name: S2iIncrementalParamName,
+			SingleValue: &shipwrightv1beta1.SingleValue{
+				Value: &incrementalValue,
+			},
+		}
+		b.Spec.ParamValues = append(b.Spec.ParamValues, incrementalParam)
 	}
 }
 
