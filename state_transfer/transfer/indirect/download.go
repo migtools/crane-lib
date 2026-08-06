@@ -7,11 +7,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func (t *IndirectTransfer) Download(ctx context.Context, pvc *corev1.PersistentVolumeClaim, remotePVCName string) (*corev1.Pod, error) {
+func (t *IndirectTransfer) Download(ctx context.Context, pvc *corev1.PersistentVolumeClaim, sourceNamespace, remotePVCName string) (*corev1.Pod, error) {
 	if err := t.options.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid options for download: %w", err)
 	}
-	remotePath := fmt.Sprintf("%s/%s/%s", t.options.CloudStorage, pvc.Namespace, remotePVCName)
+	remotePath := fmt.Sprintf("%s/%s/%s", t.options.CloudStorage, sourceNamespace, remotePVCName)
 	command := buildRcloneCommand("sync", remotePath, dataMountPath)
 
 	pod := t.buildPod(
@@ -19,6 +19,7 @@ func (t *IndirectTransfer) Download(ctx context.Context, pvc *corev1.PersistentV
 		pvc.Namespace,
 		pvc.Name,
 		command,
+		t.options.DownloadSecurityContext,
 	)
 
 	if err := t.destClient.Create(ctx, pod); err != nil {

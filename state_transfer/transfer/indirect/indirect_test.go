@@ -2,6 +2,8 @@ package indirect
 
 import (
 	"testing"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 func TestBuildRcloneCommand(t *testing.T) {
@@ -18,7 +20,7 @@ func TestBuildRcloneCommand(t *testing.T) {
 			subcommand: "sync",
 			src:        "/data",
 			dst:        "remote:bucket/ns/pvc",
-			wantLen:    10,
+			wantLen:    9,
 			wantFirst:  "rclone",
 		},
 		{
@@ -26,7 +28,7 @@ func TestBuildRcloneCommand(t *testing.T) {
 			subcommand: "sync",
 			src:        "remote:bucket/ns/pvc",
 			dst:        "/data",
-			wantLen:    10,
+			wantLen:    9,
 			wantFirst:  "rclone",
 		},
 	}
@@ -64,7 +66,7 @@ func TestBuildPod(t *testing.T) {
 
 	pvcName := "test-pvc"
 	command := []string{"rclone", "sync", "/data", "remote:bucket/ns/pvc"}
-	pod := transfer.buildPod("test-upload", "test-ns", pvcName, command)
+	pod := transfer.buildPod("test-upload", "test-ns", pvcName, command, corev1.PodSecurityContext{})
 
 	if pod.Name != "test-upload" {
 		t.Errorf("pod name = %q, want %q", pod.Name, "test-upload")
@@ -93,8 +95,8 @@ func TestBuildPodLabelsAreCopied(t *testing.T) {
 	labels := map[string]string{"app": "test"}
 	transfer := New(nil, nil, Options{Labels: labels})
 
-	pod1 := transfer.buildPod("pod1", "ns", "pvc", []string{"echo"})
-	pod2 := transfer.buildPod("pod2", "ns", "pvc", []string{"echo"})
+	pod1 := transfer.buildPod("pod1", "ns", "pvc", []string{"echo"}, corev1.PodSecurityContext{})
+	pod2 := transfer.buildPod("pod2", "ns", "pvc", []string{"echo"}, corev1.PodSecurityContext{})
 
 	pod1.Labels["extra"] = "modified"
 	if _, found := pod2.Labels["extra"]; found {

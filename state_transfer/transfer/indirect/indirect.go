@@ -20,13 +20,14 @@ const (
 )
 
 type Options struct {
-	Image           string
-	CloudStorage    string
-	ConfigSecret    string
-	Encrypt         bool
-	KeepCloudData   bool
-	Labels          map[string]string
-	SecurityContext corev1.PodSecurityContext
+	Image                  string
+	CloudStorage           string
+	ConfigSecret           string
+	Encrypt                bool
+	KeepCloudData          bool
+	Labels                 map[string]string
+	UploadSecurityContext  corev1.PodSecurityContext
+	DownloadSecurityContext corev1.PodSecurityContext
 }
 
 func (o *Options) Validate() error {
@@ -93,7 +94,7 @@ func truncatePodName(name string) string {
 	return strings.TrimRight(name, "-.")
 }
 
-func (t *IndirectTransfer) buildPod(name, namespace, pvcName string, command []string) *corev1.Pod {
+func (t *IndirectTransfer) buildPod(name, namespace, pvcName string, command []string, secCtx corev1.PodSecurityContext) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      truncatePodName(name),
@@ -102,7 +103,7 @@ func (t *IndirectTransfer) buildPod(name, namespace, pvcName string, command []s
 		},
 		Spec: corev1.PodSpec{
 			RestartPolicy:   corev1.RestartPolicyNever,
-			SecurityContext: &t.options.SecurityContext,
+			SecurityContext: &secCtx,
 			Containers: []corev1.Container{
 				{
 					Name:    "rclone",
@@ -142,7 +143,6 @@ func buildRcloneCommand(subcommand, src, dst string) []string {
 		src, dst,
 		"--config", configMountPath + "/rclone.conf",
 		"--progress",
-		"--metadata",
 		"--links",
 		"-v",
 	}

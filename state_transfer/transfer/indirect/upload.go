@@ -19,6 +19,7 @@ func (t *IndirectTransfer) Upload(ctx context.Context, pvc *corev1.PersistentVol
 		pvc.Namespace,
 		pvc.Name,
 		command,
+		t.options.UploadSecurityContext,
 	)
 
 	if err := t.sourceClient.Create(ctx, pod); err != nil {
