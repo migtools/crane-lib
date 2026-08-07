@@ -9,14 +9,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (t *IndirectTransfer) Cleanup(ctx context.Context, c client.Client, namespace string) error {
+func (t *IndirectTransfer) Cleanup(ctx context.Context, c client.Client, namespace, pvcName string) error {
 	if len(t.options.Labels) == 0 {
 		return fmt.Errorf("refusing to cleanup with empty labels: would match all pods in namespace %s", namespace)
 	}
+	cleanupLabels := copyLabels(t.options.Labels)
+	cleanupLabels["app.konveyor.io/created-for-pvc"] = pvcName
 	podList := &corev1.PodList{}
 	if err := c.List(ctx, podList,
 		client.InNamespace(namespace),
-		client.MatchingLabels(t.options.Labels)); err != nil {
+		client.MatchingLabels(cleanupLabels)); err != nil {
 		return fmt.Errorf("failed to list indirect transfer pods: %w", err)
 	}
 	for i := range podList.Items {

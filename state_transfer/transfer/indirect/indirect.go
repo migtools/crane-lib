@@ -95,11 +95,13 @@ func truncatePodName(name string) string {
 }
 
 func (t *IndirectTransfer) buildPod(name, namespace, pvcName string, command []string, secCtx corev1.PodSecurityContext) *corev1.Pod {
+	podLabels := copyLabels(t.options.Labels)
+	podLabels["app.konveyor.io/created-for-pvc"] = pvcName
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      truncatePodName(name),
 			Namespace: namespace,
-			Labels:    copyLabels(t.options.Labels),
+			Labels:    podLabels,
 		},
 		Spec: corev1.PodSpec{
 			RestartPolicy:   corev1.RestartPolicyNever,
