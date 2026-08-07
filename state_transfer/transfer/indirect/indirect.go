@@ -23,7 +23,13 @@ type Options struct {
 	Image                  string
 	CloudStorage           string
 	ConfigSecret           string
+	// TODO: Encrypt enables client-side encryption via rclone crypt overlay.
+	// When set, crane should append a [encrypted] crypt remote section to rclone.conf
+	// and use "encrypted:" as the remote path instead of the direct S3 path.
 	Encrypt                bool
+	// TODO: KeepCloudData skips cloud storage cleanup after transfer.
+	// When false, a cleanup pod should run "rclone delete remote:bucket/ns/pvc/"
+	// after successful download to remove intermediate data from S3.
 	KeepCloudData          bool
 	Labels                 map[string]string
 	UploadSecurityContext  corev1.PodSecurityContext
