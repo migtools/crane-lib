@@ -58,6 +58,12 @@ type Options struct {
 
 type TransportType string
 
+// DefaultRsyncTransferImage is used for rsync, stunnel, blockrsync, and indirect
+// transfer containers when no image is specified. Downstream builds can override
+// it at compile time with:
+// -X github.com/konveyor/crane-lib/state_transfer/transport.DefaultRsyncTransferImage=<image>
+var DefaultRsyncTransferImage = "quay.io/konveyor/rsync-transfer:latest"
+
 func CreateServer(t Transport, c client.Client, prefix string, e endpoint.Endpoint) (Transport, error) {
 	err := t.CreateServer(c, prefix, e)
 	if err != nil {

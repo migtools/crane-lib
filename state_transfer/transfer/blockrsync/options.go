@@ -1,6 +1,9 @@
 package blockrsync
 
-import "github.com/konveyor/crane-lib/state_transfer/transfer"
+import (
+	"github.com/konveyor/crane-lib/state_transfer/transfer"
+	"github.com/konveyor/crane-lib/state_transfer/transport"
+)
 
 type TransferOptions struct {
 	SourcePodMeta         transfer.ResourceMetadata
@@ -14,14 +17,14 @@ type TransferOptions struct {
 
 func (t *TransferOptions) GetBlockrsyncServerImage() string {
 	if t.blockrsyncServerImage == "" {
-		return blockrsyncImage
+		return transport.DefaultRsyncTransferImage
 	}
 	return t.blockrsyncServerImage
 }
 
 func (t *TransferOptions) GetBlockrsyncClientImage() string {
 	if t.blockrsyncClientImage == "" {
-		return blockrsyncImage
+		return transport.DefaultRsyncTransferImage
 	}
 	return t.blockrsyncClientImage
 }

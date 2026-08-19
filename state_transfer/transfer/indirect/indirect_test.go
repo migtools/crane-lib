@@ -3,6 +3,7 @@ package indirect
 import (
 	"testing"
 
+	"github.com/konveyor/crane-lib/state_transfer/transport"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -129,8 +130,8 @@ func TestTruncatePodName(t *testing.T) {
 
 func TestDefaultImage(t *testing.T) {
 	transfer := New(nil, nil, Options{})
-	if transfer.options.Image != defaultImage {
-		t.Errorf("default image = %q, want %q", transfer.options.Image, defaultImage)
+	if transfer.options.Image != transport.DefaultRsyncTransferImage {
+		t.Errorf("default image = %q, want %q", transfer.options.Image, transport.DefaultRsyncTransferImage)
 	}
 }
 
@@ -183,10 +184,10 @@ func TestOptionsValidation(t *testing.T) {
 
 func TestBuildCryptSection(t *testing.T) {
 	tests := []struct {
-		name     string
-		path     string
-		password string
-		wantErr  bool
+		name         string
+		path         string
+		password     string
+		wantErr      bool
 		wantContains []string
 	}{
 		{
@@ -210,16 +211,16 @@ func TestBuildCryptSection(t *testing.T) {
 			},
 		},
 		{
-			name:    "empty path",
-			path:    "",
+			name:     "empty path",
+			path:     "",
 			password: "abc123",
-			wantErr: true,
+			wantErr:  true,
 		},
 		{
-			name:    "empty password",
-			path:    "remote:bucket/ns/pvc",
+			name:     "empty password",
+			path:     "remote:bucket/ns/pvc",
 			password: "",
-			wantErr: true,
+			wantErr:  true,
 		},
 	}
 	for _, tt := range tests {

@@ -75,7 +75,7 @@ func TestGetTransportFromKubeObjects(t *testing.T) {
 		t.Fatalf("unable to get transport: %v", err)
 	}
 	if tr, ok := tr.(*StunnelTransport); ok {
-		verifyDefaultTransport(tr, defaultStunnelImage, defaultStunnelImage, t)
+		verifyDefaultTransport(tr, transport.DefaultRsyncTransferImage, transport.DefaultRsyncTransferImage, t)
 	} else {
 		t.Fatalf("unable to convert transport to *StunnelTransport")
 	}

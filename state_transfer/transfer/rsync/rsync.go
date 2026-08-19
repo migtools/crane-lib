@@ -18,7 +18,6 @@ const (
 
 const (
 	defaultRsyncUser         = "crane2"
-	defaultRsyncImage        = "quay.io/konveyor/rsync-transfer:latest"
 	rsyncPort                = int32(1873)
 	defaultRsyncClientSecret = "crane2-rsync-client-secret"
 	defaultRsyncServerConfig = "crane2-rsync-server-config"
@@ -100,7 +99,7 @@ func getMountPathForPVC(p transfer.PVC) string {
 
 func (r *RsyncTransfer) getRsyncServerImage() string {
 	if r.transferOptions().rsyncServerImage == "" {
-		return defaultRsyncImage
+		return transport.DefaultRsyncTransferImage
 	} else {
 		return r.transferOptions().rsyncServerImage
 	}
@@ -108,7 +107,7 @@ func (r *RsyncTransfer) getRsyncServerImage() string {
 
 func (r *RsyncTransfer) getRsyncClientImage() string {
 	if r.transferOptions().rsyncClientImage == "" {
-		return defaultRsyncImage
+		return transport.DefaultRsyncTransferImage
 	} else {
 		return r.transferOptions().rsyncClientImage
 	}

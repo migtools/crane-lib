@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/konveyor/crane-lib/state_transfer/transport"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
-	defaultImage       = "quay.io/konveyor/rsync-transfer:latest"
 	configMountPath    = "/etc/rclone"
 	dataMountPath      = "/data"
 	configVolumeName   = "rclone-config"
@@ -22,16 +22,16 @@ const (
 )
 
 type Options struct {
-	Image                  string
-	CloudStorage           string
-	ConfigSecret           string
-	Encrypt                bool
+	Image        string
+	CloudStorage string
+	ConfigSecret string
+	Encrypt      bool
 	// TODO: KeepCloudData skips cloud storage cleanup after transfer.
 	// When false, a cleanup pod should run "rclone delete remote:bucket/ns/pvc/"
 	// after successful download to remove intermediate data from S3.
-	KeepCloudData          bool
-	Labels                 map[string]string
-	UploadSecurityContext  corev1.PodSecurityContext
+	KeepCloudData           bool
+	Labels                  map[string]string
+	UploadSecurityContext   corev1.PodSecurityContext
 	DownloadSecurityContext corev1.PodSecurityContext
 }
 
@@ -56,7 +56,7 @@ type IndirectTransfer struct {
 
 func New(srcClient, destClient client.Client, opts Options) *IndirectTransfer {
 	if opts.Image == "" {
-		opts.Image = defaultImage
+		opts.Image = transport.DefaultRsyncTransferImage
 	}
 	if len(opts.Labels) == 0 {
 		opts.Labels = map[string]string{

@@ -14,7 +14,6 @@ import (
 )
 
 const (
-	defaultStunnelImage        = "quay.io/konveyor/rsync-transfer:latest"
 	defaultStunnelServerConfig = "crane2-stunnel-server-config"
 	defaultStunnelServerSecret = "crane2-stunnel-server-secret"
 	defaultStunnelClientConfig = "crane2-stunnel-client-config"
@@ -99,7 +98,7 @@ func (s *StunnelTransport) getStunnelServerImage() string {
 	if s.options != nil && s.options.StunnelServerImage != "" {
 		return s.options.StunnelServerImage
 	} else {
-		return defaultStunnelImage
+		return transport.DefaultRsyncTransferImage
 	}
 }
 
@@ -107,7 +106,7 @@ func (s *StunnelTransport) getStunnelClientImage() string {
 	if s.options != nil && s.options.StunnelClientImage != "" {
 		return s.options.StunnelClientImage
 	} else {
-		return defaultStunnelImage
+		return transport.DefaultRsyncTransferImage
 	}
 }
 
