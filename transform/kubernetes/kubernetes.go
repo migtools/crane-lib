@@ -3,6 +3,7 @@ package kubernetes
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -19,21 +20,26 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 var logger logrus.FieldLogger
 
 const (
-	AddAnnotationsFlag       = "add-annotations"
-	RemoveAnnotationsFlag    = "remove-annotations"
-	RegistryReplacementFlag  = "registry-replacement"
-	ExtraWhiteoutsFlag       = "extra-whiteouts"
-	IncludeOnlyFlag          = "include-only"
-	DisableWhiteoutOwnedFlag = "disable-whiteout-owned"
-	StripDefaultRBACFlag     = "strip-default-rbac"
-	StripDefaultCABundleFlag = "strip-default-cabundle"
-	PVCRenameMap             = "pvc-rename-map"
+	AddAnnotationsFlag           = "add-annotations"
+	RemoveAnnotationsFlag        = "remove-annotations"
+	RegistryReplacementFlag      = "registry-replacement"
+	ExtraWhiteoutsFlag           = "extra-whiteouts"
+	IncludeOnlyFlag              = "include-only"
+	DisableWhiteoutOwnedFlag     = "disable-whiteout-owned"
+	StripDefaultRBACFlag         = "strip-default-rbac"
+	StripDefaultCABundleFlag     = "strip-default-cabundle"
+	PVCRenameMap                 = "pvc-rename-map"
+	PVCStorageClassMap           = "pvc-storage-class-map"
+	WhiteoutPVCFlag              = "whiteout-pvc"
+	DownscaleWorkloadsFlag       = "downscale-workloads"
 	CraneJobIdempotentAnnotation = "crane.konveyor.io/job-idempotent"
+	OriginalReplicasAnnotation   = "crane.konveyor.io/original-replicas"
 )
 
 const (
@@ -60,6 +66,9 @@ const (
 	podNodeName          = "/spec/nodeName"
 	podNodeSelector      = "/spec/nodeSelector"
 	podPriority          = "/spec/priority"
+	pvcVolumeName        = "/spec/volumeName"
+	pvcFinalizers        = "/metadata/finalizers"
+	pvcStorageClassName  = "/spec/storageClassName"
 	roleBindingSubject   = "/subjects/%d/namespace"
 	updateClusterIP      = "/spec/clusterIP"
 	updateClusterIPs     = "/spec/clusterIPs"
@@ -118,7 +127,6 @@ var gksToWhiteout = []schema.GroupKind{
 	endpointSliceGK,
 	eventGK,
 	eventsK8sGK,
-	pvcGK,
 	subscriptionGK,
 	installPlanGK,
 	clusterServiceVersionGK,
@@ -137,6 +145,9 @@ type KubernetesTransformPlugin struct {
 	StripDefaultRBAC     bool
 	StripDefaultCABundle bool
 	PVCRenameMap         map[string]string
+	PVCStorageClassMap   map[string]string
+	WhiteoutPVC          bool
+	DownscaleWorkloads   bool
 }
 
 func (k *KubernetesTransformPlugin) Run(request transform.PluginRequest) (transform.PluginResponse, error) {
@@ -209,6 +220,21 @@ func (k *KubernetesTransformPlugin) Metadata() transform.PluginMetadata {
 				Help:     "A comma-separated list of colon separated pvc renames.",
 				Example:  "old-pvc1-name:new-pvc1-name,old-pvc2-name:new-pvc2-name",
 			},
+			{
+				FlagName: PVCStorageClassMap,
+				Help:     "A comma-separated list of colon separated StorageClass replacements for PVCs and StatefulSet volumeClaimTemplates.",
+				Example:  "old-storage-class:new-storage-class,standard:fast",
+			},
+			{
+				FlagName: WhiteoutPVCFlag,
+				Help:     "Whiteout PersistentVolumeClaims without owner references instead of including them in transformed output (PVCs with owner references are always whiteouted).",
+				Example:  "true",
+			},
+			{
+				FlagName: DownscaleWorkloadsFlag,
+				Help:     "Scale PVC-consuming workloads to zero and store their original replica count in annotations.",
+				Example:  "true",
+			},
 		},
 	}
 }
@@ -253,13 +279,72 @@ func (k *KubernetesTransformPlugin) setOptionalFields(extras map[string]string) 
 		}
 		k.PVCRenameMap = pvcMap
 	}
+	if len(extras[PVCStorageClassMap]) > 0 {
+		storageClassMap, err := parsePVCStorageClassMap(extras[PVCStorageClassMap])
+		if err != nil {
+			return err
+		}
+		k.PVCStorageClassMap = storageClassMap
+	}
+	if err := setBoolFlag(extras, WhiteoutPVCFlag, &k.WhiteoutPVC); err != nil {
+		return err
+	}
+	if err := setBoolFlag(extras, DownscaleWorkloadsFlag, &k.DownscaleWorkloads); err != nil {
+		return err
+	}
+	if k.DownscaleWorkloads {
+		if _, found := k.AddAnnotations[OriginalReplicasAnnotation]; found {
+			return fmt.Errorf("annotation %q is reserved by %s and cannot be set with %s", OriginalReplicasAnnotation, DownscaleWorkloadsFlag, AddAnnotationsFlag)
+		}
+		for _, annotation := range k.RemoveAnnotations {
+			if annotation == OriginalReplicasAnnotation {
+				return fmt.Errorf("annotation %q is reserved by %s and cannot be removed with %s", OriginalReplicasAnnotation, DownscaleWorkloadsFlag, RemoveAnnotationsFlag)
+			}
+		}
+	}
 	return nil
+}
+
+func setBoolFlag(extras map[string]string, flagName string, destination *bool) error {
+	value, found := extras[flagName]
+	if !found || value == "" {
+		return nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fmt.Errorf("invalid %s value %q: %w", flagName, value, err)
+	}
+	*destination = parsed
+	return nil
+}
+
+func parsePVCStorageClassMap(value string) (map[string]string, error) {
+	storageClassMap := map[string]string{}
+	for _, pair := range strings.Split(value, ",") {
+		parts := strings.SplitN(pair, ":", 2)
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			return nil, fmt.Errorf("invalid StorageClass mapping %q: expected source:destination", pair)
+		}
+		for _, storageClass := range parts {
+			if errs := validation.IsDNS1123Subdomain(storageClass); len(errs) > 0 {
+				return nil, fmt.Errorf("invalid StorageClass name %q: %s", storageClass, strings.Join(errs, ", "))
+			}
+		}
+		storageClassMap[parts[0]] = parts[1]
+	}
+	return storageClassMap, nil
 }
 
 var _ transform.Plugin = &KubernetesTransformPlugin{}
 
 func (k *KubernetesTransformPlugin) getWhiteOuts(obj unstructured.Unstructured) bool {
 	groupKind := obj.GroupVersionKind().GroupKind()
+	if k.WhiteoutPVC && groupKind == pvcGK {
+		return true
+	}
+	if k.DownscaleWorkloads && groupKind == podGK && hasPVCVolume(obj, "spec", "volumes") {
+		return true
+	}
 	if len(k.IncludeOnly) > 0 {
 		if !groupKindInList(groupKind, k.IncludeOnly) {
 			return true
@@ -327,6 +412,101 @@ func groupKindInList(gk schema.GroupKind, list []schema.GroupKind) bool {
 	return false
 }
 
+func isScalableWorkload(groupKind schema.GroupKind) bool {
+	return groupKind == deploymentGK || groupKind == statefulSetGK || groupKind == replicaSetGK || groupKind == replicationControllerGK
+}
+
+func hasPVCVolume(obj unstructured.Unstructured, fields ...string) bool {
+	volumes, found, err := unstructured.NestedSlice(obj.Object, fields...)
+	if err != nil || !found {
+		return false
+	}
+	for _, volume := range volumes {
+		volumeMap, ok := volume.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if _, found, _ := unstructured.NestedMap(volumeMap, "persistentVolumeClaim"); found {
+			return true
+		}
+	}
+	return false
+}
+
+func hasPVCWorkload(obj unstructured.Unstructured) bool {
+	if hasPVCVolume(obj, "spec", "template", "spec", "volumes") {
+		return true
+	}
+	if obj.GroupVersionKind().GroupKind() != statefulSetGK {
+		return false
+	}
+	volumeClaimTemplates, found, err := unstructured.NestedSlice(obj.Object, "spec", "volumeClaimTemplates")
+	return err == nil && found && len(volumeClaimTemplates) > 0
+}
+
+func downscaleWorkload(obj unstructured.Unstructured, addedAnnotations map[string]string) (jsonpatch.Patch, error) {
+	replicas, found, err := unstructured.NestedInt64(obj.Object, "spec", "replicas")
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		replicas = 1
+	}
+	if replicas == 0 {
+		return nil, nil
+	}
+
+	annotations, annotationsFound, err := unstructured.NestedStringMap(obj.Object, "metadata", "annotations")
+	if err != nil {
+		return nil, err
+	}
+	annotationPath := "/metadata/annotations/" + escapeJSONPointer(OriginalReplicasAnnotation)
+	annotationOperation := "add"
+	annotationValue := interface{}(map[string]string{OriginalReplicasAnnotation: strconv.FormatInt(replicas, 10)})
+	if annotationsFound {
+		annotationValue = strconv.FormatInt(replicas, 10)
+		if _, found := annotations[OriginalReplicasAnnotation]; found {
+			annotationOperation = "replace"
+		}
+	} else {
+		annotationPath = "/metadata/annotations"
+		annotations := annotationValue.(map[string]string)
+		for key, value := range addedAnnotations {
+			annotations[key] = value
+		}
+	}
+
+	patches, err := valuePatch(annotationOperation, annotationPath, annotationValue)
+	if err != nil {
+		return nil, err
+	}
+	replicaOperation := "replace"
+	if !found {
+		replicaOperation = "add"
+	}
+	replicaPatch, err := valuePatch(replicaOperation, "/spec/replicas", 0)
+	if err != nil {
+		return nil, err
+	}
+	patches = append(patches, replicaPatch...)
+	if annotationsFound && len(addedAnnotations) > 0 {
+		annotationPatches, err := addAnnotations(addedAnnotations)
+		if err != nil {
+			return nil, err
+		}
+		patches = append(patches, annotationPatches...)
+	}
+	return patches, nil
+}
+
+func valuePatch(operation, path string, value interface{}) (jsonpatch.Patch, error) {
+	patchJSON, err := json.Marshal([]map[string]interface{}{{"op": operation, "path": path, "value": value}})
+	if err != nil {
+		return nil, err
+	}
+	return jsonpatch.DecodePatch(patchJSON)
+}
+
 func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Unstructured) (jsonpatch.Patch, error) {
 	// Always attempt to add annotations for each thing.
 	jsonPatch := jsonpatch.Patch{}
@@ -335,7 +515,8 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 		return nil, err
 	}
 	jsonPatch = append(jsonPatch, patches...)
-	if k.AddAnnotations != nil && len(k.AddAnnotations) > 0 {
+	shouldDownscaleWorkload := k.DownscaleWorkloads && isScalableWorkload(obj.GroupVersionKind().GroupKind()) && hasPVCWorkload(obj)
+	if !shouldDownscaleWorkload && k.AddAnnotations != nil && len(k.AddAnnotations) > 0 {
 		patches, err := addAnnotations(k.AddAnnotations)
 		if err != nil {
 			return nil, err
@@ -344,6 +525,13 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 	}
 	if len(k.RemoveAnnotations) > 0 {
 		patches, err := removeAnnotations(k.RemoveAnnotations)
+		if err != nil {
+			return nil, err
+		}
+		jsonPatch = append(jsonPatch, patches...)
+	}
+	if shouldDownscaleWorkload {
+		patches, err := downscaleWorkload(obj, k.AddAnnotations)
 		if err != nil {
 			return nil, err
 		}
@@ -531,6 +719,43 @@ func (k *KubernetesTransformPlugin) getKubernetesTransforms(obj unstructured.Uns
 			return nil, err
 		}
 		jsonPatch = append(jsonPatch, patches...)
+
+		patches, err = replacePVCStorageClasses(statefulSet.Spec.VolumeClaimTemplates, k.PVCStorageClassMap, "/spec/volumeClaimTemplates/%d/spec/storageClassName")
+		if err != nil {
+			return nil, err
+		}
+		jsonPatch = append(jsonPatch, patches...)
+	}
+	if pvcGK == obj.GetObjectKind().GroupVersionKind().GroupKind() {
+		volumeMode, found, err := unstructured.NestedString(obj.Object, "spec", "volumeMode")
+		if err != nil {
+			return nil, err
+		}
+		if found && volumeMode != string(v1.PersistentVolumeFilesystem) {
+			logger.WithFields(logrus.Fields{
+				"namespace":  obj.GetNamespace(),
+				"name":       obj.GetName(),
+				"volumeMode": volumeMode,
+			}).Warn("PVC volumeMode other than Filesystem is not supported by transfer-pvc")
+		}
+
+		patches, err := removePVCFields(obj)
+		if err != nil {
+			return nil, err
+		}
+		jsonPatch = append(jsonPatch, patches...)
+
+		patches, err = replacePVCStorageClass(obj, k.PVCStorageClassMap)
+		if err != nil {
+			return nil, err
+		}
+		jsonPatch = append(jsonPatch, patches...)
+
+		patches, err = renamePVCManifest(obj, k.PVCRenameMap)
+		if err != nil {
+			return nil, err
+		}
+		jsonPatch = append(jsonPatch, patches...)
 	}
 	if serviceAccountGK == obj.GetObjectKind().GroupVersionKind().GroupKind() {
 		if _, found, _ := unstructured.NestedSlice(obj.Object, "secrets"); found {
@@ -639,6 +864,93 @@ func stripFields(obj unstructured.Unstructured) (jsonpatch.Patch, error) {
 			}
 			patches = append(patches, patch...)
 		}
+	}
+	return patches, nil
+}
+
+func removePVCFields(obj unstructured.Unstructured) (jsonpatch.Patch, error) {
+	var patches jsonpatch.Patch
+	for _, path := range [][]string{{"spec", "volumeName"}, {"metadata", "finalizers"}} {
+		if _, found, err := unstructured.NestedFieldNoCopy(obj.Object, path...); err != nil {
+			return nil, err
+		} else if found {
+			patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opRemove, "/"+strings.Join(path, "/"))))
+			if err != nil {
+				return nil, err
+			}
+			patches = append(patches, patch...)
+		}
+	}
+
+	annotations, found, err := unstructured.NestedStringMap(obj.Object, "metadata", "annotations")
+	if err != nil || !found {
+		return patches, err
+	}
+	keys := make([]string, 0, len(annotations))
+	for key := range annotations {
+		if isServerManagedPVCAnnotation(key) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opRemove, "/metadata/annotations/"+escapeJSONPointer(key))))
+		if err != nil {
+			return nil, err
+		}
+		patches = append(patches, patch...)
+	}
+	return patches, nil
+}
+
+func isServerManagedPVCAnnotation(key string) bool {
+	for _, prefix := range []string{
+		"pv.kubernetes.io/",
+		"volume.kubernetes.io/",
+		"volume.beta.kubernetes.io/",
+	} {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func replacePVCStorageClass(obj unstructured.Unstructured, storageClassMap map[string]string) (jsonpatch.Patch, error) {
+	storageClass, found, err := unstructured.NestedString(obj.Object, "spec", "storageClassName")
+	if err != nil || !found {
+		return nil, err
+	}
+	replacement, ok := storageClassMap[storageClass]
+	if !ok {
+		return nil, nil
+	}
+	return jsonpatch.DecodePatch([]byte(fmt.Sprintf(opReplace, pvcStorageClassName, replacement)))
+}
+
+func renamePVCManifest(obj unstructured.Unstructured, pvcRenameMap map[string]string) (jsonpatch.Patch, error) {
+	replacement, found := pvcRenameMap[obj.GetName()]
+	if !found {
+		return nil, nil
+	}
+	return valuePatch("replace", "/metadata/name", replacement)
+}
+
+func replacePVCStorageClasses(volumes []v1.PersistentVolumeClaim, storageClassMap map[string]string, path string) (jsonpatch.Patch, error) {
+	var patches jsonpatch.Patch
+	for i, volume := range volumes {
+		if volume.Spec.StorageClassName == nil {
+			continue
+		}
+		replacement, ok := storageClassMap[*volume.Spec.StorageClassName]
+		if !ok {
+			continue
+		}
+		patch, err := jsonpatch.DecodePatch([]byte(fmt.Sprintf(opReplace, fmt.Sprintf(path, i), replacement)))
+		if err != nil {
+			return nil, err
+		}
+		patches = append(patches, patch...)
 	}
 	return patches, nil
 }
