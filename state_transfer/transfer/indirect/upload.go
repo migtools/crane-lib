@@ -23,6 +23,7 @@ func (t *IndirectTransfer) Upload(ctx context.Context, pvc *corev1.PersistentVol
 		pvc.Name,
 		command,
 		t.options.UploadSecurityContext,
+		true, // mount source PVC read-only; the mover only reads from it
 	)
 
 	if err := t.sourceClient.Create(ctx, pod); err != nil {
