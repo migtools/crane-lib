@@ -1,14 +1,112 @@
 package indirect
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/konveyor/crane-lib/state_transfer/transport"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+// newFakeClient returns a fake client with the core v1 scheme registered so
+// that Pod objects can be created.
+func newFakeClient(t *testing.T) client.Client {
+	t.Helper()
+	s := runtime.NewScheme()
+	if err := corev1.AddToScheme(s); err != nil {
+		t.Fatalf("failed to register core v1 scheme: %v", err)
+	}
+	return fake.NewClientBuilder().WithScheme(s).Build()
+}
 
+// dataVolumeMount returns the data volume mount from the pod's rclone container.
+func dataVolumeMount(t *testing.T, pod *corev1.Pod) corev1.VolumeMount {
+	t.Helper()
+	if len(pod.Spec.Containers) != 1 {
+		t.Fatalf("containers = %d, want 1", len(pod.Spec.Containers))
+	}
+	for _, m := range pod.Spec.Containers[0].VolumeMounts {
+		if m.Name == dataVolumeName {
+			return m
+		}
+	}
+	t.Fatalf("data volume mount %q not found", dataVolumeName)
+	return corev1.VolumeMount{}
+}
+
+// TestBuildPodDataReadOnly verifies the data mount honors the dataReadOnly flag
+// while the config mount is always read-only. Regression test for issue
+// https://github.com/migtools/crane/issues/915.
+func TestBuildPodDataReadOnly(t *testing.T) {
+	transfer := New(nil, nil, Options{
+		Image:        "test-image:latest",
+		ConfigSecret: "my-rclone-secret",
+		CloudStorage: "remote:my-bucket",
+	})
+
+	for _, readOnly := range []bool{true, false} {
+		pod := transfer.buildPod("p", "ns", "pvc", []string{"echo"}, corev1.PodSecurityContext{}, readOnly)
+		if got := dataVolumeMount(t, pod).ReadOnly; got != readOnly {
+			t.Errorf("data mount ReadOnly = %v, want %v", got, readOnly)
+		}
+		// Config secret must always be read-only.
+		for _, m := range pod.Spec.Containers[0].VolumeMounts {
+			if m.Name == configVolumeName && !m.ReadOnly {
+				t.Errorf("config mount ReadOnly = false, want true")
+			}
+		}
+	}
+}
+
+// TestUploadMountsSourceReadOnly verifies the upload (source) pod mounts the
+// source PVC read-only, as promised by the indirect-data-migration design.
+// Regression test for issue https://github.com/migtools/crane/issues/915.
+func TestUploadMountsSourceReadOnly(t *testing.T) {
+	srcClient := newFakeClient(t)
+	transfer := New(srcClient, nil, Options{
+		Image:        "test-image:latest",
+		ConfigSecret: "my-rclone-secret",
+		CloudStorage: "remote:my-bucket",
+	})
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-pvc", Namespace: "src-ns"},
+	}
+
+	pod, err := transfer.Upload(context.TODO(), pvc)
+	if err != nil {
+		t.Fatalf("Upload() error = %v", err)
+	}
+	if got := dataVolumeMount(t, pod).ReadOnly; !got {
+		t.Errorf("upload pod source mount ReadOnly = %v, want true", got)
+	}
+}
+
+// TestDownloadMountsDestReadWrite verifies the download (destination) pod mounts
+// the destination PVC read-write, since rclone writes the restored data there.
+func TestDownloadMountsDestReadWrite(t *testing.T) {
+	destClient := newFakeClient(t)
+	transfer := New(nil, destClient, Options{
+		Image:        "test-image:latest",
+		ConfigSecret: "my-rclone-secret",
+		CloudStorage: "remote:my-bucket",
+	})
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-pvc", Namespace: "dest-ns"},
+	}
+
+	pod, err := transfer.Download(context.TODO(), pvc, "src-ns", "my-pvc")
+	if err != nil {
+		t.Fatalf("Download() error = %v", err)
+	}
+	if got := dataVolumeMount(t, pod).ReadOnly; got {
+		t.Errorf("download pod destination mount ReadOnly = %v, want false", got)
+	}
+}
 
 func TestBuildRcloneCommand(t *testing.T) {
 	tests := []struct {
@@ -70,7 +168,7 @@ func TestBuildPod(t *testing.T) {
 
 	pvcName := "test-pvc"
 	command := []string{"rclone", "sync", "/data", "remote:bucket/ns/pvc"}
-	pod := transfer.buildPod("test-upload", "test-ns", pvcName, command, corev1.PodSecurityContext{})
+	pod := transfer.buildPod("test-upload", "test-ns", pvcName, command, corev1.PodSecurityContext{}, false)
 
 	if pod.Name != "test-upload" {
 		t.Errorf("pod name = %q, want %q", pod.Name, "test-upload")
@@ -99,8 +197,8 @@ func TestBuildPodLabelsAreCopied(t *testing.T) {
 	labels := map[string]string{"app": "test"}
 	transfer := New(nil, nil, Options{Labels: labels})
 
-	pod1 := transfer.buildPod("pod1", "ns", "pvc", []string{"echo"}, corev1.PodSecurityContext{})
-	pod2 := transfer.buildPod("pod2", "ns", "pvc", []string{"echo"}, corev1.PodSecurityContext{})
+	pod1 := transfer.buildPod("pod1", "ns", "pvc", []string{"echo"}, corev1.PodSecurityContext{}, false)
+	pod2 := transfer.buildPod("pod2", "ns", "pvc", []string{"echo"}, corev1.PodSecurityContext{}, false)
 
 	pod1.Labels["extra"] = "modified"
 	if _, found := pod2.Labels["extra"]; found {
@@ -272,10 +370,10 @@ func TestMetadataSetArgs(t *testing.T) {
 	fsGroup := int64(2000)
 
 	tests := []struct {
-		name     string
-		secCtx   corev1.PodSecurityContext
-		wantUID  string
-		wantGID  string
+		name    string
+		secCtx  corev1.PodSecurityContext
+		wantUID string
+		wantGID string
 	}{
 		{
 			name:    "both RunAsUser and RunAsGroup set",

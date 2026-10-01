@@ -24,6 +24,7 @@ func (t *IndirectTransfer) Download(ctx context.Context, pvc *corev1.PersistentV
 		pvc.Name,
 		command,
 		t.options.DownloadSecurityContext,
+		false, // mount destination PVC read-write; rclone writes restored data here
 	)
 
 	if err := t.destClient.Create(ctx, pod); err != nil {
