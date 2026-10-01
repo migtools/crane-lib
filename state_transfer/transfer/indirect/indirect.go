@@ -102,10 +102,6 @@ func truncatePodName(name string) string {
 	return strings.TrimRight(name, "-.")
 }
 
-// buildPod constructs the rclone transfer pod. dataReadOnly controls how the
-// data PVC is mounted: the upload (source) pod mounts it read-only so the mover
-// cannot modify or delete source data, while the download (destination) pod
-// must mount it read-write because rclone writes the restored data there.
 func (t *IndirectTransfer) buildPod(name, namespace, pvcName string, command []string, secCtx corev1.PodSecurityContext, dataReadOnly bool) *corev1.Pod {
 	podLabels := copyLabels(t.options.Labels)
 	podLabels["app.konveyor.io/created-for-pvc"] = pvcName

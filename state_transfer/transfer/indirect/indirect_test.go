@@ -40,7 +40,8 @@ func dataVolumeMount(t *testing.T, pod *corev1.Pod) corev1.VolumeMount {
 }
 
 // TestBuildPodDataReadOnly verifies the data mount honors the dataReadOnly flag
-// while the config mount is always read-only. Regression test for issue #915.
+// while the config mount is always read-only. Regression test for issue
+// https://github.com/migtools/crane/issues/915.
 func TestBuildPodDataReadOnly(t *testing.T) {
 	transfer := New(nil, nil, Options{
 		Image:        "test-image:latest",
@@ -64,7 +65,7 @@ func TestBuildPodDataReadOnly(t *testing.T) {
 
 // TestUploadMountsSourceReadOnly verifies the upload (source) pod mounts the
 // source PVC read-only, as promised by the indirect-data-migration design.
-// Regression test for issue #915.
+// Regression test for issue https://github.com/migtools/crane/issues/915.
 func TestUploadMountsSourceReadOnly(t *testing.T) {
 	srcClient := newFakeClient(t)
 	transfer := New(srcClient, nil, Options{
