@@ -155,6 +155,16 @@ func buildRcloneCommand(subcommand, src, dst string, extraArgs ...string) []stri
 		"--progress",
 		"--links",
 		"--metadata",
+		"--create-empty-src-dirs",
+		// --create-empty-src-dirs alone can't persist an empty dir in an
+		// object-storage bucket (no real dirs, no file to carry it). Directory
+		// markers make rclone write a 0-byte marker per empty dir that the
+		// download leg restores. The flag is per-backend; crane supports S3,
+		// GCS and Azure Blob, and each is a no-op for the others, so pass all
+		// three unconditionally to stay backend-agnostic.
+		"--s3-directory-markers",
+		"--gcs-directory-markers",
+		"--azureblob-directory-markers",
 		"-v",
 	}
 	return append(cmd, extraArgs...)
