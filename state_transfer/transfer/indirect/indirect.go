@@ -14,11 +14,20 @@ import (
 const (
 	configMountPath    = "/etc/rclone"
 	dataMountPath      = "/data"
+	scratchMountPath   = "/scratch"
 	configVolumeName   = "rclone-config"
 	dataVolumeName     = "data"
+	scratchVolumeName  = "scratch"
 	maxPodNameLen      = 63
 	CryptRemoteName    = "encrypted"
 	CryptRemoteSection = "[encrypted]"
+	// dirPermsManifest lists "<depth>\t<octal-mode>\t<relpath>" per source dir, so
+	// download can restore modes that rclone's --metadata drops for directories
+	// over object storage. See migtools/crane#1084.
+	dirPermsManifest = ".crane-dirperms"
+	// dirPermsMetaDir is the bucket subdir holding the manifest; it rides its own
+	// sync because the mover's stripped rclone has only "sync".
+	dirPermsMetaDir = ".cranemeta"
 )
 
 type Options struct {
@@ -122,6 +131,9 @@ func (t *IndirectTransfer) buildPod(name, namespace, pvcName string, command []s
 					VolumeMounts: []corev1.VolumeMount{
 						{Name: dataVolumeName, MountPath: dataMountPath, ReadOnly: dataReadOnly},
 						{Name: configVolumeName, MountPath: configMountPath, ReadOnly: true},
+						// Writable scratch for the dir-perms manifest (source is
+						// read-only on upload).
+						{Name: scratchVolumeName, MountPath: scratchMountPath},
 					},
 				},
 			},
@@ -142,6 +154,12 @@ func (t *IndirectTransfer) buildPod(name, namespace, pvcName string, command []s
 						},
 					},
 				},
+				{
+					Name: scratchVolumeName,
+					VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
 			},
 		},
 	}
@@ -158,6 +176,86 @@ func buildRcloneCommand(subcommand, src, dst string, extraArgs ...string) []stri
 		"-v",
 	}
 	return append(cmd, extraArgs...)
+}
+
+// shellQuote single-quotes s so it is safe to embed in an `sh -c` script,
+// escaping any embedded single quotes.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// shellJoin quotes each element of argv and joins them with spaces for use
+// inside an `sh -c` script.
+func shellJoin(argv []string) string {
+	quoted := make([]string, len(argv))
+	for i, a := range argv {
+		quoted[i] = shellQuote(a)
+	}
+	return strings.Join(quoted, " ")
+}
+
+// buildUploadCommand wraps the rclone data sync in a bash script that records
+// every source directory's mode into the manifest, then syncs it into the bucket
+// for download to replay (crane#1084).
+//
+// The image has no find(1), so dirs are enumerated with globstar (dotglob catches
+// hidden dirs) and stat reads the mode. Entries are sorted deepest-first so
+// download restores children before a parent's search bit is tightened.
+//
+// Data sync runs first so its mirror does not delete the meta subdir, and its
+// exit code is preserved for partial-success handling. The manifest sync is
+// best-effort with no "-v"/"--progress" so it never shadows the "Transferred:"
+// line.
+func buildUploadCommand(src, dst, metaRemote string) []string {
+	dataSync := shellJoin(buildRcloneCommand("sync", src, dst))
+	metaSync := shellJoin([]string{
+		"rclone", "sync",
+		scratchMountPath, metaRemote,
+		"--config", configMountPath + "/rclone.conf",
+	})
+	manifest := scratchMountPath + "/" + dirPermsManifest
+	lines := []string{
+		"base=" + shellQuote(src),
+		"man=" + shellQuote(manifest),
+		"shopt -s globstar dotglob nullglob",
+		`: > "$man"`,
+		`for d in "$base"/**/; do`,
+		`  rel="${d#$base/}"; rel="${rel%/}"`,
+		`  [ -z "$rel" ] && continue`,
+		`  mode=$(stat -c '%a' "$d")`,
+		`  slashes="${rel//[^\/]/}"; depth=${#slashes}`,
+		"  printf '%s\\t%s\\t%s\\n' \"$depth\" \"$mode\" \"$rel\" >> \"$man\"",
+		"done",
+		`sort -rn -k1,1 "$man" -o "$man"`,
+		dataSync + "; rc=$?",
+		metaSync + " || true",
+		"exit $rc",
+	}
+	return []string{"bash", "-c", strings.Join(lines, "\n")}
+}
+
+// buildDownloadCommand wraps the rclone data sync in a bash script that replays
+// the dir-perms manifest (carried into dst by the data sync) to restore each
+// directory's mode, then removes the meta subdir so it does not linger on the
+// PVC. chmod failures (e.g. an untransferred empty dir) are ignored; the rclone
+// exit code is preserved for partial-success handling.
+func buildDownloadCommand(src, dst string, extraArgs ...string) []string {
+	dataSync := shellJoin(buildRcloneCommand("sync", src, dst, extraArgs...))
+	metaDir := dst + "/" + dirPermsMetaDir
+	manifest := metaDir + "/" + dirPermsManifest
+	lines := []string{
+		"base=" + shellQuote(dst),
+		"man=" + shellQuote(manifest),
+		dataSync + "; rc=$?",
+		`if [ -f "$man" ]; then`,
+		`  while IFS=$'\t' read -r depth mode rel; do`,
+		`    [ -n "$rel" ] && chmod "$mode" "$base/$rel" 2>/dev/null || true`,
+		`  done < "$man"`,
+		"fi",
+		"rm -rf " + shellQuote(metaDir),
+		"exit $rc",
+	}
+	return []string{"bash", "-c", strings.Join(lines, "\n")}
 }
 
 // metadataSetArgs returns --metadata-set flags that override uid/gid to the
