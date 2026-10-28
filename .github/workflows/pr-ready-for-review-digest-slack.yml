@@ -139,9 +139,10 @@ jobs:
           }
 
           # Fetch open PRs with the ready-for-review-notified label; keep only
-          # non-draft PRs. Hide a PR only when a reviewer's latest review is
-          # CHANGES_REQUESTED on the current head commit (stale reviews on older
-          # commits do not block the digest).
+          # non-draft PRs. Hide a PR only when a reviewer's latest decision
+          # review (CHANGES_REQUESTED/APPROVED) is CHANGES_REQUESTED on the
+          # current head commit. COMMENTED reviews do not change a reviewer's
+          # decision, and stale reviews on older commits do not block the digest.
           prs_json="$(gh pr list \
             --repo "${GITHUB_REPOSITORY}" \
             --state open \
@@ -156,7 +157,7 @@ jobs:
              | select(
                  (($pr.reviews // [])
                   | group_by(.author.login)
-                  | map(sort_by(.submittedAt) | last)
+                  | map(map(select(.state == "CHANGES_REQUESTED" or .state == "APPROVED")) | sort_by(.submittedAt) | last)
                   | map(select(.state == "CHANGES_REQUESTED" and .commit.oid == $pr.headRefOid))
                   | length) == 0
                )

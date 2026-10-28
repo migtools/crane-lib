@@ -51,7 +51,10 @@ jobs:
             exit 0
           fi
 
-          # Authorization: PR author can always trigger; for bot-authored PRs, require write access
+          # Authorization: only maintainers with write access can trigger. For
+          # human-authored PRs the commenter must be the PR author and that
+          # author must have write/admin access; for bot-authored PRs any
+          # commenter with write/admin access can trigger.
           if [[ "$commenter" != "$pr_author" ]]; then
             if [[ "$pr_author" == "github-actions[bot]" ]]; then
               # For bot-authored PRs, check if commenter has write access to the repo
@@ -66,6 +69,17 @@ jobs:
               echo "::notice::Ignoring command from @${commenter}; only PR author @${pr_author} can trigger."
               echo "should_notify=false" >> "$GITHUB_OUTPUT"
               exit 0
+            fi
+          else
+            # For human-authored PRs, the author must have write access to the
+            # repo; outside contributors cannot trigger Slack notifications.
+            if [[ "$pr_author" != "github-actions[bot]" ]]; then
+              permission=$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${pr_author}/permission" --jq '.permission' 2>/dev/null || echo "none")
+              if [[ "$permission" != "admin" && "$permission" != "write" ]]; then
+                echo "::notice::Ignoring command from @${pr_author}; only PR authors with write access can trigger /rfr."
+                echo "should_notify=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
             fi
           fi
 

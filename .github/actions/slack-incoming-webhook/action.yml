@@ -32,7 +32,7 @@ runs:
         fi
         payload="$(jq -nc --arg text "$SLACK_TEXT" '{data: $text}')"
         set +e
-        http_code=$(curl -sS -o /tmp/slack_webhook_body -w '%{http_code}' -X POST -H 'Content-type: application/json' \
+        http_code=$(curl -sS --connect-timeout 10 --max-time 30 -o /tmp/slack_webhook_body -w '%{http_code}' -X POST -H 'Content-type: application/json' \
           --data "$payload" \
           "$url")
         rc=$?
