@@ -122,7 +122,7 @@ func TestBuildRcloneCommand(t *testing.T) {
 			subcommand: "sync",
 			src:        "/data",
 			dst:        "remote:bucket/ns/pvc",
-			wantLen:    10,
+			wantLen:    14,
 			wantFirst:  "rclone",
 		},
 		{
@@ -130,7 +130,7 @@ func TestBuildRcloneCommand(t *testing.T) {
 			subcommand: "sync",
 			src:        "remote:bucket/ns/pvc",
 			dst:        "/data",
-			wantLen:    10,
+			wantLen:    14,
 			wantFirst:  "rclone",
 		},
 	}
@@ -152,8 +152,35 @@ func TestBuildRcloneCommand(t *testing.T) {
 			if got[3] != tt.dst {
 				t.Errorf("dst = %q, want %q", got[3], tt.dst)
 			}
+			// Empty source directories must be replicated; without this flag
+			// rclone sync silently drops them (issue migtools/crane#1082).
+			if !containsArg(got, "--create-empty-src-dirs") {
+				t.Errorf("command missing --create-empty-src-dirs: %v", got)
+			}
+			// Object-storage backends need directory markers to persist empty
+			// dirs in the bucket; --create-empty-src-dirs alone is not enough.
+			// crane supports S3, GCS and Azure Blob, so all three per-backend
+			// flags must be present (issue migtools/crane#1082).
+			for _, marker := range []string{
+				"--s3-directory-markers",
+				"--gcs-directory-markers",
+				"--azureblob-directory-markers",
+			} {
+				if !containsArg(got, marker) {
+					t.Errorf("command missing %s: %v", marker, got)
+				}
+			}
 		})
 	}
+}
+
+func containsArg(args []string, want string) bool {
+	for _, a := range args {
+		if a == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestBuildPod(t *testing.T) {
