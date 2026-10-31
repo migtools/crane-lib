@@ -21,7 +21,8 @@ const (
 	maxPodNameLen      = 63
 	CryptRemoteName    = "encrypted"
 	CryptRemoteSection = "[encrypted]"
-	// dirPermsManifest lists "<depth>\t<octal-mode>\t<relpath>" per source dir, so
+	// dirPermsManifest lists "<depth>\t<octal-mode>\t<relpath>" per source dir,
+	// each record NUL-terminated so dir names containing newlines survive, so
 	// download can restore modes that rclone's --metadata drops for directories
 	// over object storage. See migtools/crane#1084.
 	dirPermsManifest = ".crane-dirperms"
@@ -200,12 +201,16 @@ func shellJoin(argv []string) string {
 //
 // The image has no find(1), so dirs are enumerated with globstar (dotglob catches
 // hidden dirs) and stat reads the mode. Entries are sorted deepest-first so
-// download restores children before a parent's search bit is tightened.
+// download restores children before a parent's search bit is tightened; the PVC
+// root is recorded as "." with depth -1 so it restores last.
 //
 // Data sync runs first so its mirror does not delete the meta subdir, and its
 // exit code is preserved for partial-success handling. The manifest sync is
 // best-effort with no "-v"/"--progress" so it never shadows the "Transferred:"
 // line.
+//
+// If the source already owns a .cranemeta, the manifest is skipped with a warning
+// so the mirroring meta sync cannot overwrite it.
 func buildUploadCommand(src, dst, metaRemote string) []string {
 	dataSync := shellJoin(buildRcloneCommand("sync", src, dst))
 	metaSync := shellJoin([]string{
@@ -221,14 +226,18 @@ func buildUploadCommand(src, dst, metaRemote string) []string {
 		`: > "$man"`,
 		`for d in "$base"/**/; do`,
 		`  rel="${d#$base/}"; rel="${rel%/}"`,
-		`  [ -z "$rel" ] && continue`,
 		`  mode=$(stat -c '%a' "$d")`,
-		`  slashes="${rel//[^\/]/}"; depth=${#slashes}`,
-		"  printf '%s\\t%s\\t%s\\n' \"$depth\" \"$mode\" \"$rel\" >> \"$man\"",
+		`  if [ -z "$rel" ]; then rel="."; depth=-1; else slashes="${rel//[^\/]/}"; depth=${#slashes}; fi`,
+		"  printf '%s\\t%s\\t%s\\0' \"$depth\" \"$mode\" \"$rel\" >> \"$man\"",
 		"done",
-		`sort -rn -k1,1 "$man" -o "$man"`,
+		`sort -z -rn -k1,1 "$man" -o "$man"`,
 		dataSync + "; rc=$?",
-		metaSync + " || true",
+		// Skip the meta sync if the source owns a .cranemeta, so it is not overwritten.
+		`if [ -e "$base/` + dirPermsMetaDir + `" ]; then`,
+		`  echo "crane: source PVC already contains ` + dirPermsMetaDir + `; skipping directory-permission manifest so the existing entry is not overwritten (directory modes will not be preserved for this PVC)" >&2`,
+		"else",
+		"  " + metaSync + " || true",
+		"fi",
 		"exit $rc",
 	}
 	return []string{"bash", "-c", strings.Join(lines, "\n")}
@@ -236,9 +245,10 @@ func buildUploadCommand(src, dst, metaRemote string) []string {
 
 // buildDownloadCommand wraps the rclone data sync in a bash script that replays
 // the dir-perms manifest (carried into dst by the data sync) to restore each
-// directory's mode, then removes the meta subdir so it does not linger on the
-// PVC. chmod failures (e.g. an untransferred empty dir) are ignored; the rclone
-// exit code is preserved for partial-success handling.
+// directory's mode, then removes only its own manifest file and the meta subdir
+// if empty, so a source-owned .cranemeta is never clobbered. chmod failures
+// (e.g. an untransferred empty dir) are ignored; the rclone exit code is
+// preserved for partial-success handling.
 func buildDownloadCommand(src, dst string, extraArgs ...string) []string {
 	dataSync := shellJoin(buildRcloneCommand("sync", src, dst, extraArgs...))
 	metaDir := dst + "/" + dirPermsMetaDir
@@ -248,11 +258,13 @@ func buildDownloadCommand(src, dst string, extraArgs ...string) []string {
 		"man=" + shellQuote(manifest),
 		dataSync + "; rc=$?",
 		`if [ -f "$man" ]; then`,
-		`  while IFS=$'\t' read -r depth mode rel; do`,
+		`  while IFS=$'\t' read -r -d '' depth mode rel; do`,
 		`    [ -n "$rel" ] && chmod "$mode" "$base/$rel" 2>/dev/null || true`,
 		`  done < "$man"`,
 		"fi",
-		"rm -rf " + shellQuote(metaDir),
+		// Remove only our manifest, then the meta dir if empty (keeps a source .cranemeta).
+		`rm -f "$man"`,
+		"rmdir " + shellQuote(metaDir) + " 2>/dev/null || true",
 		"exit $rc",
 	}
 	return []string{"bash", "-c", strings.Join(lines, "\n")}
