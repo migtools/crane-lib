@@ -12,10 +12,12 @@ func (t *IndirectTransfer) Upload(ctx context.Context, pvc *corev1.PersistentVol
 		return nil, fmt.Errorf("invalid options for upload: %w", err)
 	}
 	remotePath := fmt.Sprintf("%s/%s/%s", t.options.CloudStorage, pvc.Namespace, pvc.Name)
+	metaRemote := remotePath + "/" + dirPermsMetaDir
 	if t.options.Encrypt {
 		remotePath = CryptRemoteName + ":"
+		metaRemote = CryptRemoteName + ":" + dirPermsMetaDir
 	}
-	command := buildRcloneCommand("sync", dataMountPath, remotePath)
+	command := buildUploadCommand(dataMountPath, remotePath, metaRemote)
 
 	pod := t.buildPod(
 		fmt.Sprintf("rclone-upload-%s", pvc.Name),

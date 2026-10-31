@@ -3,6 +3,7 @@ package indirect
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/konveyor/crane-lib/state_transfer/transport"
@@ -182,14 +183,33 @@ func TestBuildPod(t *testing.T) {
 	if pod.Spec.Containers[0].Image != "test-image:latest" {
 		t.Errorf("image = %q, want %q", pod.Spec.Containers[0].Image, "test-image:latest")
 	}
-	if len(pod.Spec.Volumes) != 2 {
-		t.Fatalf("volumes = %d, want 2", len(pod.Spec.Volumes))
+	if len(pod.Spec.Volumes) != 3 {
+		t.Fatalf("volumes = %d, want 3", len(pod.Spec.Volumes))
 	}
 	if pod.Spec.Volumes[0].PersistentVolumeClaim.ClaimName != pvcName {
 		t.Errorf("pvc claim = %q, want %q", pod.Spec.Volumes[0].PersistentVolumeClaim.ClaimName, pvcName)
 	}
 	if pod.Spec.Volumes[1].Secret.SecretName != "my-rclone-secret" {
 		t.Errorf("secret name = %q, want %q", pod.Spec.Volumes[1].Secret.SecretName, "my-rclone-secret")
+	}
+	// Writable scratch emptyDir carries the directory-permissions manifest.
+	if pod.Spec.Volumes[2].Name != scratchVolumeName || pod.Spec.Volumes[2].EmptyDir == nil {
+		t.Errorf("volume[2] = %+v, want emptyDir %q", pod.Spec.Volumes[2], scratchVolumeName)
+	}
+	var scratchMount *corev1.VolumeMount
+	for i := range pod.Spec.Containers[0].VolumeMounts {
+		if pod.Spec.Containers[0].VolumeMounts[i].Name == scratchVolumeName {
+			scratchMount = &pod.Spec.Containers[0].VolumeMounts[i]
+		}
+	}
+	if scratchMount == nil {
+		t.Fatalf("scratch volume mount %q not found", scratchVolumeName)
+	}
+	if scratchMount.ReadOnly {
+		t.Errorf("scratch mount ReadOnly = true, want false (manifest must be writable)")
+	}
+	if scratchMount.MountPath != scratchMountPath {
+		t.Errorf("scratch mount path = %q, want %q", scratchMount.MountPath, scratchMountPath)
 	}
 }
 
@@ -501,5 +521,103 @@ func TestCleanupCloudData_NoPVCMount(t *testing.T) {
 	}
 	if volumes[0].PersistentVolumeClaim != nil {
 		t.Error("cleanup pod should NOT have a PVC volume")
+	}
+}
+
+// cmdScript returns the `bash -c` script body of a build*Command result.
+func cmdScript(t *testing.T, cmd []string) string {
+	t.Helper()
+	if len(cmd) != 3 || cmd[0] != "bash" || cmd[1] != "-c" {
+		t.Fatalf("command = %v, want [bash -c <script>]", cmd)
+	}
+	return cmd[2]
+}
+
+func TestBuildUploadCommand(t *testing.T) {
+	metaRemote := "remote:bucket/ns/pvc/" + dirPermsMetaDir
+	cmd := buildUploadCommand(dataMountPath, "remote:bucket/ns/pvc", metaRemote)
+	script := cmdScript(t, cmd)
+
+	manifest := scratchMountPath + "/" + dirPermsManifest
+	wants := []string{
+		// Base and manifest paths wired in.
+		"base='/data'",
+		"man='" + manifest + "'",
+		// Directories enumerated with globstar (find is absent from the image),
+		// including hidden dirs, modes read with stat.
+		"shopt -s globstar dotglob nullglob",
+		`for d in "$base"/**/; do`,
+		`mode=$(stat -c '%a' "$d")`,
+		// Root recorded as "." so it restores last.
+		`if [ -z "$rel" ]; then rel="."; depth=-1;`,
+		// Deepest-first, NUL-aware ordering.
+		`sort -z -rn -k1,1 "$man" -o "$man"`,
+		// Data sync first (so its mirror does not delete the meta subdir),
+		// capturing its exit code.
+		"rclone' 'sync' '/data' 'remote:bucket/ns/pvc'",
+		"; rc=$?",
+		// Meta sync skipped if the source owns a .cranemeta.
+		`if [ -e "$base/.cranemeta" ]; then`,
+		"skipping directory-permission manifest",
+		// Manifest synced into the .cranemeta subdir, best-effort.
+		"rclone' 'sync' '" + scratchMountPath + "' '" + metaRemote + "'",
+		"|| true",
+		// rclone's exit code is preserved for partial-success handling.
+		"exit $rc",
+	}
+	for _, w := range wants {
+		if !strings.Contains(script, w) {
+			t.Errorf("upload script missing %q\nscript:\n%s", w, script)
+		}
+	}
+	// The manifest sync must not carry -v/--progress or its "Transferred:" line
+	// would shadow the data sync's line that partial-success parsing relies on.
+	metaIdx := strings.LastIndex(script, "'sync' '"+scratchMountPath+"'")
+	if metaIdx >= 0 && strings.Contains(script[metaIdx:], "--progress") {
+		t.Errorf("manifest sync must not use --progress\nscript:\n%s", script)
+	}
+}
+
+func TestBuildUploadCommand_EncryptPath(t *testing.T) {
+	cmd := buildUploadCommand(dataMountPath, CryptRemoteName+":", CryptRemoteName+":"+dirPermsMetaDir)
+	script := cmdScript(t, cmd)
+	if !strings.Contains(script, "'encrypted:'") {
+		t.Errorf("upload script missing encrypted data remote\nscript:\n%s", script)
+	}
+	if !strings.Contains(script, "'encrypted:"+dirPermsMetaDir+"'") {
+		t.Errorf("upload script missing encrypted meta remote\nscript:\n%s", script)
+	}
+}
+
+func TestBuildDownloadCommand(t *testing.T) {
+	cmd := buildDownloadCommand("remote:bucket/ns/pvc", dataMountPath,
+		"--metadata-set", "uid=1000")
+	script := cmdScript(t, cmd)
+
+	metaDir := dataMountPath + "/" + dirPermsMetaDir
+	manifest := metaDir + "/" + dirPermsManifest
+	wants := []string{
+		"base='/data'",
+		"man='" + manifest + "'",
+		// Data sync first, capturing its exit code.
+		"rclone' 'sync' 'remote:bucket/ns/pvc' '/data'",
+		"'--metadata-set' 'uid=1000'",
+		"; rc=$?",
+		// Replayed only if present; NUL records, tab fields.
+		`if [ -f "$man" ]; then`,
+		`while IFS=$'\t' read -r -d '' depth mode rel; do`,
+		`chmod "$mode" "$base/$rel"`,
+		// Restore failures (e.g. an untransferred empty dir) are ignored.
+		"2>/dev/null || true",
+		`done < "$man"`,
+		// Only our manifest removed, then the meta dir if empty.
+		`rm -f "$man"`,
+		"rmdir '" + metaDir + "' 2>/dev/null || true",
+		"exit $rc",
+	}
+	for _, w := range wants {
+		if !strings.Contains(script, w) {
+			t.Errorf("download script missing %q\nscript:\n%s", w, script)
+		}
 	}
 }
