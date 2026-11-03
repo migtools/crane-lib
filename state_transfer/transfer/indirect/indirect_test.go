@@ -391,6 +391,89 @@ func TestBuildRcloneCommand_EncryptPath(t *testing.T) {
 	}
 }
 
+// rcloneCommand returns the command of the pod's single rclone container.
+func rcloneCommand(t *testing.T, pod *corev1.Pod) []string {
+	t.Helper()
+	if len(pod.Spec.Containers) != 1 {
+		t.Fatalf("containers = %d, want 1", len(pod.Spec.Containers))
+	}
+	return pod.Spec.Containers[0].Command
+}
+
+// TestUploadEncryptUsesCryptRemote verifies that when Options.Encrypt is true,
+// the upload pod's rclone command syncs the data dir to the crypt remote
+// ("encrypted:") instead of the plaintext CloudStorage path.
+func TestUploadEncryptUsesCryptRemote(t *testing.T) {
+	srcClient := newFakeClient(t)
+	transfer := New(srcClient, nil, Options{
+		Image:        "test-image:latest",
+		ConfigSecret: "my-rclone-secret",
+		CloudStorage: "remote:my-bucket",
+		Encrypt:      true,
+	})
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-pvc", Namespace: "src-ns"},
+	}
+
+	pod, err := transfer.Upload(context.TODO(), pvc)
+	if err != nil {
+		t.Fatalf("Upload() error = %v", err)
+	}
+	cmd := rcloneCommand(t, pod)
+	// src is the local data mount, dst is the crypt remote.
+	if cmd[2] != dataMountPath {
+		t.Errorf("upload src = %q, want %q", cmd[2], dataMountPath)
+	}
+	if cmd[3] != CryptRemoteName+":" {
+		t.Errorf("upload dst = %q, want %q", cmd[3], CryptRemoteName+":")
+	}
+	// The plaintext CloudStorage path must not leak into the command.
+	if containsArg(cmd, "remote:my-bucket/src-ns/my-pvc") {
+		t.Errorf("encrypted upload must not use plaintext remote path, got %v", cmd)
+	}
+	// Empty-dir replication flags must still be present on the encrypt path.
+	if !containsArg(cmd, "--create-empty-src-dirs") {
+		t.Errorf("encrypted upload missing --create-empty-src-dirs: %v", cmd)
+	}
+}
+
+// TestDownloadEncryptUsesCryptRemote verifies that when Options.Encrypt is true,
+// the download pod's rclone command syncs from the crypt remote ("encrypted:")
+// to the local data dir instead of the plaintext CloudStorage path.
+func TestDownloadEncryptUsesCryptRemote(t *testing.T) {
+	destClient := newFakeClient(t)
+	transfer := New(nil, destClient, Options{
+		Image:        "test-image:latest",
+		ConfigSecret: "my-rclone-secret",
+		CloudStorage: "remote:my-bucket",
+		Encrypt:      true,
+	})
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-pvc", Namespace: "dest-ns"},
+	}
+
+	pod, err := transfer.Download(context.TODO(), pvc, "src-ns", "my-pvc")
+	if err != nil {
+		t.Fatalf("Download() error = %v", err)
+	}
+	cmd := rcloneCommand(t, pod)
+	// src is the crypt remote, dst is the local data mount.
+	if cmd[2] != CryptRemoteName+":" {
+		t.Errorf("download src = %q, want %q", cmd[2], CryptRemoteName+":")
+	}
+	if cmd[3] != dataMountPath {
+		t.Errorf("download dst = %q, want %q", cmd[3], dataMountPath)
+	}
+	// The plaintext CloudStorage path must not leak into the command.
+	if containsArg(cmd, "remote:my-bucket/src-ns/my-pvc") {
+		t.Errorf("encrypted download must not use plaintext remote path, got %v", cmd)
+	}
+	// Empty-dir replication flags must still be present on the encrypt path.
+	if !containsArg(cmd, "--create-empty-src-dirs") {
+		t.Errorf("encrypted download missing --create-empty-src-dirs: %v", cmd)
+	}
+}
+
 func TestMetadataSetArgs(t *testing.T) {
 	uid := int64(999)
 	gid := int64(1000)
