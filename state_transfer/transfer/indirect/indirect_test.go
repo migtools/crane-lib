@@ -15,13 +15,22 @@ import (
 
 // newFakeClient returns a fake client with the core v1 scheme registered so
 // that Pod objects can be created.
-func newFakeClient(t *testing.T) client.Client {
+func newFakeClient(t *testing.T, objs ...client.Object) client.Client {
 	t.Helper()
 	s := runtime.NewScheme()
 	if err := corev1.AddToScheme(s); err != nil {
 		t.Fatalf("failed to register core v1 scheme: %v", err)
 	}
-	return fake.NewClientBuilder().WithScheme(s).Build()
+	return fake.NewClientBuilder().WithScheme(s).WithObjects(objs...).Build()
+}
+
+// rcloneSecret builds a Secret holding an rclone.conf, matching how crane
+// mounts the config into the mover pod.
+func rcloneSecret(namespace, name, conf string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
+		Data:       map[string][]byte{"rclone.conf": []byte(conf)},
+	}
 }
 
 // dataVolumeMount returns the data volume mount from the pod's rclone container.
@@ -122,7 +131,7 @@ func TestBuildRcloneCommand(t *testing.T) {
 			subcommand: "sync",
 			src:        "/data",
 			dst:        "remote:bucket/ns/pvc",
-			wantLen:    14,
+			wantLen:    11,
 			wantFirst:  "rclone",
 		},
 		{
@@ -130,7 +139,7 @@ func TestBuildRcloneCommand(t *testing.T) {
 			subcommand: "sync",
 			src:        "remote:bucket/ns/pvc",
 			dst:        "/data",
-			wantLen:    14,
+			wantLen:    11,
 			wantFirst:  "rclone",
 		},
 	}
@@ -157,17 +166,18 @@ func TestBuildRcloneCommand(t *testing.T) {
 			if !containsArg(got, "--create-empty-src-dirs") {
 				t.Errorf("command missing --create-empty-src-dirs: %v", got)
 			}
-			// Object-storage backends need directory markers to persist empty
-			// dirs in the bucket; --create-empty-src-dirs alone is not enough.
-			// crane supports S3, GCS and Azure Blob, so all three per-backend
-			// flags must be present (issue migtools/crane#1082).
+			// The base command must NOT hardcode any per-backend directory
+			// markers flag: the transfer image's rclone rejects flags for
+			// backends it does not know (e.g. --gcs-directory-markers) and
+			// aborts the whole transfer. The matching flag is added only when
+			// the backend is known, via directoryMarkerArgs.
 			for _, marker := range []string{
 				"--s3-directory-markers",
 				"--gcs-directory-markers",
 				"--azureblob-directory-markers",
 			} {
-				if !containsArg(got, marker) {
-					t.Errorf("command missing %s: %v", marker, got)
+				if containsArg(got, marker) {
+					t.Errorf("base command must not hardcode %s: %v", marker, got)
 				}
 			}
 		})
@@ -404,7 +414,7 @@ func rcloneCommand(t *testing.T, pod *corev1.Pod) []string {
 // the upload pod's rclone command syncs the data dir to the crypt remote
 // ("encrypted:") instead of the plaintext CloudStorage path.
 func TestUploadEncryptUsesCryptRemote(t *testing.T) {
-	srcClient := newFakeClient(t)
+	srcClient := newFakeClient(t, rcloneSecret("src-ns", "my-rclone-secret", "[remote]\ntype = s3\n"))
 	transfer := New(srcClient, nil, Options{
 		Image:        "test-image:latest",
 		ConfigSecret: "my-rclone-secret",
@@ -435,13 +445,22 @@ func TestUploadEncryptUsesCryptRemote(t *testing.T) {
 	if !containsArg(cmd, "--create-empty-src-dirs") {
 		t.Errorf("encrypted upload missing --create-empty-src-dirs: %v", cmd)
 	}
+	// The directory-markers flag must target the underlying CloudStorage
+	// backend (s3), not the crypt remote, and must never be the wrong
+	// backend's flag (which older rclone rejects, aborting the transfer).
+	if !containsArg(cmd, "--s3-directory-markers") {
+		t.Errorf("encrypted upload missing --s3-directory-markers: %v", cmd)
+	}
+	if containsArg(cmd, "--gcs-directory-markers") {
+		t.Errorf("encrypted upload must not pass wrong backend flag --gcs-directory-markers: %v", cmd)
+	}
 }
 
 // TestDownloadEncryptUsesCryptRemote verifies that when Options.Encrypt is true,
 // the download pod's rclone command syncs from the crypt remote ("encrypted:")
 // to the local data dir instead of the plaintext CloudStorage path.
 func TestDownloadEncryptUsesCryptRemote(t *testing.T) {
-	destClient := newFakeClient(t)
+	destClient := newFakeClient(t, rcloneSecret("dest-ns", "my-rclone-secret", "[remote]\ntype = s3\n"))
 	transfer := New(nil, destClient, Options{
 		Image:        "test-image:latest",
 		ConfigSecret: "my-rclone-secret",
@@ -471,6 +490,143 @@ func TestDownloadEncryptUsesCryptRemote(t *testing.T) {
 	// Empty-dir replication flags must still be present on the encrypt path.
 	if !containsArg(cmd, "--create-empty-src-dirs") {
 		t.Errorf("encrypted download missing --create-empty-src-dirs: %v", cmd)
+	}
+	// The directory-markers flag must target the underlying CloudStorage
+	// backend (s3), not the crypt remote.
+	if !containsArg(cmd, "--s3-directory-markers") {
+		t.Errorf("encrypted download missing --s3-directory-markers: %v", cmd)
+	}
+	if containsArg(cmd, "--gcs-directory-markers") {
+		t.Errorf("encrypted download must not pass wrong backend flag --gcs-directory-markers: %v", cmd)
+	}
+}
+
+func TestDirectoryMarkerFlag(t *testing.T) {
+	tests := []struct {
+		backendType string
+		want        string
+	}{
+		{"s3", "--s3-directory-markers"},
+		{"S3", "--s3-directory-markers"},
+		{"  s3  ", "--s3-directory-markers"},
+		{"gcs", "--gcs-directory-markers"},
+		{"google cloud storage", "--gcs-directory-markers"},
+		{"azureblob", "--azureblob-directory-markers"},
+		{"azure blob storage", "--azureblob-directory-markers"},
+		{"b2", ""},
+		{"sftp", ""},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := directoryMarkerFlag(tt.backendType); got != tt.want {
+			t.Errorf("directoryMarkerFlag(%q) = %q, want %q", tt.backendType, got, tt.want)
+		}
+	}
+}
+
+func TestRemoteBackendType(t *testing.T) {
+	conf := `[remote]
+type = s3
+provider = AWS
+
+[encrypted]
+type = crypt
+remote = remote:bucket
+`
+	tests := []struct {
+		name   string
+		remote string
+		want   string
+	}{
+		{"s3 remote", "remote", "s3"},
+		{"crypt remote", "encrypted", "crypt"},
+		{"missing remote", "nope", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := remoteBackendType([]byte(conf), tt.remote); got != tt.want {
+				t.Errorf("remoteBackendType(%q) = %q, want %q", tt.remote, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestUploadDirectoryMarkerByBackend verifies the upload command carries only
+// the directory-markers flag matching the CloudStorage backend, and never a
+// flag for a different backend. This is the regression guard for
+// migtools/crane#1082: passing --gcs-directory-markers to an rclone that does
+// not know it aborts the whole transfer.
+func TestUploadDirectoryMarkerByBackend(t *testing.T) {
+	tests := []struct {
+		name       string
+		conf       string
+		wantMarker string // "" means no marker flag should be present
+	}{
+		{"s3", "[remote]\ntype = s3\n", "--s3-directory-markers"},
+		{"gcs", "[remote]\ntype = google cloud storage\n", "--gcs-directory-markers"},
+		{"azureblob", "[remote]\ntype = azureblob\n", "--azureblob-directory-markers"},
+		{"unknown backend", "[remote]\ntype = sftp\n", ""},
+		{"no type key", "[remote]\nprovider = AWS\n", ""},
+	}
+	allMarkers := []string{"--s3-directory-markers", "--gcs-directory-markers", "--azureblob-directory-markers"}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srcClient := newFakeClient(t, rcloneSecret("src-ns", "my-rclone-secret", tt.conf))
+			transfer := New(srcClient, nil, Options{
+				Image:        "test-image:latest",
+				ConfigSecret: "my-rclone-secret",
+				CloudStorage: "remote:my-bucket",
+			})
+			pvc := &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-pvc", Namespace: "src-ns"},
+			}
+			pod, err := transfer.Upload(context.TODO(), pvc)
+			if err != nil {
+				t.Fatalf("Upload() error = %v", err)
+			}
+			cmd := rcloneCommand(t, pod)
+			// --create-empty-src-dirs is always present regardless of backend.
+			if !containsArg(cmd, "--create-empty-src-dirs") {
+				t.Errorf("missing --create-empty-src-dirs: %v", cmd)
+			}
+			for _, m := range allMarkers {
+				present := containsArg(cmd, m)
+				if m == tt.wantMarker && !present {
+					t.Errorf("expected marker %s in command: %v", m, cmd)
+				}
+				if m != tt.wantMarker && present {
+					t.Errorf("unexpected marker %s in command: %v", m, cmd)
+				}
+			}
+		})
+	}
+}
+
+// TestUploadMissingConfigSecretSkipsMarker verifies that when the rclone config
+// Secret cannot be read, the upload still succeeds with no directory-markers
+// flag (graceful degradation) rather than failing.
+func TestUploadMissingConfigSecretSkipsMarker(t *testing.T) {
+	srcClient := newFakeClient(t) // no secret seeded
+	transfer := New(srcClient, nil, Options{
+		Image:        "test-image:latest",
+		ConfigSecret: "my-rclone-secret",
+		CloudStorage: "remote:my-bucket",
+	})
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-pvc", Namespace: "src-ns"},
+	}
+	pod, err := transfer.Upload(context.TODO(), pvc)
+	if err != nil {
+		t.Fatalf("Upload() error = %v", err)
+	}
+	cmd := rcloneCommand(t, pod)
+	if !containsArg(cmd, "--create-empty-src-dirs") {
+		t.Errorf("missing --create-empty-src-dirs: %v", cmd)
+	}
+	for _, m := range []string{"--s3-directory-markers", "--gcs-directory-markers", "--azureblob-directory-markers"} {
+		if containsArg(cmd, m) {
+			t.Errorf("marker %s must not be present when config secret is unreadable: %v", m, cmd)
+		}
 	}
 }
 

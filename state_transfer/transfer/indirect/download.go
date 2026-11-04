@@ -15,8 +15,9 @@ func (t *IndirectTransfer) Download(ctx context.Context, pvc *corev1.PersistentV
 	if t.options.Encrypt {
 		remotePath = CryptRemoteName + ":"
 	}
-	command := buildRcloneCommand("sync", remotePath, dataMountPath,
-		metadataSetArgs(t.options.DownloadSecurityContext)...)
+	extraArgs := append(metadataSetArgs(t.options.DownloadSecurityContext),
+		t.directoryMarkerArgs(ctx, t.destClient, pvc.Namespace)...)
+	command := buildRcloneCommand("sync", remotePath, dataMountPath, extraArgs...)
 
 	pod := t.buildPod(
 		fmt.Sprintf("rclone-download-%s", pvc.Name),

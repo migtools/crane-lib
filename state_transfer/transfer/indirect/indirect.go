@@ -155,19 +155,73 @@ func buildRcloneCommand(subcommand, src, dst string, extraArgs ...string) []stri
 		"--progress",
 		"--links",
 		"--metadata",
+		// Replicate empty source dirs (issue migtools/crane#1082). Not
+		// enough alone for object storage; the caller appends the matching
+		// --<backend>-directory-markers flag via directoryMarkerArgs.
 		"--create-empty-src-dirs",
-		// --create-empty-src-dirs alone can't persist an empty dir in an
-		// object-storage bucket (no real dirs, no file to carry it). Directory
-		// markers make rclone write a 0-byte marker per empty dir that the
-		// download leg restores. The flag is per-backend; crane supports S3,
-		// GCS and Azure Blob, and each is a no-op for the others, so pass all
-		// three unconditionally to stay backend-agnostic.
-		"--s3-directory-markers",
-		"--gcs-directory-markers",
-		"--azureblob-directory-markers",
 		"-v",
 	}
 	return append(cmd, extraArgs...)
+}
+
+// directoryMarkerFlag maps an rclone backend type to the per-backend flag that
+// writes a 0-byte marker per empty dir, so empty dirs survive object storage.
+// Returns "" for backends with no such flag: an unknown
+// --<backend>-directory-markers flag makes rclone abort, so never guess.
+func directoryMarkerFlag(backendType string) string {
+	switch strings.ToLower(strings.TrimSpace(backendType)) {
+	case "s3":
+		return "--s3-directory-markers"
+	case "gcs", "google cloud storage":
+		return "--gcs-directory-markers"
+	case "azureblob", "azure blob", "azure blob storage":
+		return "--azureblob-directory-markers"
+	default:
+		return ""
+	}
+}
+
+// remoteBackendType returns the "type" value of the [remoteName] section in
+// rclone.conf content, or "" if the section or key is absent.
+func remoteBackendType(config []byte, remoteName string) string {
+	wantHeader := "[" + remoteName + "]"
+	inSection := false
+	for _, line := range strings.Split(string(config), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			inSection = trimmed == wantHeader
+			continue
+		}
+		if !inSection {
+			continue
+		}
+		key, value, ok := strings.Cut(trimmed, "=")
+		if ok && strings.TrimSpace(key) == "type" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+// directoryMarkerArgs returns the directory-markers flag for the remote named
+// in Options.CloudStorage, reading its backend type from the rclone config
+// Secret. Returns nil when the backend is unknown, so a transfer never fails
+// just because markers could not be enabled. Always targets the underlying
+// CloudStorage backend, even when Encrypt wraps it in a crypt remote.
+func (t *IndirectTransfer) directoryMarkerArgs(ctx context.Context, c client.Client, namespace string) []string {
+	remoteName, _, _ := strings.Cut(t.options.CloudStorage, ":")
+	if remoteName == "" {
+		return nil
+	}
+	secret := &corev1.Secret{}
+	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: t.options.ConfigSecret}, secret); err != nil {
+		return nil
+	}
+	flag := directoryMarkerFlag(remoteBackendType(secret.Data["rclone.conf"], remoteName))
+	if flag == "" {
+		return nil
+	}
+	return []string{flag}
 }
 
 // metadataSetArgs returns --metadata-set flags that override uid/gid to the

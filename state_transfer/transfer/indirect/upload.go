@@ -15,7 +15,8 @@ func (t *IndirectTransfer) Upload(ctx context.Context, pvc *corev1.PersistentVol
 	if t.options.Encrypt {
 		remotePath = CryptRemoteName + ":"
 	}
-	command := buildRcloneCommand("sync", dataMountPath, remotePath)
+	command := buildRcloneCommand("sync", dataMountPath, remotePath,
+		t.directoryMarkerArgs(ctx, t.sourceClient, pvc.Namespace)...)
 
 	pod := t.buildPod(
 		fmt.Sprintf("rclone-upload-%s", pvc.Name),
