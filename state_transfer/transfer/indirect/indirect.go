@@ -26,18 +26,16 @@ type Options struct {
 	CloudStorage string
 	ConfigSecret string
 	Encrypt      bool
-	// TODO: KeepCloudData skips cloud storage cleanup after transfer.
-	// When false, a cleanup pod should run "rclone delete remote:bucket/ns/pvc/"
-	// after successful download to remove intermediate data from S3.
+	// TODO: when false, run a cleanup pod to delete intermediate cloud data
+	// after a successful download.
 	KeepCloudData           bool
 	Labels                  map[string]string
 	UploadSecurityContext   corev1.PodSecurityContext
 	DownloadSecurityContext corev1.PodSecurityContext
 }
 
-// Validate checks required fields. When Encrypt is true, the caller is
-// responsible for appending a valid [encrypted] crypt section to the
-// rclone.conf before creating the ConfigSecret.
+// Validate checks required fields. When Encrypt is true, the caller must append
+// a valid [encrypted] crypt section to rclone.conf before creating ConfigSecret.
 func (o *Options) Validate() error {
 	if o.CloudStorage == "" {
 		return fmt.Errorf("cloud storage path is required")
@@ -155,14 +153,111 @@ func buildRcloneCommand(subcommand, src, dst string, extraArgs ...string) []stri
 		"--progress",
 		"--links",
 		"--metadata",
+		// Replicate empty source dirs (migtools/crane#1082); for object
+		// storage the caller also appends --<backend>-directory-markers.
+		"--create-empty-src-dirs",
 		"-v",
 	}
 	return append(cmd, extraArgs...)
 }
 
-// metadataSetArgs returns --metadata-set flags that override uid/gid to the
-// pod's own UID so chown becomes a no-op. Without this, rclone treats chown
-// failure as fatal and deletes the file.
+// directoryMarkerFlag maps an rclone backend type to the flag that writes a
+// 0-byte marker per empty dir so empty dirs survive object storage. Returns ""
+// for backends with no such flag; an unknown flag makes rclone abort, so never
+// guess.
+func directoryMarkerFlag(backendType string) string {
+	switch strings.ToLower(strings.TrimSpace(backendType)) {
+	case "s3":
+		return "--s3-directory-markers"
+	case "gcs", "google cloud storage":
+		return "--gcs-directory-markers"
+	case "azureblob", "azure blob", "azure blob storage":
+		return "--azureblob-directory-markers"
+	default:
+		return ""
+	}
+}
+
+// remoteSection returns the key/value pairs of the [remoteName] section in
+// rclone.conf content, or nil if the section is absent.
+func remoteSection(config []byte, remoteName string) map[string]string {
+	wantHeader := "[" + remoteName + "]"
+	inSection := false
+	var section map[string]string
+	for _, line := range strings.Split(string(config), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			inSection = trimmed == wantHeader
+			if inSection && section == nil {
+				section = map[string]string{}
+			}
+			continue
+		}
+		if !inSection {
+			continue
+		}
+		if key, value, ok := strings.Cut(trimmed, "="); ok {
+			section[strings.TrimSpace(key)] = strings.TrimSpace(value)
+		}
+	}
+	return section
+}
+
+// remoteBackendType returns the "type" value of the [remoteName] section in
+// rclone.conf content, or "" if the section or key is absent.
+func remoteBackendType(config []byte, remoteName string) string {
+	return remoteSection(config, remoteName)["type"]
+}
+
+// resolveBackendType returns the concrete backend type for remoteName, following
+// rclone "alias" and "crypt" remotes (both wrap another remote via "remote =")
+// to their target so directoryMarkerFlag matches the underlying backend rather
+// than the wrapper (which has no flag). Returns "" if it cannot be resolved; the
+// visited set guards against cycles.
+func resolveBackendType(config []byte, remoteName string) string {
+	visited := map[string]bool{}
+	for remoteName != "" && !visited[remoteName] {
+		visited[remoteName] = true
+		section := remoteSection(config, remoteName)
+		backendType := section["type"]
+		if !strings.EqualFold(backendType, "alias") && !strings.EqualFold(backendType, "crypt") {
+			return backendType
+		}
+		// "remote = target:path" or "target,opt=val:path" -> "target".
+		target, _, _ := strings.Cut(section["remote"], ":")
+		target, _, _ = strings.Cut(target, ",")
+		remoteName = strings.TrimSpace(target)
+	}
+	return ""
+}
+
+// directoryMarkerArgs returns the directory-markers flag for Options.CloudStorage,
+// reading its backend type from the rclone config Secret. Returns nil (no error)
+// when the backend is unknown, so an unsupported backend never fails a transfer.
+// Returns an error if the config Secret cannot be read, so the caller does not
+// start a transfer that would silently drop empty directories. Targets the
+// underlying backend even when Encrypt wraps it in a crypt remote.
+func (t *IndirectTransfer) directoryMarkerArgs(ctx context.Context, c client.Client, namespace string) ([]string, error) {
+	remoteName, _, _ := strings.Cut(t.options.CloudStorage, ":")
+	// Strip any inline option suffix: "remote,env_auth=true" -> "remote".
+	remoteName, _, _ = strings.Cut(remoteName, ",")
+	if remoteName == "" {
+		return nil, nil
+	}
+	secret := &corev1.Secret{}
+	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: t.options.ConfigSecret}, secret); err != nil {
+		return nil, fmt.Errorf("failed to read rclone config secret %s/%s: %w", namespace, t.options.ConfigSecret, err)
+	}
+	flag := directoryMarkerFlag(resolveBackendType(secret.Data["rclone.conf"], remoteName))
+	if flag == "" {
+		return nil, nil
+	}
+	return []string{flag}, nil
+}
+
+// metadataSetArgs returns --metadata-set flags that set uid/gid to the pod's own
+// UID so chown is a no-op; otherwise rclone treats chown failure as fatal and
+// deletes the file.
 func metadataSetArgs(secCtx corev1.PodSecurityContext) []string {
 	uid := int64(65534) // default: nobody
 	if secCtx.RunAsUser != nil {
@@ -180,10 +275,9 @@ func metadataSetArgs(secCtx corev1.PodSecurityContext) []string {
 	}
 }
 
-// BuildCryptSection returns the rclone config section that enables client-side
-// encryption. The caller appends this to the existing rclone.conf before
-// creating the K8s Secret. obscuredPassword must be in rclone's obscured format
-// (produced by "rclone obscure <plaintext>").
+// BuildCryptSection returns the rclone config section enabling client-side
+// encryption, which the caller appends to rclone.conf before creating the Secret.
+// obscuredPassword must be in rclone's obscured format ("rclone obscure <pw>").
 func BuildCryptSection(cloudStoragePath, obscuredPassword string) (string, error) {
 	if cloudStoragePath == "" {
 		return "", fmt.Errorf("cloud storage path is required for encryption config")
