@@ -3,6 +3,9 @@ package indirect
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/konveyor/crane-lib/state_transfer/transport"
@@ -513,7 +516,7 @@ func TestDownloadEncryptUsesCryptRemote(t *testing.T) {
 // directory not found" (migtools/crane#1082 interaction).
 func TestTolerateEmptySourceCommand(t *testing.T) {
 	rcloneCmd := buildRcloneCommand("sync", "remote:bucket/ns/pvc", dataMountPath)
-	wrapped := tolerateEmptySourceCommand(rcloneCmd)
+	wrapped := tolerateEmptySourceCommand(dataMountPath, rcloneCmd)
 
 	// Must invoke a shell that ultimately runs the rclone command via "$@".
 	if wrapped[0] != "sh" || wrapped[1] != "-c" {
@@ -536,6 +539,89 @@ func TestTolerateEmptySourceCommand(t *testing.T) {
 			t.Errorf("rclone arg[%d] = %q, want %q", i, args[i], rcloneCmd[i])
 		}
 	}
+}
+
+// runTolerateWrapper executes the tolerateEmptySourceCommand wrapper with a fake
+// "rclone" that exits with rcloneRC, against destDir, and returns the wrapper's
+// exit code. It exercises the real shell logic (the gotcha this code addresses
+// lives in the shell script, not in Go).
+func runTolerateWrapper(t *testing.T, destDir string, rcloneRC int) int {
+	t.Helper()
+	fake := []string{"sh", "-c", fmt.Sprintf("exit %d", rcloneRC)}
+	wrapped := tolerateEmptySourceCommand(destDir, fake)
+	cmd := exec.Command(wrapped[0], wrapped[1:]...)
+	err := cmd.Run()
+	if err == nil {
+		return 0
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		return exitErr.ExitCode()
+	}
+	t.Fatalf("running wrapper failed to start: %v", err)
+	return -1
+}
+
+// TestTolerateEmptySourceDestinationCheck verifies the shell wrapper's runtime
+// behavior: rc=3 is tolerated only when the destination is empty (ignoring a
+// lost+found directory), while a non-empty destination keeps rc=3 fatal and all
+// other exit codes pass through untouched. Regression guard for the review
+// concern that tolerating an empty source could silently leave stale files.
+func TestTolerateEmptySourceDestinationCheck(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+
+	t.Run("rc3 empty dest => success", func(t *testing.T) {
+		if got := runTolerateWrapper(t, t.TempDir(), 3); got != 0 {
+			t.Errorf("exit code = %d, want 0 (empty dest should tolerate rc=3)", got)
+		}
+	})
+
+	t.Run("rc3 dest with only lost+found => success", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.Mkdir(filepath.Join(dir, "lost+found"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if got := runTolerateWrapper(t, dir, 3); got != 0 {
+			t.Errorf("exit code = %d, want 0 (lost+found must be ignored)", got)
+		}
+	})
+
+	t.Run("rc3 non-empty dest => fatal", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "stale.txt"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := runTolerateWrapper(t, dir, 3); got != 3 {
+			t.Errorf("exit code = %d, want 3 (stale files must not be masked)", got)
+		}
+	})
+
+	t.Run("rc3 dest with only a dotfile => fatal", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, ".hidden"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := runTolerateWrapper(t, dir, 3); got != 3 {
+			t.Errorf("exit code = %d, want 3 (hidden files count as non-empty)", got)
+		}
+	})
+
+	t.Run("rc0 => success without dest check", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "f"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := runTolerateWrapper(t, dir, 0); got != 0 {
+			t.Errorf("exit code = %d, want 0 (rc=0 passes through)", got)
+		}
+	})
+
+	t.Run("rc1 => propagated", func(t *testing.T) {
+		if got := runTolerateWrapper(t, t.TempDir(), 1); got != 1 {
+			t.Errorf("exit code = %d, want 1 (non-3 codes propagate)", got)
+		}
+	})
 }
 
 // TestDownloadToleratesEmptySource verifies the download pod's command is

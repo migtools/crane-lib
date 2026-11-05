@@ -22,6 +22,9 @@ const (
 )
 
 type Options struct {
+	// Image is the mover image; it must provide rclone (sync) and a POSIX sh (the
+	// download leg wraps rclone in sh, see tolerateEmptySourceCommand). Defaults
+	// to transport.DefaultRsyncTransferImage, which has both.
 	Image        string
 	CloudStorage string
 	ConfigSecret string
@@ -164,19 +167,29 @@ func buildRcloneCommand(subcommand, src, dst string, extraArgs ...string) []stri
 // emptySourceExitCode is rclone's exit code for "directory not found".
 const emptySourceExitCode = 3
 
-// tolerateEmptySourceCommand wraps an rclone invocation in a shell that maps
-// rclone's "directory not found" exit code (3) to success; all other codes
-// propagate. Used on the download leg: an entirely empty source PVC leaves no
-// objects (and no root marker) in object storage, so with
-// --<backend>-directory-markers enabled (needed to restore empty dirs,
-// migtools/crane#1082) rclone fails the download with rc=3. Tolerating that one
-// code lets an empty PVC migrate cleanly (destination stays empty). The minimal
-// rclone image ships only the sync subcommand, so an up-front "rclone mkdir"
-// marker is not an option.
-func tolerateEmptySourceCommand(rcloneCmd []string) []string {
+// tolerateEmptySourceCommand wraps an rclone download so rclone's "directory not
+// found" exit (rc=3, raised for an empty source PVC under
+// --<backend>-directory-markers, migtools/crane#1082) maps to success only when
+// destPath is empty; other codes, and rc=3 with a non-empty destination,
+// propagate so stale files are never masked. The emptiness check is pure shell
+// (the minimal rclone image has no find) and ignores a root-owned lost+found,
+// which fresh ext4/xfs PVCs create and which is not user data.
+func tolerateEmptySourceCommand(destPath string, rcloneCmd []string) []string {
 	script := fmt.Sprintf(
-		`"$@"; rc=$?; if [ "$rc" -eq %d ]; then echo "indirect download: source root not found (empty source PVC); nothing to restore"; exit 0; fi; exit "$rc"`,
-		emptySourceExitCode,
+		`"$@"
+rc=$?
+if [ "$rc" -eq %[1]d ]; then
+  for e in %[2]q/* %[2]q/.[!.]* %[2]q/..?*; do
+    [ -e "$e" ] || [ -L "$e" ] || continue
+    [ "$e" = %[2]q/lost+found ] && continue
+    echo "indirect download: source root not found but destination is not empty (found $e); refusing to treat empty source as success" >&2
+    exit "$rc"
+  done
+  echo "indirect download: source root not found (empty source PVC); destination empty, nothing to restore"
+  exit 0
+fi
+exit "$rc"`,
+		emptySourceExitCode, destPath,
 	)
 	// "sh" is the $0 placeholder; rcloneCmd becomes "$@".
 	return append([]string{"sh", "-c", script, "sh"}, rcloneCmd...)
