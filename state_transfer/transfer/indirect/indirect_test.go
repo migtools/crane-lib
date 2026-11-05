@@ -402,6 +402,20 @@ func rcloneCommand(t *testing.T, pod *corev1.Pod) []string {
 	return pod.Spec.Containers[0].Command
 }
 
+// rcloneArgs returns the rclone invocation within a pod command, skipping any
+// shell wrapper (e.g. sh -c <script> sh rclone ...). It returns the slice
+// starting at the "rclone" token.
+func rcloneArgs(t *testing.T, cmd []string) []string {
+	t.Helper()
+	for i, a := range cmd {
+		if a == "rclone" {
+			return cmd[i:]
+		}
+	}
+	t.Fatalf("no rclone invocation in command: %v", cmd)
+	return nil
+}
+
 // TestUploadEncryptUsesCryptRemote verifies that with Encrypt true, the upload
 // command syncs to the crypt remote ("encrypted:"), not the plaintext path.
 func TestUploadEncryptUsesCryptRemote(t *testing.T) {
@@ -465,12 +479,15 @@ func TestDownloadEncryptUsesCryptRemote(t *testing.T) {
 		t.Fatalf("Download() error = %v", err)
 	}
 	cmd := rcloneCommand(t, pod)
+	// The download command is shell-wrapped to tolerate an empty source
+	// (rc=3); the rclone invocation lives inside it.
+	args := rcloneArgs(t, cmd)
 	// src is the crypt remote, dst is the local data mount.
-	if cmd[2] != CryptRemoteName+":" {
-		t.Errorf("download src = %q, want %q", cmd[2], CryptRemoteName+":")
+	if args[2] != CryptRemoteName+":" {
+		t.Errorf("download src = %q, want %q", args[2], CryptRemoteName+":")
 	}
-	if cmd[3] != dataMountPath {
-		t.Errorf("download dst = %q, want %q", cmd[3], dataMountPath)
+	if args[3] != dataMountPath {
+		t.Errorf("download dst = %q, want %q", args[3], dataMountPath)
 	}
 	// The plaintext CloudStorage path must not leak into the command.
 	if containsArg(cmd, "remote:my-bucket/src-ns/my-pvc") {
@@ -486,6 +503,87 @@ func TestDownloadEncryptUsesCryptRemote(t *testing.T) {
 	}
 	if containsArg(cmd, "--gcs-directory-markers") {
 		t.Errorf("encrypted download must not pass wrong backend flag --gcs-directory-markers: %v", cmd)
+	}
+}
+
+// TestTolerateEmptySourceCommand verifies the download wrapper maps rclone's
+// "directory not found" exit code (3) to success while leaving the rclone
+// invocation runnable and every other exit code intact. Regression test for an
+// empty-PVC transfer failing with "error reading source root directory:
+// directory not found" (migtools/crane#1082 interaction).
+func TestTolerateEmptySourceCommand(t *testing.T) {
+	rcloneCmd := buildRcloneCommand("sync", "remote:bucket/ns/pvc", dataMountPath)
+	wrapped := tolerateEmptySourceCommand(rcloneCmd)
+
+	// Must invoke a shell that ultimately runs the rclone command via "$@".
+	if wrapped[0] != "sh" || wrapped[1] != "-c" {
+		t.Fatalf("wrapper must start with [sh -c ...], got %v", wrapped[:2])
+	}
+	if !contains(wrapped[2], `exit "$rc"`) {
+		t.Errorf("wrapper script must propagate non-zero exit codes, got %q", wrapped[2])
+	}
+	if !contains(wrapped[2], fmt.Sprintf(`-eq %d`, emptySourceExitCode)) {
+		t.Errorf("wrapper script must special-case exit code %d, got %q", emptySourceExitCode, wrapped[2])
+	}
+	// The original rclone invocation must survive intact as "$@" (after the
+	// "sh" $0 placeholder).
+	args := rcloneArgs(t, wrapped)
+	if len(args) != len(rcloneCmd) {
+		t.Fatalf("rclone args length = %d, want %d: %v", len(args), len(rcloneCmd), args)
+	}
+	for i := range rcloneCmd {
+		if args[i] != rcloneCmd[i] {
+			t.Errorf("rclone arg[%d] = %q, want %q", i, args[i], rcloneCmd[i])
+		}
+	}
+}
+
+// TestDownloadToleratesEmptySource verifies the download pod's command is
+// wrapped so an empty source PVC (rclone rc=3) does not fail the transfer,
+// while the upload pod is left as a direct rclone invocation.
+func TestDownloadToleratesEmptySource(t *testing.T) {
+	destClient := newFakeClient(t, rcloneSecret("dest-ns", "my-rclone-secret", "[remote]\ntype = s3\n"))
+	srcClient := newFakeClient(t, rcloneSecret("src-ns", "my-rclone-secret", "[remote]\ntype = s3\n"))
+	transfer := New(srcClient, destClient, Options{
+		Image:        "test-image:latest",
+		ConfigSecret: "my-rclone-secret",
+		CloudStorage: "remote:my-bucket",
+	})
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-pvc", Namespace: "dest-ns"},
+	}
+
+	dlPod, err := transfer.Download(context.TODO(), pvc, "src-ns", "my-pvc")
+	if err != nil {
+		t.Fatalf("Download() error = %v", err)
+	}
+	dlCmd := rcloneCommand(t, dlPod)
+	if dlCmd[0] != "sh" || dlCmd[1] != "-c" {
+		t.Errorf("download command must be shell-wrapped to tolerate empty source, got %v", dlCmd)
+	}
+	if !contains(dlCmd[2], fmt.Sprintf(`-eq %d`, emptySourceExitCode)) {
+		t.Errorf("download wrapper must tolerate rclone exit code %d, got %q", emptySourceExitCode, dlCmd[2])
+	}
+	// The download must still carry the real rclone sync invocation and its
+	// empty-dir markers flag.
+	dlArgs := rcloneArgs(t, dlCmd)
+	if dlArgs[1] != "sync" {
+		t.Errorf("download rclone subcommand = %q, want %q", dlArgs[1], "sync")
+	}
+	if !containsArg(dlArgs, "--s3-directory-markers") {
+		t.Errorf("download must keep --s3-directory-markers to restore empty dirs: %v", dlArgs)
+	}
+
+	upPvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-pvc", Namespace: "src-ns"},
+	}
+	upPod, err := transfer.Upload(context.TODO(), upPvc)
+	if err != nil {
+		t.Fatalf("Upload() error = %v", err)
+	}
+	// The upload leg is a direct rclone invocation, not shell-wrapped.
+	if got := rcloneCommand(t, upPod); got[0] != "rclone" {
+		t.Errorf("upload command should be a direct rclone invocation, got %v", got)
 	}
 }
 

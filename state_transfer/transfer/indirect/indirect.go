@@ -161,6 +161,27 @@ func buildRcloneCommand(subcommand, src, dst string, extraArgs ...string) []stri
 	return append(cmd, extraArgs...)
 }
 
+// emptySourceExitCode is rclone's exit code for "directory not found".
+const emptySourceExitCode = 3
+
+// tolerateEmptySourceCommand wraps an rclone invocation in a shell that maps
+// rclone's "directory not found" exit code (3) to success; all other codes
+// propagate. Used on the download leg: an entirely empty source PVC leaves no
+// objects (and no root marker) in object storage, so with
+// --<backend>-directory-markers enabled (needed to restore empty dirs,
+// migtools/crane#1082) rclone fails the download with rc=3. Tolerating that one
+// code lets an empty PVC migrate cleanly (destination stays empty). The minimal
+// rclone image ships only the sync subcommand, so an up-front "rclone mkdir"
+// marker is not an option.
+func tolerateEmptySourceCommand(rcloneCmd []string) []string {
+	script := fmt.Sprintf(
+		`"$@"; rc=$?; if [ "$rc" -eq %d ]; then echo "indirect download: source root not found (empty source PVC); nothing to restore"; exit 0; fi; exit "$rc"`,
+		emptySourceExitCode,
+	)
+	// "sh" is the $0 placeholder; rcloneCmd becomes "$@".
+	return append([]string{"sh", "-c", script, "sh"}, rcloneCmd...)
+}
+
 // directoryMarkerFlag maps an rclone backend type to the flag that writes a
 // 0-byte marker per empty dir so empty dirs survive object storage. Returns ""
 // for backends with no such flag; an unknown flag makes rclone abort, so never

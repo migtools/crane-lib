@@ -20,7 +20,11 @@ func (t *IndirectTransfer) Download(ctx context.Context, pvc *corev1.PersistentV
 		return nil, err
 	}
 	extraArgs := append(metadataSetArgs(t.options.DownloadSecurityContext), markerArgs...)
-	command := buildRcloneCommand("sync", remotePath, dataMountPath, extraArgs...)
+	// An entirely empty source PVC leaves no objects (and no root marker) in
+	// object storage, so the download source prefix never exists and rclone
+	// exits 3 ("directory not found"). Tolerate that one code so an empty PVC
+	// transfers cleanly instead of failing the whole migration (migtools/crane#1082).
+	command := tolerateEmptySourceCommand(buildRcloneCommand("sync", remotePath, dataMountPath, extraArgs...))
 
 	pod := t.buildPod(
 		fmt.Sprintf("rclone-download-%s", pvc.Name),
