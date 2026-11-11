@@ -22,9 +22,10 @@ const (
 )
 
 type Options struct {
-	// Image is the mover image; it must provide rclone (sync) and a POSIX sh (the
-	// download leg wraps rclone in sh, see tolerateEmptySourceCommand). Defaults
-	// to transport.DefaultRsyncTransferImage, which has both.
+	// Image is the mover image; it must provide rclone (including the mkdir
+	// subcommand, migtools/rsync-transfer#81) and a POSIX sh (the upload leg
+	// chains rclone sync and rclone mkdir via sh, see ensureRemoteRootCommand).
+	// Defaults to transport.DefaultRsyncTransferImage, which has both.
 	Image        string
 	CloudStorage string
 	ConfigSecret string
@@ -164,35 +165,43 @@ func buildRcloneCommand(subcommand, src, dst string, extraArgs ...string) []stri
 	return append(cmd, extraArgs...)
 }
 
-// emptySourceExitCode is rclone's exit code for "directory not found".
-const emptySourceExitCode = 3
+// buildRcloneMkdirCommand builds an "rclone mkdir <path>" invocation. extraArgs
+// should include the backend's --<backend>-directory-markers flag so the created
+// root persists as a 0-byte marker on object storage, which has no native concept
+// of an empty directory (plain "rclone mkdir" is a no-op there otherwise).
+func buildRcloneMkdirCommand(path string, extraArgs ...string) []string {
+	cmd := []string{
+		"rclone", "mkdir", path,
+		"--config", configMountPath + "/rclone.conf",
+		"-v",
+	}
+	return append(cmd, extraArgs...)
+}
 
-// tolerateEmptySourceCommand wraps an rclone download so rclone's "directory not
-// found" exit (rc=3, raised for an empty source PVC under
-// --<backend>-directory-markers, migtools/crane#1082) maps to success only when
-// destPath is empty; other codes, and rc=3 with a non-empty destination,
-// propagate so stale files are never masked. The emptiness check is pure shell
-// (the minimal rclone image has no find) and ignores a root-owned lost+found,
-// which fresh ext4/xfs PVCs create and which is not user data.
-func tolerateEmptySourceCommand(destPath string, rcloneCmd []string) []string {
-	script := fmt.Sprintf(
-		`"$@"
-rc=$?
-if [ "$rc" -eq %[1]d ]; then
-  for e in %[2]q/* %[2]q/.[!.]* %[2]q/..?*; do
-    [ -e "$e" ] || [ -L "$e" ] || continue
-    [ "$e" = %[2]q/lost+found ] && continue
-    echo "indirect download: source root not found but destination is not empty (found $e); refusing to treat empty source as success" >&2
-    exit "$rc"
-  done
-  echo "indirect download: source root not found (empty source PVC); destination empty, nothing to restore"
-  exit 0
-fi
-exit "$rc"`,
-		emptySourceExitCode, destPath,
-	)
-	// "sh" is the $0 placeholder; rcloneCmd becomes "$@".
-	return append([]string{"sh", "-c", script, "sh"}, rcloneCmd...)
+// shellQuote single-quotes s for safe inclusion in an "sh -c" script, escaping any
+// embedded single quote. Remote paths and flags are normally plain tokens, but
+// quoting keeps an unusual CloudStorage value from breaking the script.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// shellJoin renders argv as a single shell-quoted command string.
+func shellJoin(argv []string) string {
+	quoted := make([]string, len(argv))
+	for i, a := range argv {
+		quoted[i] = shellQuote(a)
+	}
+	return strings.Join(quoted, " ")
+}
+
+// ensureRemoteRootCommand runs "rclone sync && rclone mkdir" (via sh -c) so the
+// PVC's remote root always exists after upload. The mkdir is a no-op for a
+// populated PVC; for an empty one it writes the root marker (migtools/crane#1082)
+// the download's sync needs, so an empty PVC transfers cleanly while a genuinely
+// missing prefix still fails the download instead of masking it as empty.
+func ensureRemoteRootCommand(syncCmd, mkdirCmd []string) []string {
+	script := shellJoin(syncCmd) + " && " + shellJoin(mkdirCmd)
+	return []string{"sh", "-c", script}
 }
 
 // directoryMarkerFlag maps an rclone backend type to the flag that writes a

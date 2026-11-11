@@ -20,12 +20,12 @@ func (t *IndirectTransfer) Download(ctx context.Context, pvc *corev1.PersistentV
 		return nil, err
 	}
 	extraArgs := append(metadataSetArgs(t.options.DownloadSecurityContext), markerArgs...)
-	// An entirely empty source PVC leaves no objects (and no root marker) in
-	// object storage, so the download source prefix never exists and rclone
-	// exits 3 ("directory not found"). Tolerate that one code so an empty PVC
-	// transfers cleanly instead of failing the whole migration (migtools/crane#1082),
-	// but only when the destination mount is empty so stale data is never kept.
-	command := tolerateEmptySourceCommand(dataMountPath, buildRcloneCommand("sync", remotePath, dataMountPath, extraArgs...))
+	// An empty source PVC still has its remote root created by the upload leg
+	// (rclone mkdir, migtools/crane#1082), so the source prefix exists and this
+	// sync succeeds with nothing to restore. A genuinely missing prefix (lost or
+	// never-staged data) still fails the download, surfacing the data loss rather
+	// than masking it as an empty source.
+	command := buildRcloneCommand("sync", remotePath, dataMountPath, extraArgs...)
 
 	pod := t.buildPod(
 		fmt.Sprintf("rclone-download-%s", pvc.Name),
