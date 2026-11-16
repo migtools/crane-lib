@@ -3,6 +3,8 @@ package indirect
 import (
 	"context"
 	"fmt"
+	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/konveyor/crane-lib/state_transfer/transport"
@@ -184,6 +186,18 @@ func containsArg(args []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func equalArgs(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestBuildPod(t *testing.T) {
@@ -402,6 +416,47 @@ func rcloneCommand(t *testing.T, pod *corev1.Pod) []string {
 	return pod.Spec.Containers[0].Command
 }
 
+// rcloneArgs returns the rclone invocation within a pod command, skipping any
+// shell wrapper (e.g. sh -c <script> sh rclone ...). It returns the slice
+// starting at the "rclone" token.
+func rcloneArgs(t *testing.T, cmd []string) []string {
+	t.Helper()
+	for i, a := range cmd {
+		if a == "rclone" {
+			return cmd[i:]
+		}
+	}
+	t.Fatalf("no rclone invocation in command: %v", cmd)
+	return nil
+}
+
+// shellWords reverses shellJoin for test inspection: it splits a shell-quoted
+// command string into its argv. Every token this package emits is single-quoted
+// with no embedded single quote, so trimming the surrounding quotes recovers it.
+func shellWords(s string) []string {
+	fields := strings.Fields(s)
+	words := make([]string, len(fields))
+	for i, f := range fields {
+		words[i] = strings.Trim(f, "'")
+	}
+	return words
+}
+
+// uploadCommands reverses the upload pod's "sh -c" wrapper into the sync and
+// mkdir rclone argvs it chains with "&&".
+func uploadCommands(t *testing.T, pod *corev1.Pod) (syncArgs, mkdirArgs []string) {
+	t.Helper()
+	cmd := rcloneCommand(t, pod)
+	if len(cmd) != 3 || cmd[0] != "sh" || cmd[1] != "-c" {
+		t.Fatalf("upload command must be [sh -c <script>], got %v", cmd)
+	}
+	parts := strings.SplitN(cmd[2], " && ", 2)
+	if len(parts) != 2 {
+		t.Fatalf("upload script must chain sync and mkdir with &&, got %q", cmd[2])
+	}
+	return shellWords(parts[0]), shellWords(parts[1])
+}
+
 // TestUploadEncryptUsesCryptRemote verifies that with Encrypt true, the upload
 // command syncs to the crypt remote ("encrypted:"), not the plaintext path.
 func TestUploadEncryptUsesCryptRemote(t *testing.T) {
@@ -420,29 +475,43 @@ func TestUploadEncryptUsesCryptRemote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Upload() error = %v", err)
 	}
-	cmd := rcloneCommand(t, pod)
-	// src is the local data mount, dst is the crypt remote.
-	if cmd[2] != dataMountPath {
-		t.Errorf("upload src = %q, want %q", cmd[2], dataMountPath)
+	syncArgs, mkdirArgs := uploadCommands(t, pod)
+	// The sync src is the local data mount, dst is the crypt remote.
+	if syncArgs[1] != "sync" {
+		t.Errorf("upload sync subcommand = %q, want %q", syncArgs[1], "sync")
 	}
-	if cmd[3] != CryptRemoteName+":" {
-		t.Errorf("upload dst = %q, want %q", cmd[3], CryptRemoteName+":")
+	if syncArgs[2] != dataMountPath {
+		t.Errorf("upload sync src = %q, want %q", syncArgs[2], dataMountPath)
 	}
-	// The plaintext CloudStorage path must not leak into the command.
-	if containsArg(cmd, "remote:my-bucket/src-ns/my-pvc") {
-		t.Errorf("encrypted upload must not use plaintext remote path, got %v", cmd)
+	if syncArgs[3] != CryptRemoteName+":" {
+		t.Errorf("upload sync dst = %q, want %q", syncArgs[3], CryptRemoteName+":")
 	}
-	// Empty-dir replication flags must still be present on the encrypt path.
-	if !containsArg(cmd, "--create-empty-src-dirs") {
-		t.Errorf("encrypted upload missing --create-empty-src-dirs: %v", cmd)
+	// The mkdir targets the same crypt remote root.
+	if mkdirArgs[1] != "mkdir" {
+		t.Errorf("upload mkdir subcommand = %q, want %q", mkdirArgs[1], "mkdir")
+	}
+	if mkdirArgs[2] != CryptRemoteName+":" {
+		t.Errorf("upload mkdir target = %q, want %q", mkdirArgs[2], CryptRemoteName+":")
+	}
+	// The plaintext CloudStorage path must not leak into either command.
+	if containsArg(syncArgs, "remote:my-bucket/src-ns/my-pvc") || containsArg(mkdirArgs, "remote:my-bucket/src-ns/my-pvc") {
+		t.Errorf("encrypted upload must not use plaintext remote path, got sync=%v mkdir=%v", syncArgs, mkdirArgs)
+	}
+	// Empty-dir replication flags must still be present on the sync.
+	if !containsArg(syncArgs, "--create-empty-src-dirs") {
+		t.Errorf("encrypted upload sync missing --create-empty-src-dirs: %v", syncArgs)
 	}
 	// The markers flag must target the underlying backend (s3), not the crypt
-	// remote, and never another backend's flag (older rclone would abort).
-	if !containsArg(cmd, "--s3-directory-markers") {
-		t.Errorf("encrypted upload missing --s3-directory-markers: %v", cmd)
+	// remote, and never another backend's flag (older rclone would abort). It must
+	// be on the mkdir too, or the empty-PVC root marker would not persist on S3.
+	if !containsArg(syncArgs, "--s3-directory-markers") {
+		t.Errorf("encrypted upload sync missing --s3-directory-markers: %v", syncArgs)
 	}
-	if containsArg(cmd, "--gcs-directory-markers") {
-		t.Errorf("encrypted upload must not pass wrong backend flag --gcs-directory-markers: %v", cmd)
+	if !containsArg(mkdirArgs, "--s3-directory-markers") {
+		t.Errorf("encrypted upload mkdir missing --s3-directory-markers: %v", mkdirArgs)
+	}
+	if containsArg(syncArgs, "--gcs-directory-markers") || containsArg(mkdirArgs, "--gcs-directory-markers") {
+		t.Errorf("encrypted upload must not pass wrong backend flag --gcs-directory-markers: sync=%v mkdir=%v", syncArgs, mkdirArgs)
 	}
 }
 
@@ -465,12 +534,15 @@ func TestDownloadEncryptUsesCryptRemote(t *testing.T) {
 		t.Fatalf("Download() error = %v", err)
 	}
 	cmd := rcloneCommand(t, pod)
+	// The download is a direct rclone sync (no shell wrapper): the empty-source
+	// case is handled on the upload side via rclone mkdir.
+	args := rcloneArgs(t, cmd)
 	// src is the crypt remote, dst is the local data mount.
-	if cmd[2] != CryptRemoteName+":" {
-		t.Errorf("download src = %q, want %q", cmd[2], CryptRemoteName+":")
+	if args[2] != CryptRemoteName+":" {
+		t.Errorf("download src = %q, want %q", args[2], CryptRemoteName+":")
 	}
-	if cmd[3] != dataMountPath {
-		t.Errorf("download dst = %q, want %q", cmd[3], dataMountPath)
+	if args[3] != dataMountPath {
+		t.Errorf("download dst = %q, want %q", args[3], dataMountPath)
 	}
 	// The plaintext CloudStorage path must not leak into the command.
 	if containsArg(cmd, "remote:my-bucket/src-ns/my-pvc") {
@@ -486,6 +558,112 @@ func TestDownloadEncryptUsesCryptRemote(t *testing.T) {
 	}
 	if containsArg(cmd, "--gcs-directory-markers") {
 		t.Errorf("encrypted download must not pass wrong backend flag --gcs-directory-markers: %v", cmd)
+	}
+}
+
+// TestEnsureRemoteRootCommand verifies the upload leg chains "rclone sync" and
+// "rclone mkdir" of the same remote via sh -c, so a populated PVC's mkdir is a
+// no-op while an empty PVC still gets its remote root created. Regression test
+// for an empty-PVC transfer failing on download with "error reading source root
+// directory: directory not found" (migtools/crane#1082 interaction).
+func TestEnsureRemoteRootCommand(t *testing.T) {
+	syncCmd := buildRcloneCommand("sync", dataMountPath, "remote:bucket/ns/pvc", "--s3-directory-markers")
+	mkdirCmd := buildRcloneMkdirCommand("remote:bucket/ns/pvc", "--s3-directory-markers")
+	cmd := ensureRemoteRootCommand(syncCmd, mkdirCmd)
+
+	if len(cmd) != 3 || cmd[0] != "sh" || cmd[1] != "-c" {
+		t.Fatalf("command must be [sh -c <script>], got %v", cmd)
+	}
+	// The script must chain the two commands so mkdir only runs after a
+	// successful sync.
+	if !contains(cmd[2], " && ") {
+		t.Errorf("script must chain sync and mkdir with &&, got %q", cmd[2])
+	}
+	parts := strings.SplitN(cmd[2], " && ", 2)
+	if len(parts) != 2 {
+		t.Fatalf("script must have exactly two chained commands, got %q", cmd[2])
+	}
+	if got := shellWords(parts[0]); !equalArgs(got, syncCmd) {
+		t.Errorf("sync command = %v, want %v", got, syncCmd)
+	}
+	if got := shellWords(parts[1]); !equalArgs(got, mkdirCmd) {
+		t.Errorf("mkdir command = %v, want %v", got, mkdirCmd)
+	}
+}
+
+// TestShellQuote verifies tokens with shell-significant characters survive the
+// sh -c round-trip, so an unusual CloudStorage value cannot break or inject into
+// the upload script.
+func TestShellQuote(t *testing.T) {
+	for _, in := range []string{
+		"remote:bucket/ns/pvc",
+		"path with spaces",
+		"has'quote",
+		"a && rm -rf /",
+		"$(touch pwned)",
+	} {
+		// Running `printf %s <quoted>` through sh must echo the input verbatim.
+		out, err := exec.Command("sh", "-c", "printf %s "+shellQuote(in)).Output()
+		if err != nil {
+			t.Fatalf("sh failed for %q: %v", in, err)
+		}
+		if string(out) != in {
+			t.Errorf("shellQuote round-trip for %q = %q", in, string(out))
+		}
+	}
+}
+
+// TestUploadEnsuresRemoteRoot verifies the upload pod chains sync and mkdir while
+// the download pod is a direct rclone sync (the empty-source case is handled on
+// the upload side, not by tolerating a download error).
+func TestUploadEnsuresRemoteRoot(t *testing.T) {
+	destClient := newFakeClient(t, rcloneSecret("dest-ns", "my-rclone-secret", "[remote]\ntype = s3\n"))
+	srcClient := newFakeClient(t, rcloneSecret("src-ns", "my-rclone-secret", "[remote]\ntype = s3\n"))
+	transfer := New(srcClient, destClient, Options{
+		Image:        "test-image:latest",
+		ConfigSecret: "my-rclone-secret",
+		CloudStorage: "remote:my-bucket",
+	})
+
+	upPvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-pvc", Namespace: "src-ns"},
+	}
+	upPod, err := transfer.Upload(context.TODO(), upPvc)
+	if err != nil {
+		t.Fatalf("Upload() error = %v", err)
+	}
+	syncArgs, mkdirArgs := uploadCommands(t, upPod)
+	wantRemote := "remote:my-bucket/src-ns/my-pvc"
+	if syncArgs[1] != "sync" || syncArgs[2] != dataMountPath || syncArgs[3] != wantRemote {
+		t.Errorf("upload sync = %v, want [rclone sync %s %s ...]", syncArgs, dataMountPath, wantRemote)
+	}
+	if mkdirArgs[1] != "mkdir" || mkdirArgs[2] != wantRemote {
+		t.Errorf("upload mkdir = %v, want [rclone mkdir %s ...]", mkdirArgs, wantRemote)
+	}
+	// The directory-markers flag must be on both legs, or the empty-PVC root
+	// marker would not persist on S3.
+	if !containsArg(syncArgs, "--s3-directory-markers") {
+		t.Errorf("upload sync missing --s3-directory-markers: %v", syncArgs)
+	}
+	if !containsArg(mkdirArgs, "--s3-directory-markers") {
+		t.Errorf("upload mkdir missing --s3-directory-markers: %v", mkdirArgs)
+	}
+
+	dlPvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-pvc", Namespace: "dest-ns"},
+	}
+	dlPod, err := transfer.Download(context.TODO(), dlPvc, "src-ns", "my-pvc")
+	if err != nil {
+		t.Fatalf("Download() error = %v", err)
+	}
+	// The download leg is a direct rclone sync, not shell-wrapped: a genuinely
+	// missing remote prefix must fail rather than be tolerated.
+	dlCmd := rcloneCommand(t, dlPod)
+	if dlCmd[0] != "rclone" || dlCmd[1] != "sync" {
+		t.Errorf("download must be a direct rclone sync, got %v", dlCmd)
+	}
+	if !containsArg(dlCmd, "--s3-directory-markers") {
+		t.Errorf("download must keep --s3-directory-markers to restore empty dirs: %v", dlCmd)
 	}
 }
 
@@ -625,18 +803,32 @@ func TestUploadDirectoryMarkerByBackend(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Upload() error = %v", err)
 			}
-			cmd := rcloneCommand(t, pod)
-			// --create-empty-src-dirs is always present regardless of backend.
-			if !containsArg(cmd, "--create-empty-src-dirs") {
-				t.Errorf("missing --create-empty-src-dirs: %v", cmd)
+			syncArgs, mkdirArgs := uploadCommands(t, pod)
+			// --create-empty-src-dirs is always present on the sync regardless of
+			// backend.
+			if !containsArg(syncArgs, "--create-empty-src-dirs") {
+				t.Errorf("missing --create-empty-src-dirs: %v", syncArgs)
 			}
 			for _, m := range allMarkers {
-				present := containsArg(cmd, m)
-				if m == tt.wantMarker && !present {
-					t.Errorf("expected marker %s in command: %v", m, cmd)
-				}
-				if m != tt.wantMarker && present {
-					t.Errorf("unexpected marker %s in command: %v", m, cmd)
+				// The matching marker must appear on both the sync and the mkdir
+				// (the mkdir needs it so the empty-PVC root marker persists); no
+				// other backend's marker may appear on either.
+				syncHas := containsArg(syncArgs, m)
+				mkdirHas := containsArg(mkdirArgs, m)
+				if m == tt.wantMarker {
+					if !syncHas {
+						t.Errorf("expected marker %s on sync: %v", m, syncArgs)
+					}
+					if !mkdirHas {
+						t.Errorf("expected marker %s on mkdir: %v", m, mkdirArgs)
+					}
+				} else {
+					if syncHas {
+						t.Errorf("unexpected marker %s on sync: %v", m, syncArgs)
+					}
+					if mkdirHas {
+						t.Errorf("unexpected marker %s on mkdir: %v", m, mkdirArgs)
+					}
 				}
 			}
 		})

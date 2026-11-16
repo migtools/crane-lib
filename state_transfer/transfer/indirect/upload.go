@@ -19,7 +19,14 @@ func (t *IndirectTransfer) Upload(ctx context.Context, pvc *corev1.PersistentVol
 	if err != nil {
 		return nil, err
 	}
-	command := buildRcloneCommand("sync", dataMountPath, remotePath, markerArgs...)
+	// Sync the data, then mkdir the remote root so it always exists. For a
+	// populated PVC the mkdir is a no-op; for an empty one it creates the root
+	// marker (persisted by the directory-markers flag) that the download's sync
+	// needs, so an empty PVC transfers cleanly (migtools/crane#1082) without the
+	// download having to tolerate (and mask) a genuinely missing prefix.
+	syncCmd := buildRcloneCommand("sync", dataMountPath, remotePath, markerArgs...)
+	mkdirCmd := buildRcloneMkdirCommand(remotePath, markerArgs...)
+	command := ensureRemoteRootCommand(syncCmd, mkdirCmd)
 
 	pod := t.buildPod(
 		fmt.Sprintf("rclone-upload-%s", pvc.Name),

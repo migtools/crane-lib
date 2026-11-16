@@ -22,6 +22,10 @@ const (
 )
 
 type Options struct {
+	// Image is the mover image; it must provide rclone (including the mkdir
+	// subcommand, migtools/rsync-transfer#81) and a POSIX sh (the upload leg
+	// chains rclone sync and rclone mkdir via sh, see ensureRemoteRootCommand).
+	// Defaults to transport.DefaultRsyncTransferImage, which has both.
 	Image        string
 	CloudStorage string
 	ConfigSecret string
@@ -159,6 +163,45 @@ func buildRcloneCommand(subcommand, src, dst string, extraArgs ...string) []stri
 		"-v",
 	}
 	return append(cmd, extraArgs...)
+}
+
+// buildRcloneMkdirCommand builds an "rclone mkdir <path>" invocation. extraArgs
+// should include the backend's --<backend>-directory-markers flag so the created
+// root persists as a 0-byte marker on object storage, which has no native concept
+// of an empty directory (plain "rclone mkdir" is a no-op there otherwise).
+func buildRcloneMkdirCommand(path string, extraArgs ...string) []string {
+	cmd := []string{
+		"rclone", "mkdir", path,
+		"--config", configMountPath + "/rclone.conf",
+		"-v",
+	}
+	return append(cmd, extraArgs...)
+}
+
+// shellQuote single-quotes s for safe inclusion in an "sh -c" script, escaping any
+// embedded single quote. Remote paths and flags are normally plain tokens, but
+// quoting keeps an unusual CloudStorage value from breaking the script.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// shellJoin renders argv as a single shell-quoted command string.
+func shellJoin(argv []string) string {
+	quoted := make([]string, len(argv))
+	for i, a := range argv {
+		quoted[i] = shellQuote(a)
+	}
+	return strings.Join(quoted, " ")
+}
+
+// ensureRemoteRootCommand runs "rclone sync && rclone mkdir" (via sh -c) so the
+// PVC's remote root always exists after upload. The mkdir is a no-op for a
+// populated PVC; for an empty one it writes the root marker (migtools/crane#1082)
+// the download's sync needs, so an empty PVC transfers cleanly while a genuinely
+// missing prefix still fails the download instead of masking it as empty.
+func ensureRemoteRootCommand(syncCmd, mkdirCmd []string) []string {
+	script := shellJoin(syncCmd) + " && " + shellJoin(mkdirCmd)
+	return []string{"sh", "-c", script}
 }
 
 // directoryMarkerFlag maps an rclone backend type to the flag that writes a

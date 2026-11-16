@@ -20,6 +20,11 @@ func (t *IndirectTransfer) Download(ctx context.Context, pvc *corev1.PersistentV
 		return nil, err
 	}
 	extraArgs := append(metadataSetArgs(t.options.DownloadSecurityContext), markerArgs...)
+	// An empty source PVC still has its remote root created by the upload leg
+	// (rclone mkdir, migtools/crane#1082), so the source prefix exists and this
+	// sync succeeds with nothing to restore. A genuinely missing prefix (lost or
+	// never-staged data) still fails the download, surfacing the data loss rather
+	// than masking it as an empty source.
 	command := buildRcloneCommand("sync", remotePath, dataMountPath, extraArgs...)
 
 	pod := t.buildPod(
