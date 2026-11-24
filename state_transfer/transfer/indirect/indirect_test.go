@@ -129,7 +129,7 @@ func TestBuildRcloneCommand(t *testing.T) {
 			subcommand: "sync",
 			src:        "/data",
 			dst:        "remote:bucket/ns/pvc",
-			wantLen:    11,
+			wantLen:    13,
 			wantFirst:  "rclone",
 		},
 		{
@@ -137,7 +137,7 @@ func TestBuildRcloneCommand(t *testing.T) {
 			subcommand: "sync",
 			src:        "remote:bucket/ns/pvc",
 			dst:        "/data",
-			wantLen:    11,
+			wantLen:    13,
 			wantFirst:  "rclone",
 		},
 	}
@@ -163,6 +163,12 @@ func TestBuildRcloneCommand(t *testing.T) {
 			if !containsArg(got, "--create-empty-src-dirs") {
 				t.Errorf("command missing --create-empty-src-dirs: %v", got)
 			}
+			// The filesystem's own lost+found must be excluded on both legs so
+			// the non-root download pod never chtimes a root:root dir it does
+			// not own (migtools/crane-lib#169).
+			if !hasFlagValue(got, "--exclude", "/lost+found/**") {
+				t.Errorf("command missing --exclude /lost+found/**: %v", got)
+			}
 			// The base command must not hardcode a per-backend markers flag;
 			// those are added only when the backend is known, via
 			// directoryMarkerArgs (an unknown flag makes rclone abort).
@@ -182,6 +188,18 @@ func TestBuildRcloneCommand(t *testing.T) {
 func containsArg(args []string, want string) bool {
 	for _, a := range args {
 		if a == want {
+			return true
+		}
+	}
+	return false
+}
+
+// hasFlagValue reports whether args contains flag immediately followed by value,
+// e.g. "--exclude" then "/lost+found/**". It guards against a flag whose value
+// drifted or was dropped, which containsArg alone would miss.
+func hasFlagValue(args []string, flag, value string) bool {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == flag && args[i+1] == value {
 			return true
 		}
 	}
@@ -664,6 +682,44 @@ func TestUploadEnsuresRemoteRoot(t *testing.T) {
 	}
 	if !containsArg(dlCmd, "--s3-directory-markers") {
 		t.Errorf("download must keep --s3-directory-markers to restore empty dirs: %v", dlCmd)
+	}
+}
+
+// TestExcludesLostFoundBothLegs verifies both the upload and download rclone
+// invocations exclude the filesystem's own lost+found directory. Regression test
+// for an indirect transfer failing on OpenShift with "chtimes /data/lost+found:
+// operation not permitted": mkfs auto-creates lost+found root:root on the dest
+// volume, and the non-root download pod cannot chtimes it, so the whole transfer
+// fails even though the data copy itself succeeds (migtools/crane-lib#169).
+func TestExcludesLostFoundBothLegs(t *testing.T) {
+	srcClient := newFakeClient(t, rcloneSecret("src-ns", "my-rclone-secret", "[remote]\ntype = s3\n"))
+	destClient := newFakeClient(t, rcloneSecret("dest-ns", "my-rclone-secret", "[remote]\ntype = s3\n"))
+	transfer := New(srcClient, destClient, Options{
+		Image:        "test-image:latest",
+		ConfigSecret: "my-rclone-secret",
+		CloudStorage: "remote:my-bucket",
+	})
+
+	upPod, err := transfer.Upload(context.TODO(), &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-pvc", Namespace: "src-ns"},
+	})
+	if err != nil {
+		t.Fatalf("Upload() error = %v", err)
+	}
+	syncArgs, _ := uploadCommands(t, upPod)
+	if !hasFlagValue(syncArgs, "--exclude", "/lost+found/**") {
+		t.Errorf("upload sync missing --exclude /lost+found/**: %v", syncArgs)
+	}
+
+	dlPod, err := transfer.Download(context.TODO(), &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-pvc", Namespace: "dest-ns"},
+	}, "src-ns", "my-pvc")
+	if err != nil {
+		t.Fatalf("Download() error = %v", err)
+	}
+	dlArgs := rcloneArgs(t, rcloneCommand(t, dlPod))
+	if !hasFlagValue(dlArgs, "--exclude", "/lost+found/**") {
+		t.Errorf("download sync missing --exclude /lost+found/**: %v", dlArgs)
 	}
 }
 

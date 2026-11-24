@@ -160,6 +160,11 @@ func buildRcloneCommand(subcommand, src, dst string, extraArgs ...string) []stri
 		// Replicate empty source dirs (migtools/crane#1082); for object
 		// storage the caller also appends --<backend>-directory-markers.
 		"--create-empty-src-dirs",
+		// Skip the filesystem's own root-level lost+found (auto-created root:root
+		// on ext4/xfs volumes): the non-root download pod cannot chtimes a dir it
+		// does not own, which would fail the whole transfer ("chtimes
+		// /data/lost+found: operation not permitted"). migtools/crane-lib#169.
+		"--exclude", "/lost+found/**",
 		"-v",
 	}
 	return append(cmd, extraArgs...)
